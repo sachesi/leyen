@@ -362,7 +362,7 @@ fn build_ui(app: &adw::Application) {
     // Hide the built-in pencil/edit indicator that AdwEntryRow shows by default
     let css = gtk4::CssProvider::new();
     css.load_from_string(
-        "image.edit-icon { -gtk-icon-size: 0px; min-width: 0px; min-height: 0px; \
+        "image.edit-icon { min-width: 0px; min-height: 0px; \
          margin: 0px; padding: 0px; opacity: 0; }",
     );
     if let Some(display) = gtk4::gdk::Display::default() {
@@ -680,15 +680,16 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
     // Build the argument list, honouring Steam-style %command% substitution.
     // If the launch-args field contains "%command%", everything before it is
-    // prepended before `umu-run` and everything after is appended after the
-    // executable path.  Without "%command%", extra args are appended after the
-    // executable path as before.
+    // examined token by token:
+    //   • KEY=VALUE tokens are applied as environment variables
+    //   • other tokens (e.g. "gamemoderun") are prepended as command wrappers
+    // Everything after "%command%" is appended after the executable path.
+    // Without "%command%", extra args are appended after the executable path as before.
     let umu = get_umu_run_path();
     let mut cmd_args: Vec<String> = Vec::new();
 
     if game.launch_args.contains("%command%") {
         let parts: Vec<&str> = game.launch_args.splitn(2, "%command%").collect();
-        let prefix: Vec<String> = parts[0].split_whitespace().map(|s| s.to_string()).collect();
         let postfix: Vec<String> = parts
             .get(1)
             .unwrap_or(&"")
@@ -696,10 +697,26 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
             .map(|s| s.to_string())
             .collect();
 
+        // Classify prefix tokens as env vars or command wrappers
+        let mut cmd_wrappers: Vec<String> = Vec::new();
+        for token in parts[0].split_whitespace() {
+            // A token is an env var if it looks like KEY=VALUE (no spaces, contains '=')
+            if let Some(eq_pos) = token.find('=') {
+                let key = &token[..eq_pos];
+                let val = &token[eq_pos + 1..];
+                // Only treat as env var if the key is a valid identifier (no special chars)
+                if !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    launcher.setenv(key, val, true);
+                    continue;
+                }
+            }
+            cmd_wrappers.push(token.to_string());
+        }
+
         if game.force_gamemode || settings.global_gamemode {
             cmd_args.push("gamemoderun".to_string());
         }
-        cmd_args.extend(prefix);
+        cmd_args.extend(cmd_wrappers);
         cmd_args.push(umu.clone());
         cmd_args.push(game.exe_path.clone());
         cmd_args.extend(postfix);

@@ -1717,6 +1717,24 @@ enum DepStepAction {
     RegisterDll {
         dll: &'static str,
     },
+    /// Extract a tar.gz or tar.zst archive from cache into a sub-directory of
+    /// cache.  The top-level directory inside the archive is stripped so that
+    /// the archive contents land directly in `dest_subdir`.
+    ExtractArchive {
+        archive_name: &'static str,
+        dest_subdir: &'static str,
+    },
+    /// Copy compiled DLLs from an extracted directory into the Wine prefix
+    /// system directories (system32 or syswow64).
+    CopyDllsToPrefix {
+        src_subdir: &'static str,
+        dlls: &'static str,
+        wine_dir: &'static str,
+    },
+    /// Run a winetricks verb inside the prefix using `umu-run winetricks`.
+    RunWinetricks {
+        verb: &'static str,
+    },
 }
 
 #[derive(Clone)]
@@ -1740,10 +1758,29 @@ enum DepInstallMsg {
 // ── Built-in catalog ─────────────────────────────────────────────────────────
 
 const DEP_CATALOG: &[DepCatalogEntry] = &[
+    // ── Runtime ──────────────────────────────────────────────────────────────
     DepCatalogEntry {
         id: "vcredist2022",
         name: "Visual C++ 2015-2022 Redistributable",
         description: "Microsoft Visual C++ runtime libraries required by most modern Windows applications",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "vcredist2013",
+        name: "Visual C++ 2013 Redistributable",
+        description: "Microsoft Visual C++ 2013 runtime libraries — required by many older Windows games and apps",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "vcredist2010",
+        name: "Visual C++ 2010 SP1 Redistributable",
+        description: "Microsoft Visual C++ 2010 SP1 runtime libraries — required by games built with MSVC 2010",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "vcredist2008",
+        name: "Visual C++ 2008 SP1 Redistributable",
+        description: "Microsoft Visual C++ 2008 SP1 runtime libraries — required by legacy Windows software",
         category: "Runtime",
     },
     DepCatalogEntry {
@@ -1752,6 +1789,63 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
         description: "Microsoft .NET Framework 4.8 — required by many Windows desktop applications",
         category: "Runtime",
     },
+    DepCatalogEntry {
+        id: "dotnet40",
+        name: ".NET Framework 4.0",
+        description: "Microsoft .NET Framework 4.0 — required by older .NET applications that predate 4.5+",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "dotnet35",
+        name: ".NET Framework 3.5 SP1",
+        description: "Microsoft .NET Framework 3.5 SP1 — required by many older .NET applications and games",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "xna40",
+        name: "XNA Framework 4.0",
+        description: "Microsoft XNA Framework 4.0 Redistributable — required to run XNA-based games",
+        category: "Runtime",
+    },
+    // ── DirectX ──────────────────────────────────────────────────────────────
+    DepCatalogEntry {
+        id: "directx",
+        name: "DirectX End-User Runtime (June 2010)",
+        description: "Installs legacy DirectX 9/10 components (d3dx9, d3dx10, xinput, etc.) required by older games",
+        category: "DirectX",
+    },
+    DepCatalogEntry {
+        id: "d3dcompiler47",
+        name: "D3D Compiler 47",
+        description: "D3D shader compiler DLL required by DXVK and many modern Direct3D applications",
+        category: "DirectX",
+    },
+    DepCatalogEntry {
+        id: "dxvk",
+        name: "DXVK 2.4",
+        description: "Vulkan-based Direct3D 9/10/11 implementation — improves performance for DX9-DX11 games. Note: Proton bundles DXVK automatically",
+        category: "DirectX",
+    },
+    DepCatalogEntry {
+        id: "vkd3d",
+        name: "VKD3D-Proton 2.12",
+        description: "Vulkan-based Direct3D 12 implementation — enables DX12 games on Linux. Note: Proton bundles VKD3D-Proton automatically",
+        category: "DirectX",
+    },
+    // ── Media ─────────────────────────────────────────────────────────────────
+    DepCatalogEntry {
+        id: "xact",
+        name: "XACT Audio",
+        description: "Microsoft Cross-Platform Audio Creation Tool runtime — required by many older DirectX games for audio",
+        category: "Media",
+    },
+    DepCatalogEntry {
+        id: "wmp11",
+        name: "Windows Media Player 11",
+        description: "Windows Media Player 11 codecs and runtime — required by games and apps that use Windows media APIs",
+        category: "Media",
+    },
+    // ── Wine Components ───────────────────────────────────────────────────────
     DepCatalogEntry {
         id: "mono",
         name: "Wine Mono",
@@ -1769,7 +1863,19 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
 fn get_dep_steps(id: &str) -> Vec<DepStep> {
     match id {
         "vcredist2022" => vcredist2022_steps(),
+        "vcredist2013" => vcredist2013_steps(),
+        "vcredist2010" => vcredist2010_steps(),
+        "vcredist2008" => vcredist2008_steps(),
         "dotnet48" => dotnet48_steps(),
+        "dotnet40" => dotnet40_steps(),
+        "dotnet35" => dotnet35_steps(),
+        "xna40" => xna40_steps(),
+        "directx" => directx_steps(),
+        "d3dcompiler47" => d3dcompiler47_steps(),
+        "dxvk" => dxvk_steps(),
+        "vkd3d" => vkd3d_steps(),
+        "xact" => xact_steps(),
+        "wmp11" => wmp11_steps(),
         "mono" => mono_steps(),
         "gecko" => gecko_steps(),
         _ => Vec::new(),
@@ -1900,6 +2006,346 @@ fn gecko_steps() -> Vec<DepStep> {
                 file_name: "wine-gecko-x64.msi",
                 args: "/qn",
             },
+        },
+    ]
+}
+
+fn vcredist2013_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Visual C++ 2013 Redistributable (x86)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://aka.ms/highdpimfc2013x86enu",
+                file_name: "vcredist2013_x86.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2013 Redistributable (x86)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2013_x86.exe",
+                args: "/quiet /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Downloading Visual C++ 2013 Redistributable (x64)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://aka.ms/highdpimfc2013x64enu",
+                file_name: "vcredist2013_x64.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2013 Redistributable (x64)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2013_x64.exe",
+                args: "/quiet /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Configuring Visual C++ 2013 DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "msvcr120,msvcp120,vccorlib120",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn vcredist2010_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Visual C++ 2010 SP1 Redistributable (x86)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe",
+                file_name: "vcredist2010_x86.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2010 SP1 Redistributable (x86)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2010_x86.exe",
+                args: "/q /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Downloading Visual C++ 2010 SP1 Redistributable (x64)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe",
+                file_name: "vcredist2010_x64.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2010 SP1 Redistributable (x64)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2010_x64.exe",
+                args: "/q /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Configuring Visual C++ 2010 DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "msvcr100,msvcp100",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn vcredist2008_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Visual C++ 2008 SP1 Redistributable (x86)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe",
+                file_name: "vcredist2008_x86.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2008 SP1 Redistributable (x86)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2008_x86.exe",
+                args: "/q /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Downloading Visual C++ 2008 SP1 Redistributable (x64)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x64.exe",
+                file_name: "vcredist2008_x64.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ 2008 SP1 Redistributable (x64)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2008_x64.exe",
+                args: "/q /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Configuring Visual C++ 2008 DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "msvcr90,msvcp90",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn dotnet40_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading .NET Framework 4.0…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/9/5/A/95A9616B-7A37-4AF6-BC36-D6EA96C8DAAE/dotNetFx40_Full_x86_x64.exe",
+                file_name: "dotnet40.exe",
+            },
+        },
+        DepStep {
+            description: "Installing .NET Framework 4.0…",
+            action: DepStepAction::RunExe {
+                file_name: "dotnet40.exe",
+                args: "/sfxlang:1027 /q /norestart",
+                extra_env: "WINEDLLOVERRIDES=fusion=b",
+            },
+        },
+        DepStep {
+            description: "Configuring mscoree DLL override…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "mscoree",
+                override_type: "native",
+            },
+        },
+    ]
+}
+
+fn dotnet35_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading .NET Framework 3.5 SP1…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/2/0/E/20E90413-712F-438C-988E-FDAA79A8AC3D/dotnetfx35.exe",
+                file_name: "dotnet35.exe",
+            },
+        },
+        DepStep {
+            description: "Installing .NET Framework 3.5 SP1…",
+            action: DepStepAction::RunExe {
+                file_name: "dotnet35.exe",
+                args: "/sfxlang:1027 /q /norestart",
+                extra_env: "WINEDLLOVERRIDES=fusion=b",
+            },
+        },
+        DepStep {
+            description: "Configuring mscoree DLL override…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "mscoree",
+                override_type: "native",
+            },
+        },
+    ]
+}
+
+fn xna40_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading XNA Framework 4.0…",
+            action: DepStepAction::DownloadFile {
+                url: "https://download.microsoft.com/download/A/C/2/AC2C903B-E6E8-42C2-9FD7-BEBAC362A930/xnafx40_redist.msi",
+                file_name: "xnafx40_redist.msi",
+            },
+        },
+        DepStep {
+            description: "Installing XNA Framework 4.0…",
+            action: DepStepAction::RunMsi {
+                file_name: "xnafx40_redist.msi",
+                args: "/qn",
+            },
+        },
+    ]
+}
+
+fn directx_steps() -> Vec<DepStep> {
+    // The June 2010 DirectX End-User Runtime is installed via winetricks
+    // which handles the self-extracting package and DXSETUP correctly.
+    vec![
+        DepStep {
+            description: "Installing DirectX 9 components (d3dx9_xx)…",
+            action: DepStepAction::RunWinetricks { verb: "d3dx9" },
+        },
+        DepStep {
+            description: "Installing DirectX 10 components (d3dx10)…",
+            action: DepStepAction::RunWinetricks { verb: "d3dx10" },
+        },
+        DepStep {
+            description: "Installing DirectX 11 components (d3dx11_43)…",
+            action: DepStepAction::RunWinetricks { verb: "d3dx11_43" },
+        },
+        DepStep {
+            description: "Configuring d3dx9 DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
+                       d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
+                       d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn d3dcompiler47_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Installing D3D Compiler 47 via winetricks…",
+            action: DepStepAction::RunWinetricks {
+                verb: "d3dcompiler_47",
+            },
+        },
+    ]
+}
+
+fn dxvk_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading DXVK 2.4…",
+            action: DepStepAction::DownloadFile {
+                url: "https://github.com/doitsujin/dxvk/releases/download/v2.4/dxvk-2.4.tar.gz",
+                file_name: "dxvk-2.4.tar.gz",
+            },
+        },
+        DepStep {
+            description: "Extracting DXVK archive…",
+            action: DepStepAction::ExtractArchive {
+                archive_name: "dxvk-2.4.tar.gz",
+                dest_subdir: "dxvk",
+            },
+        },
+        DepStep {
+            description: "Installing DXVK DLLs (64-bit)…",
+            action: DepStepAction::CopyDllsToPrefix {
+                src_subdir: "dxvk/x64",
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Installing DXVK DLLs (32-bit)…",
+            action: DepStepAction::CopyDllsToPrefix {
+                src_subdir: "dxvk/x32",
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Configuring DXVK DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                override_type: "native",
+            },
+        },
+    ]
+}
+
+fn vkd3d_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading VKD3D-Proton 2.12…",
+            action: DepStepAction::DownloadFile {
+                url: "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v2.12/vkd3d-proton-2.12.tar.zst",
+                file_name: "vkd3d-proton-2.12.tar.zst",
+            },
+        },
+        DepStep {
+            description: "Extracting VKD3D-Proton archive…",
+            action: DepStepAction::ExtractArchive {
+                archive_name: "vkd3d-proton-2.12.tar.zst",
+                dest_subdir: "vkd3d",
+            },
+        },
+        DepStep {
+            description: "Installing VKD3D-Proton DLLs (64-bit)…",
+            action: DepStepAction::CopyDllsToPrefix {
+                src_subdir: "vkd3d/x64",
+                dlls: "d3d12,d3d12core",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Installing VKD3D-Proton DLLs (32-bit)…",
+            action: DepStepAction::CopyDllsToPrefix {
+                src_subdir: "vkd3d/x86",
+                dlls: "d3d12,d3d12core",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Configuring VKD3D DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "d3d12,d3d12core",
+                override_type: "native",
+            },
+        },
+    ]
+}
+
+fn xact_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Installing XACT audio runtime via winetricks…",
+            action: DepStepAction::RunWinetricks { verb: "xact" },
+        },
+    ]
+}
+
+fn wmp11_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Installing Windows Media Player 11 via winetricks…",
+            action: DepStepAction::RunWinetricks { verb: "wmp11" },
         },
     ]
 }
@@ -2094,6 +2540,66 @@ fn execute_dep_step(
             }
             Ok(())
         }
+
+        DepStepAction::ExtractArchive {
+            archive_name,
+            dest_subdir,
+        } => {
+            let archive_path = format!("{}/{}", cache_dir, archive_name);
+            let dest_path = format!("{}/{}", cache_dir, dest_subdir);
+            fs::create_dir_all(&dest_path)
+                .map_err(|e| format!("Failed to create extraction directory '{}': {}", dest_path, e))?;
+            let mut cmd = std::process::Command::new("tar");
+            if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
+                cmd.args(["-I", "zstd", "-xf", &archive_path, "-C", &dest_path, "--strip-components=1"]);
+            } else {
+                cmd.args(["-xf", &archive_path, "-C", &dest_path, "--strip-components=1"]);
+            }
+            let status = cmd
+                .status()
+                .map_err(|e| format!("tar unavailable: {}", e))?;
+            if !status.success() {
+                return Err(format!("Failed to extract '{}'", archive_name));
+            }
+            Ok(())
+        }
+
+        DepStepAction::CopyDllsToPrefix {
+            src_subdir,
+            dlls,
+            wine_dir,
+        } => {
+            let src_dir = format!("{}/{}", cache_dir, src_subdir);
+            let dst_dir = format!("{}/drive_c/windows/{}", prefix_path, wine_dir);
+            fs::create_dir_all(&dst_dir)
+                .map_err(|e| format!("Failed to create target directory '{}': {}", dst_dir, e))?;
+            for dll in dlls.split(',') {
+                let dll = dll.trim();
+                let src = format!("{}/{}.dll", src_dir, dll);
+                let dst = format!("{}/{}.dll", dst_dir, dll);
+                fs::copy(&src, &dst)
+                    .map_err(|e| format!("Failed to copy {}.dll: {}", dll, e))?;
+            }
+            Ok(())
+        }
+
+        DepStepAction::RunWinetricks { verb } => {
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            cmd.args(["winetricks", "-q", verb]);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run winetricks {}: {}", verb, e))?;
+            if !status.success() {
+                return Err(format!("winetricks '{}' failed", verb));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -2191,7 +2697,7 @@ fn escape_dep_markup(s: &str) -> String {
 
 // ── Dependencies dialog ───────────────────────────────────────────────────────
 
-const DEP_CATEGORY_ORDER: &[&str] = &["Runtime", "Wine Components"];
+const DEP_CATEGORY_ORDER: &[&str] = &["Runtime", "DirectX", "Media", "Wine Components"];
 
 fn dep_category_order(cat: &str) -> usize {
     DEP_CATEGORY_ORDER

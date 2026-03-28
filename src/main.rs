@@ -2547,7 +2547,8 @@ fn execute_dep_step(
         } => {
             let archive_path = format!("{}/{}", cache_dir, archive_name);
             let dest_path = format!("{}/{}", cache_dir, dest_subdir);
-            let _ = fs::create_dir_all(&dest_path);
+            fs::create_dir_all(&dest_path)
+                .map_err(|e| format!("Failed to create extraction directory '{}': {}", dest_path, e))?;
             let mut cmd = std::process::Command::new("tar");
             if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
                 cmd.args(["-I", "zstd", "-xf", &archive_path, "-C", &dest_path, "--strip-components=1"]);
@@ -2570,7 +2571,8 @@ fn execute_dep_step(
         } => {
             let src_dir = format!("{}/{}", cache_dir, src_subdir);
             let dst_dir = format!("{}/drive_c/windows/{}", prefix_path, wine_dir);
-            let _ = fs::create_dir_all(&dst_dir);
+            fs::create_dir_all(&dst_dir)
+                .map_err(|e| format!("Failed to create target directory '{}': {}", dst_dir, e))?;
             for dll in dlls.split(',') {
                 let dll = dll.trim();
                 let src = format!("{}/{}.dll", src_dir, dll);

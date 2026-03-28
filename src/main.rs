@@ -119,7 +119,26 @@ fn save_settings(settings: &GlobalSettings) {
 
 // --- UMU LAUNCHER HELPERS ---
 
-/// Returns the path to `umu-run` to use when launching games.
+static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// `true` while the background download thread is actively running.
+/// The UI polls this to show/hide the download status banner.
+static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Directory where the umu-launcher zipapp is extracted.
+fn get_umu_core_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/leyen/core/umu-launcher", home)
+}
+
+/// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
+fn get_local_umu_run_path() -> String {
+    format!("{}/umu/umu-run", get_umu_core_dir())
+}
+
+/// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 fn get_umu_run_path() -> String {
     if std::process::Command::new("which")
@@ -131,8 +150,7 @@ fn get_umu_run_path() -> String {
         return "umu-run".to_string();
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/umu-run", home);
+    let local_path = get_local_umu_run_path();
     if std::path::Path::new(&local_path).exists() {
         return local_path;
     }
@@ -140,141 +158,125 @@ fn get_umu_run_path() -> String {
     "umu-run".to_string()
 }
 
-/// Checks whether `umu-run` is available.  If it is not found in the system
-/// PATH or in the local leyen data directory, spawns a background thread that
-/// downloads the latest release from the umu-launcher GitHub repository and
-/// places it at `~/.local/share/leyen/umu-launcher/umu-run`.
-fn check_or_install_umu() {
+/// Returns `true` when `umu-run` is actually available (system PATH or local
+/// install).  Unlike `get_umu_run_path()` this does not return a fallback
+/// string when umu-run is absent.
+fn is_umu_run_available() -> bool {
     if std::process::Command::new("which")
         .arg("umu-run")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
+        return true;
+    }
+    std::path::Path::new(&get_local_umu_run_path()).exists()
+}
+
+/// Checks whether `umu-run` is available.  If it is not found in the system
+/// PATH or in the local leyen data directory, spawns a background thread that
+/// downloads the latest zipapp release from the umu-launcher GitHub repository
+/// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
+fn check_or_install_umu() {
+    if is_umu_run_available() {
         return;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let umu_dir = format!("{}/.local/share/leyen/umu-launcher", home);
-    let umu_run_path = format!("{}/umu-run", umu_dir);
-
-    if std::path::Path::new(&umu_run_path).exists() {
+    if UMU_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         return;
     }
 
-    // Download in background so startup is not blocked
+    UMU_DOWNLOADING.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let umu_core_dir = get_umu_core_dir();
+
     std::thread::spawn(move || {
-        let _ = fs::create_dir_all(&umu_dir);
-        let url =
-            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest/download/umu-run";
-        let ok = std::process::Command::new("curl")
-            .args(["-L", "--fail", "-o", &umu_run_path, url])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-
-        if ok {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = fs::metadata(&umu_run_path) {
-                    let mut perms = meta.permissions();
-                    perms.set_mode(0o755);
-                    let _ = fs::set_permissions(&umu_run_path, perms);
-                }
-            }
+        let result = download_and_install_umu(&umu_core_dir);
+        if !result {
+            // Reset so the next application start can retry.
+            UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
         }
+        UMU_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
     });
 }
 
-static WINETRICKS_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+/// Downloads the latest umu-launcher zipapp tarball and extracts it into
+/// `dest_dir`.  Returns `true` on success.
+fn download_and_install_umu(dest_dir: &str) -> bool {
+    let _ = fs::create_dir_all(dest_dir);
 
-fn get_winetricks_path() -> Option<String> {
-    if std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return Some("winetricks".to_string());
+    // Resolve the latest release tag via the GitHub redirect.
+    let tag_output = std::process::Command::new("curl")
+        .args([
+            "-sI",
+            "-L",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{url_effective}",
+            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
+        ])
+        .output();
+
+    let version = match tag_output {
+        Ok(o) if o.status.success() => {
+            let url = String::from_utf8_lossy(&o.stdout);
+            url.trim()
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        }
+        _ => return false,
+    };
+
+    if version.is_empty() {
+        return false;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
-    if std::path::Path::new(&local_path).exists() {
-        return Some(local_path);
-    }
+    let tarball_name = format!("umu-launcher-{}-zipapp.tar", version);
+    let tarball_path = format!("{}/{}", dest_dir, tarball_name);
+    let download_url = format!(
+        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/{}/{}",
+        version, tarball_name
+    );
 
-    None
-}
-
-fn download_winetricks_to(path: &str) -> bool {
-    if let Some(parent) = std::path::Path::new(path).parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    let url = "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks";
     let ok = std::process::Command::new("curl")
-        .args(["-L", "--fail", "-o", path, url])
+        .args(["-sL", "--fail", "-o", &tarball_path, &download_url])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
 
-    if ok {
+    if !ok {
+        let _ = fs::remove_file(&tarball_path);
+        return false;
+    }
+
+    // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
+    let extracted = std::process::Command::new("tar")
+        .args(["-xf", &tarball_path, "-C", dest_dir])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let _ = fs::remove_file(&tarball_path);
+
+    if extracted {
+        // Ensure the binary is executable.
+        let umu_run = format!("{}/umu/umu-run", dest_dir);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = fs::metadata(path) {
+            if let Ok(meta) = fs::metadata(&umu_run) {
                 let mut perms = meta.permissions();
                 perms.set_mode(0o755);
-                let _ = fs::set_permissions(path, perms);
+                let _ = fs::set_permissions(&umu_run, perms);
             }
         }
     }
 
-    ok
-}
-
-fn ensure_winetricks_available(overlay: Option<&adw::ToastOverlay>) -> Option<String> {
-    if let Some(path) = get_winetricks_path() {
-        return Some(path);
-    }
-
-    if let Some(overlay) = overlay {
-        overlay.add_toast(adw::Toast::new("Downloading winetricks..."));
-    }
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
-
-    if download_winetricks_to(&local_path) {
-        if let Some(overlay) = overlay {
-            overlay.add_toast(adw::Toast::new("Winetricks downloaded."));
-        }
-        Some(local_path)
-    } else {
-        if let Some(overlay) = overlay {
-            overlay.add_toast(adw::Toast::new(
-                "Failed to download winetricks. Please install it manually.",
-            ));
-        }
-        None
-    }
-}
-
-fn check_or_install_winetricks() {
-    if get_winetricks_path().is_some() {
-        return;
-    }
-
-    if WINETRICKS_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
-
-    std::thread::spawn(|| {
-        let _ = ensure_winetricks_available(None);
-    });
+    extracted
 }
 
 static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
@@ -446,7 +448,6 @@ fn detect_proton_versions() -> GlobalSettings {
 
 fn main() -> glib::ExitCode {
     check_or_install_umu();
-    check_or_install_winetricks();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -534,6 +535,14 @@ fn build_ui(app: &adw::Application) {
 
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&scroll));
+
+    // Banner shown while umu-launcher is being downloaded in the background.
+    let download_banner = adw::Banner::builder()
+        .title("Downloading umu-launcher… Please wait before starting games.")
+        .revealed(UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed))
+        .build();
+    toolbar_view.add_top_bar(&download_banner);
+
     toolbar_view.set_content(Some(&toast_overlay));
 
     let window = adw::ApplicationWindow::builder()
@@ -553,6 +562,28 @@ fn build_ui(app: &adw::Application) {
         &toast_overlay,
         &window,
     );
+
+    // Poll every 2 seconds; hide the banner and show a toast once the download
+    // completes (or if it was never needed).
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        let banner_clone = download_banner.clone();
+        let overlay_clone = toast_overlay.clone();
+        glib::timeout_add_seconds_local(2, move || {
+            if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+                return glib::ControlFlow::Continue;
+            }
+            banner_clone.set_revealed(false);
+            if is_umu_run_available() {
+                overlay_clone
+                    .add_toast(adw::Toast::new("umu-launcher downloaded. Ready to play!"));
+            } else {
+                overlay_clone.add_toast(adw::Toast::new(
+                    "Failed to download umu-launcher. Check your internet connection.",
+                ));
+            }
+            glib::ControlFlow::Break
+        });
+    }
 
     /* --- EVENT HANDLERS --- */
 
@@ -723,6 +754,22 @@ fn populate_game_list(
 // --- CORE LAUNCH LOGIC ---
 
 fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
+    // Block launch while umu-launcher is being downloaded.
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        return;
+    }
+
+    // Block launch if umu-run is simply not available.
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
     let settings = load_settings();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
@@ -1554,28 +1601,40 @@ fn show_delete_confirmation(
 
 // --- WINETRICKS INTEGRATION ---
 
+/// Launches winetricks for the given Wine prefix via `umu-run winetricks`.
+/// umu-launcher includes built-in winetricks support; no separate download needed.
 fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
-    let Some(winetricks_cmd) = ensure_winetricks_available(Some(overlay)) else {
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
         return;
-    };
+    }
+
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
+    let umu = get_umu_run_path();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
-    // Set WINEPREFIX if provided
     if !prefix_path.is_empty() {
         launcher.setenv("WINEPREFIX", prefix_path, true);
     }
 
-    // Try to launch winetricks
-    let cmd_args = vec![winetricks_cmd];
+    let cmd_args = vec![umu, "winetricks".to_string()];
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
     match launcher.spawn(&os_args) {
         Ok(_) => {
-            overlay.add_toast(adw::Toast::new("Launching winetricks..."));
+            overlay.add_toast(adw::Toast::new("Launching winetricks…"));
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(
-                "Failed to launch winetricks: {}. Make sure winetricks is installed.",
+                "Failed to launch winetricks: {}",
                 e
             )));
         }

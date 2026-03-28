@@ -2194,12 +2194,10 @@ fn launch_winetricks(
                             );
                         }
                     }
-                    let finished_ok = if subprocess_for_status.is_successful() {
+                    let finished_ok = subprocess_for_status.is_successful();
+                    if finished_ok {
                         write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
-                        true
-                    } else {
-                        false
-                    };
+                    }
 
                     write_winetricks_log(
                         &prefix_for_log,

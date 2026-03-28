@@ -373,7 +373,7 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 // --- GLOBAL SETTINGS DIALOG ---
 
 fn show_global_settings(parent: &adw::ApplicationWindow) {
-    let mut settings = load_settings();
+    let settings = load_settings();
 
     let pref_window = adw::PreferencesWindow::builder()
         .transient_for(parent)
@@ -442,19 +442,23 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
     pref_window.add(&page);
 
     // Save settings when window is closed
+    let available_versions = settings.available_proton_versions.clone();
     pref_window.connect_close_request(move |_| {
-        settings.default_prefix_path = prefix_row.text().to_string();
-        settings.default_proton = if proton_row.selected() < proton_list.n_items() {
-            proton_list
-                .string(proton_row.selected())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "Default".to_string())
-        } else {
-            "Default".to_string()
+        let mut updated_settings = GlobalSettings {
+            default_prefix_path: prefix_row.text().to_string(),
+            default_proton: if proton_row.selected() < proton_list.n_items() {
+                proton_list
+                    .string(proton_row.selected())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "Default".to_string())
+            } else {
+                "Default".to_string()
+            },
+            global_mangohud: mangohud_row.is_active(),
+            global_gamemode: gamemode_row.is_active(),
+            available_proton_versions: available_versions.clone(),
         };
-        settings.global_mangohud = mangohud_row.is_active();
-        settings.global_gamemode = gamemode_row.is_active();
-        save_settings(&settings);
+        save_settings(&updated_settings);
         glib::Propagation::Proceed
     });
 
@@ -521,6 +525,7 @@ fn show_add_game_dialog(
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
+        let path_row_clone = path_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result {
@@ -693,6 +698,7 @@ fn show_edit_game_dialog(
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
+        let path_row_clone = path_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result {
@@ -847,45 +853,42 @@ fn show_delete_confirmation(
 
     let game_title = game.map(|g| g.title.as_str()).unwrap_or("Unknown Game");
 
-    let dialog = adw::AlertDialog::builder()
-        .heading("Delete Game?")
-        .body(&format!(
+    let dialog = gtk4::AlertDialog::builder()
+        .message("Delete Game?")
+        .detail(&format!(
             "Are you sure you want to delete '{}'?\n\nThis action cannot be undone.",
             game_title
         ))
+        .buttons(vec!["Cancel".to_string(), "Delete".to_string()])
+        .cancel_button(0)
+        .default_button(0)
         .build();
-
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("delete", "Delete");
-    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-    dialog.set_default_response(Some("cancel"));
-    dialog.set_close_response("cancel");
 
     let game_id = game_id.to_string();
     let list_box_clone = list_box.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
 
-    dialog.connect_response(None, move |_, response| {
-        if response == "delete" {
-            let mut games = load_games();
-            if let Some(pos) = games.iter().position(|g| g.id == game_id) {
-                let deleted_title = games[pos].title.clone();
-                games.remove(pos);
-                save_games(&games);
+    dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
+        if let Ok(response) = result {
+            if response == 1 {  // "Delete" button is at index 1
+                let mut games = load_games();
+                if let Some(pos) = games.iter().position(|g| g.id == game_id) {
+                    let deleted_title = games[pos].title.clone();
+                    games.remove(pos);
+                    save_games(&games);
 
-                // Refresh UI
-                populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+                    // Refresh UI
+                    populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
 
-                overlay_clone.add_toast(adw::Toast::new(&format!(
-                    "'{}' deleted successfully",
-                    deleted_title
-                )));
+                    overlay_clone.add_toast(adw::Toast::new(&format!(
+                        "'{}' deleted successfully",
+                        deleted_title
+                    )));
+                }
             }
         }
     });
-
-    dialog.present(Some(parent));
 }
 
 // --- WINETRICKS INTEGRATION ---

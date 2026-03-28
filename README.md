@@ -83,7 +83,7 @@ cargo build --release
 cargo run --release
 ```
 
-The compiled binary will be available at `target/release/umu_gui`.
+The compiled binary will be available at `target/release/leyen`.
 
 ## Usage
 
@@ -124,10 +124,15 @@ The compiled binary will be available at `target/release/umu_gui`.
 
 ## Configuration Files
 
-Configuration files are stored in `~/.config/umu_gui/`:
+Configuration files are stored in `~/.config/leyen/`:
 
-- `games.json`: Game library database
-- `settings.json`: Global settings and preferences
+- `games.toml`: Game library database
+- `settings.toml`: Global settings and preferences
+
+Proton versions are detected from:
+- `~/.local/share/leyen/proton/`: Local Proton installations (checked first)
+- `~/.steam/steam/compatibilitytools.d/`: GE-Proton and other compatibility tools
+- `~/.steam/steam/steamapps/common/`: Steam's official Proton versions
 
 ## How It Works
 
@@ -141,8 +146,11 @@ If GameMode is enabled, the launch command is wrapped with `gamemoderun`.
 
 ### Proton Detection
 The application automatically scans for Proton versions in:
+- `~/.local/share/leyen/proton/` (local Proton installations - checked first)
 - `~/.steam/steam/compatibilitytools.d/` (for GE-Proton and other compatibility tools)
 - `~/.steam/steam/steamapps/common/` (for Steam's official Proton versions)
+
+The application will automatically create the `~/.local/share/leyen/proton/` directory on first run. You can place custom Proton versions there for use with Leyen.
 
 ### Winetricks Integration
 When editing a game, you can launch winetricks with the `WINEPREFIX` environment variable set to that game's prefix, allowing you to install dependencies (DirectX, Visual C++ redistributables, .NET Framework, etc.) specific to that game.
@@ -161,7 +169,7 @@ When editing a game, you can launch winetricks with the `WINEPREFIX` environment
 
 ### Missing Proton Versions
 - Install Proton-GE from https://github.com/GloriousEggroll/proton-ge-custom
-- Extract to `~/.steam/steam/compatibilitytools.d/`
+- Extract to `~/.local/share/leyen/proton/` (recommended) or `~/.steam/steam/compatibilitytools.d/`
 - Restart the application to rescan
 
 ## Development

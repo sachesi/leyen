@@ -29,6 +29,9 @@ struct GlobalSettings {
     default_proton: String,
     global_mangohud: bool,
     global_gamemode: bool,
+    global_wayland: bool,
+    global_wow64: bool,
+    global_ntsync: bool,
     available_proton_versions: Vec<String>,
 }
 
@@ -79,17 +82,19 @@ fn save_games(games: &[Game]) {
 
 fn load_settings() -> GlobalSettings {
     let path = get_settings_path();
-    if let Ok(data) = fs::read_to_string(path) {
-        toml::from_str(&data).unwrap_or_else(|_| {
-            let settings = detect_proton_versions();
-            save_settings(&settings);
-            settings
-        })
+    let mut settings: GlobalSettings = if let Ok(data) = fs::read_to_string(&path) {
+        toml::from_str(&data).unwrap_or_default()
     } else {
-        let settings = detect_proton_versions();
-        save_settings(&settings);
-        settings
+        GlobalSettings::default()
+    };
+    // Always refresh available Proton versions from the current filesystem state
+    let fresh = detect_proton_versions();
+    settings.available_proton_versions = fresh.available_proton_versions;
+    if settings.default_prefix_path.is_empty() {
+        settings.default_prefix_path = fresh.default_prefix_path;
     }
+    save_settings(&settings);
+    settings
 }
 
 fn save_settings(settings: &GlobalSettings) {
@@ -97,6 +102,106 @@ fn save_settings(settings: &GlobalSettings) {
     if let Ok(data) = toml::to_string_pretty(settings) {
         let _ = fs::write(path, data);
     }
+}
+
+// --- UMU LAUNCHER HELPERS ---
+
+/// Returns the path to `umu-run` to use when launching games.
+/// Prefers the system-wide binary; falls back to the locally downloaded copy.
+fn get_umu_run_path() -> String {
+    if std::process::Command::new("which")
+        .arg("umu-run")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "umu-run".to_string();
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let local_path = format!("{}/.local/share/leyen/umu-launcher/umu-run", home);
+    if std::path::Path::new(&local_path).exists() {
+        return local_path;
+    }
+
+    "umu-run".to_string()
+}
+
+/// Checks whether `umu-run` is available.  If it is not found in the system
+/// PATH or in the local leyen data directory, spawns a background thread that
+/// downloads the latest release from the umu-launcher GitHub repository and
+/// places it at `~/.local/share/leyen/umu-launcher/umu-run`.
+fn check_or_install_umu() {
+    if std::process::Command::new("which")
+        .arg("umu-run")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let umu_dir = format!("{}/.local/share/leyen/umu-launcher", home);
+    let umu_run_path = format!("{}/umu-run", umu_dir);
+
+    if std::path::Path::new(&umu_run_path).exists() {
+        return;
+    }
+
+    // Download in background so startup is not blocked
+    std::thread::spawn(move || {
+        let _ = fs::create_dir_all(&umu_dir);
+        let url =
+            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest/download/umu-run";
+        let ok = std::process::Command::new("curl")
+            .args(["-L", "--fail", "-o", &umu_run_path, url])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if ok {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = fs::metadata(&umu_run_path) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    let _ = fs::set_permissions(&umu_run_path, perms);
+                }
+            }
+        }
+    });
+}
+
+/// Resolves a Proton value stored in a game config (which may be a full path
+/// or, for configs written before the path-storage change, just a directory
+/// name) into the full path expected by `PROTONPATH`.
+/// Returns `None` when the value represents the "Default" / unset state.
+fn resolve_proton_path(proton: &str) -> Option<String> {
+    if proton.is_empty() || proton == "Default" {
+        return None;
+    }
+
+    // Already a full path
+    if proton.starts_with('/') {
+        return Some(proton.to_string());
+    }
+
+    // Backward-compat: resolve a bare directory name to its full path
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let candidates = [
+        format!("{}/.local/share/leyen/proton/{}", home, proton),
+        format!("{}/.steam/steam/compatibilitytools.d/{}", home, proton),
+        format!("{}/.steam/steam/steamapps/common/{}", home, proton),
+    ];
+    for path in &candidates {
+        if std::path::Path::new(path).exists() {
+            return Some(path.clone());
+        }
+    }
+
+    Some(proton.to_string())
 }
 
 fn detect_proton_versions() -> GlobalSettings {
@@ -111,9 +216,7 @@ fn detect_proton_versions() -> GlobalSettings {
         if let Ok(entries) = fs::read_dir(&leyen_proton) {
             for entry in entries.flatten() {
                 if entry.path().is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        versions.push(name.to_string());
-                    }
+                    versions.push(entry.path().to_string_lossy().to_string());
                 }
             }
         }
@@ -128,9 +231,7 @@ fn detect_proton_versions() -> GlobalSettings {
         if let Ok(entries) = fs::read_dir(steam_compat) {
             for entry in entries.flatten() {
                 if entry.path().is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        versions.push(name.to_string());
-                    }
+                    versions.push(entry.path().to_string_lossy().to_string());
                 }
             }
         }
@@ -144,7 +245,7 @@ fn detect_proton_versions() -> GlobalSettings {
                 if entry.path().is_dir() {
                     if let Some(name) = entry.file_name().to_str() {
                         if name.contains("Proton") {
-                            versions.push(name.to_string());
+                            versions.push(entry.path().to_string_lossy().to_string());
                         }
                     }
                 }
@@ -163,6 +264,9 @@ fn detect_proton_versions() -> GlobalSettings {
         default_proton: "Default".to_string(),
         global_mangohud: false,
         global_gamemode: false,
+        global_wayland: false,
+        global_wow64: false,
+        global_ntsync: false,
         available_proton_versions: versions,
     }
 }
@@ -170,6 +274,7 @@ fn detect_proton_versions() -> GlobalSettings {
 // --- MAIN UI ---
 
 fn main() -> glib::ExitCode {
+    check_or_install_umu();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -432,28 +537,77 @@ fn populate_game_list(
 // --- CORE LAUNCH LOGIC ---
 
 fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
+    let settings = load_settings();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
-    // Apply Game's specific environment overrides
+    // Wine prefix
     if !game.prefix_path.is_empty() {
         launcher.setenv("WINEPREFIX", &game.prefix_path, true);
     }
-    if !game.proton.is_empty() && game.proton != "Default" {
-        launcher.setenv("PROTONPATH", &game.proton, true);
+
+    // Proton path (resolve backward-compat names to full paths)
+    if let Some(proton_path) = resolve_proton_path(&game.proton) {
+        launcher.setenv("PROTONPATH", &proton_path, true);
     }
-    if game.force_mangohud {
+
+    // MangoHud – per-game flag OR global setting
+    if game.force_mangohud || settings.global_mangohud {
         launcher.setenv("MANGOHUD", "1", true);
     }
 
-    let mut cmd_args: Vec<String> = Vec::new();
-    if game.force_gamemode {
-        cmd_args.push("gamemoderun".to_string());
-    }
-    cmd_args.push("umu-run".to_string());
-    cmd_args.push(game.exe_path.clone());
+    // Wayland: always force the env var to the correct state
+    launcher.setenv(
+        "PROTON_ENABLE_WAYLAND",
+        if settings.global_wayland { "1" } else { "0" },
+        true,
+    );
 
-    if !game.launch_args.is_empty() {
-        cmd_args.push(game.launch_args.clone());
+    // WoW64: always force the env var to the correct state
+    launcher.setenv(
+        "PROTON_USE_WOW64",
+        if settings.global_wow64 { "1" } else { "0" },
+        true,
+    );
+
+    // NTSync: always force both env vars to the correct state
+    let ntsync_val = if settings.global_ntsync { "1" } else { "0" };
+    launcher.setenv("PROTON_USE_NTSYNC", ntsync_val, true);
+    launcher.setenv("WINENTSYNC", ntsync_val, true);
+
+    // Build the argument list, honouring Steam-style %command% substitution.
+    // If the launch-args field contains "%command%", everything before it is
+    // prepended before `umu-run` and everything after is appended after the
+    // executable path.  Without "%command%", extra args are appended after the
+    // executable path as before.
+    let umu = get_umu_run_path();
+    let mut cmd_args: Vec<String> = Vec::new();
+
+    if game.launch_args.contains("%command%") {
+        let parts: Vec<&str> = game.launch_args.splitn(2, "%command%").collect();
+        let prefix: Vec<String> = parts[0].split_whitespace().map(|s| s.to_string()).collect();
+        let postfix: Vec<String> = parts
+            .get(1)
+            .unwrap_or(&"")
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+
+        if game.force_gamemode || settings.global_gamemode {
+            cmd_args.push("gamemoderun".to_string());
+        }
+        cmd_args.extend(prefix);
+        cmd_args.push(umu.clone());
+        cmd_args.push(game.exe_path.clone());
+        cmd_args.extend(postfix);
+    } else {
+        if game.force_gamemode || settings.global_gamemode {
+            cmd_args.push("gamemoderun".to_string());
+        }
+        cmd_args.push(umu.clone());
+        cmd_args.push(game.exe_path.clone());
+        if !game.launch_args.is_empty() {
+            cmd_args.extend(game.launch_args.split_whitespace().map(|s| s.to_string()));
+        }
     }
 
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
@@ -495,10 +649,24 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
         .text(&settings.default_prefix_path)
         .build();
 
-    // Build Proton dropdown list
+    // Build Proton dropdown – display basenames, store full paths via index
+    let available_versions = settings.available_proton_versions.clone();
+    let display_names: Vec<String> = available_versions
+        .iter()
+        .map(|p| {
+            if p == "Default" {
+                "Default".to_string()
+            } else {
+                PathBuf::from(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone())
+            }
+        })
+        .collect();
     let proton_list = gtk4::StringList::new(&[]);
-    for version in &settings.available_proton_versions {
-        proton_list.append(version);
+    for name in &display_names {
+        proton_list.append(name);
     }
 
     let proton_row = adw::ComboRow::builder()
@@ -506,9 +674,8 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
         .model(&proton_list)
         .build();
 
-    // Set selected index
-    if let Some(pos) = settings
-        .available_proton_versions
+    // Set selected index by matching full path
+    if let Some(pos) = available_versions
         .iter()
         .position(|v| v == &settings.default_proton)
     {
@@ -523,7 +690,7 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
         .build();
 
     let mangohud_row = adw::SwitchRow::builder()
-        .title("MangoHud Overlay")
+        .title("MangoHud")
         .active(settings.global_mangohud)
         .build();
 
@@ -532,28 +699,48 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
         .active(settings.global_gamemode)
         .build();
 
+    let wayland_row = adw::SwitchRow::builder()
+        .title("Wayland")
+        .subtitle("Sets PROTON_ENABLE_WAYLAND=1")
+        .active(settings.global_wayland)
+        .build();
+
+    let wow64_row = adw::SwitchRow::builder()
+        .title("WoW64")
+        .subtitle("Sets PROTON_USE_WOW64=1")
+        .active(settings.global_wow64)
+        .build();
+
+    let ntsync_row = adw::SwitchRow::builder()
+        .title("NTSync")
+        .subtitle("Sets PROTON_USE_NTSYNC=1 and WINENTSYNC=1")
+        .active(settings.global_ntsync)
+        .build();
+
     tools_group.add(&mangohud_row);
     tools_group.add(&gamemode_row);
+    tools_group.add(&wayland_row);
+    tools_group.add(&wow64_row);
+    tools_group.add(&ntsync_row);
 
     page.add(&paths_group);
     page.add(&tools_group);
     pref_window.add(&page);
 
     // Save settings when window is closed
-    let available_versions = settings.available_proton_versions.clone();
     pref_window.connect_close_request(move |_| {
-        let mut updated_settings = GlobalSettings {
+        let updated_settings = GlobalSettings {
             default_prefix_path: prefix_row.text().to_string(),
-            default_proton: if proton_row.selected() < proton_list.n_items() {
-                proton_list
-                    .string(proton_row.selected())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "Default".to_string())
+            default_proton: if (proton_row.selected() as usize) < available_versions.len() {
+                available_versions[proton_row.selected() as usize].clone()
             } else {
                 "Default".to_string()
             },
             global_mangohud: mangohud_row.is_active(),
             global_gamemode: gamemode_row.is_active(),
+            global_wayland: wayland_row.is_active(),
+            global_wow64: wow64_row.is_active(),
+            global_ntsync: ntsync_row.is_active(),
             available_proton_versions: available_versions.clone(),
         };
         save_settings(&updated_settings);
@@ -642,15 +829,28 @@ fn show_add_game_dialog(
         .text(&settings.default_prefix_path)
         .build();
 
-    // Build Proton dropdown
-    let proton_strings: Vec<&str> = settings
+    // Build Proton dropdown – display basenames, store full paths via index
+    let proton_display_names_add: Vec<String> = settings
         .available_proton_versions
+        .iter()
+        .map(|p| {
+            if p == "Default" {
+                "Default".to_string()
+            } else {
+                PathBuf::from(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone())
+            }
+        })
+        .collect();
+    let proton_display_refs_add: Vec<&str> = proton_display_names_add
         .iter()
         .map(|s| s.as_str())
         .collect();
     let proton_row = adw::ComboRow::builder()
         .title("Proton")
-        .model(&gtk4::StringList::new(&proton_strings))
+        .model(&gtk4::StringList::new(&proton_display_refs_add))
         .build();
 
     let env_group = adw::PreferencesGroup::builder()
@@ -829,18 +1029,31 @@ fn show_edit_game_dialog(
         .text(&game.prefix_path)
         .build();
 
-    // Build Proton dropdown
-    let proton_strings: Vec<&str> = settings
+    // Build Proton dropdown – display basenames, store full paths via index
+    let proton_display_names_edit: Vec<String> = settings
         .available_proton_versions
+        .iter()
+        .map(|p| {
+            if p == "Default" {
+                "Default".to_string()
+            } else {
+                PathBuf::from(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone())
+            }
+        })
+        .collect();
+    let proton_display_refs_edit: Vec<&str> = proton_display_names_edit
         .iter()
         .map(|s| s.as_str())
         .collect();
     let proton_row = adw::ComboRow::builder()
         .title("Proton")
-        .model(&gtk4::StringList::new(&proton_strings))
+        .model(&gtk4::StringList::new(&proton_display_refs_edit))
         .build();
 
-    // Set selected Proton version
+    // Set selected Proton version (match by full path)
     if let Some(pos) = settings
         .available_proton_versions
         .iter()

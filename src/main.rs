@@ -21,6 +21,12 @@ struct Game {
     launch_args: String,
     force_mangohud: bool,
     force_gamemode: bool,
+    #[serde(default)]
+    game_wayland: bool,
+    #[serde(default)]
+    game_wow64: bool,
+    #[serde(default)]
+    game_ntsync: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -92,6 +98,10 @@ fn load_settings() -> GlobalSettings {
     settings.available_proton_versions = fresh.available_proton_versions;
     if settings.default_prefix_path.is_empty() {
         settings.default_prefix_path = fresh.default_prefix_path;
+    }
+    // If no Proton is installed, download the latest ProtonGE in the background
+    if settings.available_proton_versions.len() <= 1 {
+        check_or_install_protonge();
     }
     save_settings(&settings);
     settings
@@ -170,6 +180,74 @@ fn check_or_install_umu() {
                     let _ = fs::set_permissions(&umu_run_path, perms);
                 }
             }
+        }
+    });
+}
+
+static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// If no Proton installation is available, downloads the latest ProtonGE
+/// release from GitHub into `~/.local/share/leyen/proton/` in a background
+/// thread.  Only one download attempt is made per application lifetime.
+fn check_or_install_protonge() {
+    if PROTONGE_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let proton_dir = format!("{}/.local/share/leyen/proton", home);
+
+    std::thread::spawn(move || {
+        let _ = fs::create_dir_all(&proton_dir);
+
+        // Resolve the latest release tag via the GitHub redirect
+        let tag_output = std::process::Command::new("curl")
+            .args([
+                "-Ls",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{url_effective}",
+                "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest",
+            ])
+            .output();
+
+        let tag = match tag_output {
+            Ok(o) if o.status.success() => {
+                let url = String::from_utf8_lossy(&o.stdout);
+                url.trim()
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            }
+            _ => return,
+        };
+
+        if tag.is_empty() || !tag.starts_with("GE-Proton") {
+            return;
+        }
+
+        let tarball = format!("{}.tar.gz", tag);
+        let tarball_path = format!("{}/{}", proton_dir, tarball);
+        let download_url = format!(
+            "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/{}/{}",
+            tag, tarball
+        );
+
+        let ok = std::process::Command::new("curl")
+            .args(["-L", "--fail", "-o", &tarball_path, &download_url])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if ok {
+            let _ = std::process::Command::new("tar")
+                .args(["-xzf", &tarball_path, "-C", &proton_dir])
+                .status();
+            let _ = fs::remove_file(&tarball_path);
         }
     });
 }
@@ -281,6 +359,20 @@ fn main() -> glib::ExitCode {
 }
 
 fn build_ui(app: &adw::Application) {
+    // Hide the built-in pencil/edit indicator that AdwEntryRow shows by default
+    let css = gtk4::CssProvider::new();
+    css.load_from_string(
+        "image.edit-icon { -gtk-icon-size: 0px; min-width: 0px; min-height: 0px; \
+         margin: 0px; padding: 0px; opacity: 0; }",
+    );
+    if let Some(display) = gtk4::gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &css,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
     let header = adw::HeaderBar::builder().build();
 
     let add_btn = gtk4::Button::builder()
@@ -555,22 +647,34 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
         launcher.setenv("MANGOHUD", "1", true);
     }
 
-    // Wayland: always force the env var to the correct state
+    // Wayland: per-game override OR global setting
     launcher.setenv(
         "PROTON_ENABLE_WAYLAND",
-        if settings.global_wayland { "1" } else { "0" },
+        if game.game_wayland || settings.global_wayland {
+            "1"
+        } else {
+            "0"
+        },
         true,
     );
 
-    // WoW64: always force the env var to the correct state
+    // WoW64: per-game override OR global setting
     launcher.setenv(
         "PROTON_USE_WOW64",
-        if settings.global_wow64 { "1" } else { "0" },
+        if game.game_wow64 || settings.global_wow64 {
+            "1"
+        } else {
+            "0"
+        },
         true,
     );
 
-    // NTSync: always force both env vars to the correct state
-    let ntsync_val = if settings.global_ntsync { "1" } else { "0" };
+    // NTSync: per-game override OR global setting
+    let ntsync_val = if game.game_ntsync || settings.global_ntsync {
+        "1"
+    } else {
+        "0"
+    };
     launcher.setenv("PROTON_USE_NTSYNC", ntsync_val, true);
     launcher.setenv("WINENTSYNC", ntsync_val, true);
 
@@ -701,19 +805,16 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     let wayland_row = adw::SwitchRow::builder()
         .title("Wayland")
-        .subtitle("Sets PROTON_ENABLE_WAYLAND=1")
         .active(settings.global_wayland)
         .build();
 
     let wow64_row = adw::SwitchRow::builder()
         .title("WoW64")
-        .subtitle("Sets PROTON_USE_WOW64=1")
         .active(settings.global_wow64)
         .build();
 
     let ntsync_row = adw::SwitchRow::builder()
         .title("NTSync")
-        .subtitle("Sets PROTON_USE_NTSYNC=1 and WINENTSYNC=1")
         .active(settings.global_ntsync)
         .build();
 
@@ -868,10 +969,25 @@ fn show_add_game_dialog(
         .title("Force GameMode")
         .active(settings.global_gamemode)
         .build();
+    let wayland_row_game = adw::SwitchRow::builder()
+        .title("Wayland")
+        .active(false)
+        .build();
+    let wow64_row_game = adw::SwitchRow::builder()
+        .title("WoW64")
+        .active(false)
+        .build();
+    let ntsync_row_game = adw::SwitchRow::builder()
+        .title("NTSync")
+        .active(false)
+        .build();
     let advanced_group = adw::PreferencesGroup::builder().title("Overrides").build();
     advanced_group.add(&args_row);
     advanced_group.add(&mangohud_row);
     advanced_group.add(&gamemode_row);
+    advanced_group.add(&wayland_row_game);
+    advanced_group.add(&wow64_row_game);
+    advanced_group.add(&ntsync_row_game);
 
     page.add(&game_group);
     page.add(&env_group);
@@ -918,6 +1034,9 @@ fn show_add_game_dialog(
             launch_args: args_row.text().to_string(),
             force_mangohud: mangohud_row.is_active(),
             force_gamemode: gamemode_row.is_active(),
+            game_wayland: wayland_row_game.is_active(),
+            game_wow64: wow64_row_game.is_active(),
+            game_ntsync: ntsync_row_game.is_active(),
         };
 
         // Load existing games, add new one, save back to disk
@@ -1083,10 +1202,28 @@ fn show_edit_game_dialog(
         .active(game.force_gamemode)
         .build();
 
+    let wayland_row_game = adw::SwitchRow::builder()
+        .title("Wayland")
+        .active(game.game_wayland)
+        .build();
+
+    let wow64_row_game = adw::SwitchRow::builder()
+        .title("WoW64")
+        .active(game.game_wow64)
+        .build();
+
+    let ntsync_row_game = adw::SwitchRow::builder()
+        .title("NTSync")
+        .active(game.game_ntsync)
+        .build();
+
     let advanced_group = adw::PreferencesGroup::builder().title("Overrides").build();
     advanced_group.add(&args_row);
     advanced_group.add(&mangohud_row);
     advanced_group.add(&gamemode_row);
+    advanced_group.add(&wayland_row_game);
+    advanced_group.add(&wow64_row_game);
+    advanced_group.add(&ntsync_row_game);
 
     // Add winetricks button
     let winetricks_btn = gtk4::Button::builder().label("Open Winetricks").build();
@@ -1146,6 +1283,9 @@ fn show_edit_game_dialog(
             launch_args: args_row.text().to_string(),
             force_mangohud: mangohud_row.is_active(),
             force_gamemode: gamemode_row.is_active(),
+            game_wayland: wayland_row_game.is_active(),
+            game_wow64: wow64_row_game.is_active(),
+            game_ntsync: ntsync_row_game.is_active(),
         };
 
         // Load games, find and replace the edited one

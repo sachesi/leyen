@@ -460,7 +460,6 @@ fn detect_proton_versions() -> GlobalSettings {
 
 fn main() -> glib::ExitCode {
     check_or_install_umu();
-    ensure_winetricks_verbs_cached();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -1006,7 +1005,7 @@ fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOve
     // ── Maintenance ────────────────────────────────────────────────────────
     let maintenance_group = adw::PreferencesGroup::builder()
         .title("Maintenance")
-        .description("Use these actions to fix runtime issues (e.g. Winetricks failing to launch).")
+        .description("Use these actions to fix runtime issues.")
         .build();
 
     let reset_btn = gtk4::Button::builder()
@@ -1022,8 +1021,8 @@ fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOve
             .message("Reset umu Runtime?")
             .detail(
                 "This deletes the Steam Linux Runtime (steamrt3) directory. \
-umu-launcher will re-download a clean copy the next time Winetricks is run.\n\n\
-Use this to fix \"pressure-vessel-wrap\" errors during Winetricks installs.",
+umu-launcher will re-download a clean copy the next time a dependency is installed.\n\n\
+Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
             )
             .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
             .cancel_button(0)
@@ -1040,7 +1039,7 @@ Use this to fix \"pressure-vessel-wrap\" errors during Winetricks installs.",
                     match fs::remove_dir_all(&runtime_dir) {
                         Ok(_) => {
                             overlay_clone.add_toast(adw::Toast::new(
-                                "umu runtime reset. Re-run Winetricks to download a fresh copy.",
+                                "umu runtime reset. Re-run any dependency install to download a fresh copy.",
                             ));
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -1524,29 +1523,30 @@ fn show_edit_game_dialog(
     advanced_group.add(&wow64_row_game);
     advanced_group.add(&ntsync_row_game);
 
-    // Add winetricks button
-    let winetricks_btn = gtk4::Button::builder().label("Open Winetricks").build();
+    let deps_btn = gtk4::Button::builder()
+        .label("Manage Dependencies")
+        .build();
 
     let game_prefix = game.prefix_path.clone();
     let game_proton = resolve_proton_path(&game.proton).unwrap_or_default();
-    let overlay_clone_wt = overlay.clone();
+    let overlay_clone_deps = overlay.clone();
     let dialog_parent = parent.clone();
-    winetricks_btn.connect_clicked(move |_| {
-        show_winetricks_dialog(
+    deps_btn.connect_clicked(move |_| {
+        show_dependencies_dialog(
             &dialog_parent,
             &game_prefix,
             &game_proton,
-            &overlay_clone_wt,
+            &overlay_clone_deps,
         );
     });
 
-    let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
-    winetricks_group.add(&winetricks_btn);
+    let tools_group = adw::PreferencesGroup::builder().title("Tools").build();
+    tools_group.add(&deps_btn);
 
     page.add(&game_group);
     page.add(&env_group);
     page.add(&advanced_group);
-    page.add(&winetricks_group);
+    page.add(&tools_group);
 
     clamp.set_child(Some(&page));
 
@@ -1680,192 +1680,508 @@ fn show_delete_confirmation(
     });
 }
 
-// --- WINETRICKS VERB LIST CACHE ---
 
-const WINETRICKS_VERBS_URL: &str =
-    "https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt";
-const WINETRICKS_PROGRESS_PULSE_INTERVAL_MS: u64 = 120;
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPENDENCY MANAGEMENT SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
 
-fn get_winetricks_verbs_path() -> String {
+// ── Data Structures ──────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct DepCatalogEntry {
+    id: &'static str,
+    name: &'static str,
+    description: &'static str,
+    category: &'static str,
+}
+
+#[derive(Clone)]
+enum DepStepAction {
+    DownloadFile {
+        url: &'static str,
+        file_name: &'static str,
+    },
+    RunExe {
+        file_name: &'static str,
+        args: &'static str,
+        extra_env: &'static str,
+    },
+    RunMsi {
+        file_name: &'static str,
+        args: &'static str,
+    },
+    OverrideDlls {
+        dlls: &'static str,
+        override_type: &'static str,
+    },
+    RegisterDll {
+        dll: &'static str,
+    },
+}
+
+#[derive(Clone)]
+struct DepStep {
+    description: &'static str,
+    action: DepStepAction,
+}
+
+// ── Progress messages (sent from background thread → GTK main loop) ──────────
+
+enum DepInstallMsg {
+    Progress {
+        step: usize,
+        total: usize,
+        description: String,
+    },
+    Done,
+    Failed(String),
+}
+
+// ── Built-in catalog ─────────────────────────────────────────────────────────
+
+const DEP_CATALOG: &[DepCatalogEntry] = &[
+    DepCatalogEntry {
+        id: "vcredist2022",
+        name: "Visual C++ 2015-2022 Redistributable",
+        description: "Microsoft Visual C++ runtime libraries required by most modern Windows applications",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "dotnet48",
+        name: ".NET Framework 4.8",
+        description: "Microsoft .NET Framework 4.8 — required by many Windows desktop applications",
+        category: "Runtime",
+    },
+    DepCatalogEntry {
+        id: "mono",
+        name: "Wine Mono",
+        description: "Wine's built-in .NET Framework replacement — lighter alternative to installing MS .NET",
+        category: "Wine Components",
+    },
+    DepCatalogEntry {
+        id: "gecko",
+        name: "Wine Gecko",
+        description: "Wine's Internet Explorer engine — needed for applications that embed a browser",
+        category: "Wine Components",
+    },
+];
+
+fn get_dep_steps(id: &str) -> Vec<DepStep> {
+    match id {
+        "vcredist2022" => vcredist2022_steps(),
+        "dotnet48" => dotnet48_steps(),
+        "mono" => mono_steps(),
+        "gecko" => gecko_steps(),
+        _ => Vec::new(),
+    }
+}
+
+fn vcredist2022_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Visual C++ Redistributable (x86)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+                file_name: "vcredist2022_x86.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ Redistributable (x86)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2022_x86.exe",
+                args: "/quiet /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Downloading Visual C++ Redistributable (x64)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+                file_name: "vcredist2022_x64.exe",
+            },
+        },
+        DepStep {
+            description: "Installing Visual C++ Redistributable (x64)…",
+            action: DepStepAction::RunExe {
+                file_name: "vcredist2022_x64.exe",
+                args: "/quiet /norestart",
+                extra_env: "",
+            },
+        },
+        DepStep {
+            description: "Configuring Visual C++ DLL overrides…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "vcruntime140,vcruntime140_1,msvcp140,msvcp140_1,msvcp140_2,concrt140,atl140,vcomp140",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn dotnet48_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading .NET Framework 4.8…",
+            action: DepStepAction::DownloadFile {
+                url: "https://go.microsoft.com/fwlink/?linkid=2088631",
+                file_name: "dotnet48.exe",
+            },
+        },
+        DepStep {
+            description: "Installing .NET Framework 4.8…",
+            action: DepStepAction::RunExe {
+                file_name: "dotnet48.exe",
+                args: "/sfxlang:1027 /q /norestart",
+                extra_env: "WINEDLLOVERRIDES=fusion=b",
+            },
+        },
+        DepStep {
+            description: "Configuring mscoree DLL override…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "mscoree",
+                override_type: "native",
+            },
+        },
+    ]
+}
+
+fn mono_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Wine Mono…",
+            action: DepStepAction::DownloadFile {
+                url: "https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi",
+                file_name: "wine-mono-10.3.0-x86.msi",
+            },
+        },
+        DepStep {
+            description: "Installing Wine Mono…",
+            action: DepStepAction::RunMsi {
+                file_name: "wine-mono-10.3.0-x86.msi",
+                args: "/qn",
+            },
+        },
+        DepStep {
+            description: "Configuring mscoree DLL override…",
+            action: DepStepAction::OverrideDlls {
+                dlls: "mscoree",
+                override_type: "native,builtin",
+            },
+        },
+    ]
+}
+
+fn gecko_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Downloading Wine Gecko (x86)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86.msi",
+                file_name: "wine-gecko-x86.msi",
+            },
+        },
+        DepStep {
+            description: "Installing Wine Gecko (x86)…",
+            action: DepStepAction::RunMsi {
+                file_name: "wine-gecko-x86.msi",
+                args: "/qn",
+            },
+        },
+        DepStep {
+            description: "Downloading Wine Gecko (x64)…",
+            action: DepStepAction::DownloadFile {
+                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86_64.msi",
+                file_name: "wine-gecko-x64.msi",
+            },
+        },
+        DepStep {
+            description: "Installing Wine Gecko (x64)…",
+            action: DepStepAction::RunMsi {
+                file_name: "wine-gecko-x64.msi",
+                args: "/qn",
+            },
+        },
+    ]
+}
+
+// ── Cache & tracking helpers ──────────────────────────────────────────────────
+
+fn get_deps_cache_dir() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/.local/share/leyen/core/winetricks/all.txt", home)
+    format!("{}/.local/share/leyen/deps/cache", home)
 }
 
-fn resolve_winetricks_prefix_path(prefix_path: &str) -> String {
-    if !prefix_path.is_empty() {
-        return prefix_path.to_string();
-    }
-    let from_settings = load_settings().default_prefix_path;
-    if !from_settings.is_empty() {
-        from_settings
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        format!("{}/.local/share/leyen/prefixes/default", home)
-    }
+fn get_prefix_deps_file(prefix_path: &str) -> PathBuf {
+    PathBuf::from(prefix_path).join(".leyen/deps/installed.txt")
 }
 
-fn get_prefix_winetricks_info_dir(prefix_path: &str) -> PathBuf {
-    PathBuf::from(prefix_path).join(".leyen/winetricks")
-}
-
-fn now_unix_timestamp() -> String {
-    match SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-    {
-        Ok(ts) => ts.to_string(),
-        Err(e) => {
-            eprintln!("Failed to compute unix timestamp for winetricks log: {}", e);
-            "unknown-ts".to_string()
-        }
-    }
-}
-
-fn write_winetricks_log(prefix_path: &str, message: &str) {
-    let info_dir = get_prefix_winetricks_info_dir(prefix_path);
-    if let Err(e) = fs::create_dir_all(&info_dir) {
-        eprintln!(
-            "Failed to create winetricks log dir '{}': {}",
-            info_dir.display(),
-            e
-        );
-        return;
-    }
-    let log_path = info_dir.join("install.log");
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
-        if let Err(e) = std::io::Write::write_all(
-            &mut file,
-            format!("[{}] {}\n", now_unix_timestamp(), message).as_bytes(),
-        ) {
-            eprintln!(
-                "Failed to write winetricks log entry '{}': {}",
-                log_path.display(),
-                e
-            );
-        }
-    } else {
-        eprintln!("Failed to open winetricks log '{}'", log_path.display());
-    }
-}
-
-fn read_installed_winetricks_components(prefix_path: &str) -> std::collections::HashSet<String> {
-    let components_path =
-        get_prefix_winetricks_info_dir(prefix_path).join("installed_components.txt");
-    fs::read_to_string(&components_path)
+fn read_installed_deps(prefix_path: &str) -> std::collections::HashSet<String> {
+    let path = get_prefix_deps_file(prefix_path);
+    fs::read_to_string(&path)
         .ok()
         .map(|content| {
             content
                 .lines()
-                .filter(|line| !line.trim().is_empty())
-                .map(|line| line.trim().to_string())
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn write_installed_winetricks_components(prefix_path: &str, verbs: &[String]) {
-    let info_dir = get_prefix_winetricks_info_dir(prefix_path);
-    if let Err(e) = fs::create_dir_all(&info_dir) {
-        eprintln!(
-            "Failed to create winetricks info dir '{}': {}",
-            info_dir.display(),
-            e
-        );
-        return;
+fn add_installed_dep(prefix_path: &str, dep_id: &str) {
+    let path = get_prefix_deps_file(prefix_path);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
     }
-    // Merge with whatever is already on disk (reuses the shared reader).
-    let mut all_components: std::collections::BTreeSet<String> =
-        read_installed_winetricks_components(prefix_path)
-            .into_iter()
-            .collect();
-    for verb in verbs {
-        all_components.insert(verb.clone());
-    }
-    let components_path = info_dir.join("installed_components.txt");
-    let data = all_components.into_iter().collect::<Vec<_>>().join("\n");
-    if let Err(e) = fs::write(&components_path, format!("{}\n", data)) {
-        eprintln!(
-            "Failed to write installed winetricks components '{}': {}",
-            components_path.display(),
-            e
-        );
-    }
+    let mut installed = read_installed_deps(prefix_path);
+    installed.insert(dep_id.to_string());
+    let mut sorted: Vec<String> = installed.into_iter().collect();
+    sorted.sort();
+    let _ = fs::write(&path, format!("{}\n", sorted.join("\n")));
 }
 
-/// Downloads the winetricks verb list in the background if it is not yet cached.
-fn ensure_winetricks_verbs_cached() {
-    let cache_path = get_winetricks_verbs_path();
-    if std::path::Path::new(&cache_path).exists() {
-        return;
-    }
-    std::thread::spawn(move || {
-        if let Some(parent) = std::path::Path::new(&cache_path).parent() {
-            let _ = fs::create_dir_all(parent);
+fn remove_installed_dep(prefix_path: &str, dep_id: &str) {
+    let path = get_prefix_deps_file(prefix_path);
+    let mut installed = read_installed_deps(prefix_path);
+    installed.remove(dep_id);
+    let mut sorted: Vec<String> = installed.into_iter().collect();
+    sorted.sort();
+    let _ = fs::write(&path, format!("{}\n", sorted.join("\n")));
+}
+
+// ── Step execution engine ─────────────────────────────────────────────────────
+
+fn execute_dep_step(
+    step: &DepStep,
+    prefix_path: &str,
+    proton_path: &str,
+    cache_dir: &str,
+) -> Result<(), String> {
+    match &step.action {
+        DepStepAction::DownloadFile { url, file_name } => {
+            let dest = format!("{}/{}", cache_dir, file_name);
+            if std::path::Path::new(&dest).exists() {
+                return Ok(());
+            }
+            let _ = fs::create_dir_all(cache_dir);
+            let status = std::process::Command::new("curl")
+                .args(["-sL", "--fail", "--location", "-o", &dest, url])
+                .status()
+                .map_err(|e| format!("curl unavailable: {}", e))?;
+            if !status.success() {
+                let _ = fs::remove_file(&dest);
+                return Err(format!("Download failed for {}", file_name));
+            }
+            Ok(())
         }
-        let _ = std::process::Command::new("curl")
-            .args(["-sL", "--fail", "-o", &cache_path, WINETRICKS_VERBS_URL])
-            .status();
-    });
+
+        DepStepAction::RunExe {
+            file_name,
+            args,
+            extra_env,
+        } => {
+            let exe_path = format!("{}/{}", cache_dir, file_name);
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            for pair in extra_env.split_whitespace() {
+                if let Some(eq) = pair.find('=') {
+                    cmd.env(&pair[..eq], &pair[eq + 1..]);
+                }
+            }
+            let mut run_args = vec![exe_path];
+            for arg in args.split_whitespace() {
+                run_args.push(arg.to_string());
+            }
+            cmd.args(&run_args);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to launch {}: {}", file_name, e))?;
+            if !status.success() {
+                return Err(format!("Installer '{}' exited with an error", file_name));
+            }
+            Ok(())
+        }
+
+        DepStepAction::RunMsi { file_name, args } => {
+            let msi_path = format!("{}/{}", cache_dir, file_name);
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            let mut run_args = vec![
+                "msiexec.exe".to_string(),
+                "/i".to_string(),
+                msi_path,
+            ];
+            for arg in args.split_whitespace() {
+                run_args.push(arg.to_string());
+            }
+            cmd.args(&run_args);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run msiexec for {}: {}", file_name, e))?;
+            if !status.success() {
+                return Err(format!("MSI install '{}' failed", file_name));
+            }
+            Ok(())
+        }
+
+        DepStepAction::OverrideDlls {
+            dlls,
+            override_type,
+        } => {
+            let reg_lines: Vec<String> = dlls
+                .split(',')
+                .map(|d| format!("\"{}\"=\"{}\"", d.trim(), override_type))
+                .collect();
+            let reg_content = format!(
+                "Windows Registry Editor Version 5.00\r\n\r\n\
+                 [HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\r\n\
+                 {}\r\n",
+                reg_lines.join("\r\n")
+            );
+            let safe_name = dlls
+                .split(',')
+                .next()
+                .unwrap_or("dll")
+                .trim()
+                .replace(['-', '.'], "_");
+            let reg_path = format!("{}/override_{}.reg", cache_dir, safe_name);
+            fs::write(&reg_path, reg_content)
+                .map_err(|e| format!("Failed to write .reg file: {}", e))?;
+
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            cmd.args(["regedit.exe", "/S", &reg_path]);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run regedit: {}", e))?;
+            let _ = fs::remove_file(&reg_path);
+            if !status.success() {
+                return Err(format!("DLL override registration failed for: {}", dlls));
+            }
+            Ok(())
+        }
+
+        DepStepAction::RegisterDll { dll } => {
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            cmd.args(["regsvr32.exe", "/s", dll]);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run regsvr32: {}", e))?;
+            if !status.success() {
+                return Err(format!("Failed to register DLL '{}'", dll));
+            }
+            Ok(())
+        }
+    }
 }
 
-#[derive(Clone)]
-struct WinetricksVerb {
-    category: String,
-    verb: String,
-    description: String,
-}
+// ── Async orchestrator ────────────────────────────────────────────────────────
 
-/// Parses the `all.txt` format:
-///   `===== category =====`
-///   `verb_name    Description text [optional tags]`
-fn parse_winetricks_verbs(content: &str) -> Vec<WinetricksVerb> {
-    let mut result = Vec::new();
-    let mut current_cat = String::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("=====") {
-            current_cat = trimmed.trim_matches('=').trim().to_string();
-        } else if !trimmed.is_empty() && !current_cat.is_empty() && current_cat != "prefix" {
-            // Verb lines: verb followed by whitespace then description.
-            // Some lines use a single space, others use many — split on first space.
-            let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
-            if parts.len() == 2 {
-                let verb = parts[0].trim().to_string();
-                let description = parts[1].trim().to_string();
-                if !verb.is_empty() {
-                    result.push(WinetricksVerb {
-                        category: current_cat.clone(),
-                        verb,
-                        description,
-                    });
+fn install_dep_async(
+    dep_id: &str,
+    prefix_path: &str,
+    proton_path: &str,
+    overlay: &adw::ToastOverlay,
+    on_progress: impl Fn(usize, usize, String) + 'static,
+    on_finish: impl FnOnce(bool, Option<String>) + 'static,
+) {
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        on_finish(false, Some("umu-launcher not ready".to_string()));
+        return;
+    }
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        on_finish(false, Some("umu-launcher not available".to_string()));
+        return;
+    }
+
+    let steps = get_dep_steps(dep_id);
+    if steps.is_empty() {
+        let msg = format!("No install steps defined for '{}'", dep_id);
+        overlay.add_toast(adw::Toast::new(&msg));
+        on_finish(false, Some(msg));
+        return;
+    }
+
+    let total = steps.len();
+    let prefix_t = prefix_path.to_string();
+    let proton_t = proton_path.to_string();
+    let cache_dir = get_deps_cache_dir();
+
+    // Shared queue: background thread pushes messages; idle callback drains them on GTK thread.
+    let queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<DepInstallMsg>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let queue_bg = queue.clone();
+
+    let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
+    let on_progress = std::rc::Rc::new(on_progress);
+
+    glib::idle_add_local(move || {
+        let mut q = queue.lock().unwrap();
+        while let Some(msg) = q.pop_front() {
+            match msg {
+                DepInstallMsg::Progress { step, total, description } => {
+                    on_progress(step, total, description);
+                }
+                DepInstallMsg::Done => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(true, None); }
+                    return glib::ControlFlow::Break;
+                }
+                DepInstallMsg::Failed(err) => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(false, Some(err)); }
+                    return glib::ControlFlow::Break;
                 }
             }
         }
-    }
-    result
+        glib::ControlFlow::Continue
+    });
+
+    std::thread::spawn(move || {
+        for (i, step) in steps.iter().enumerate() {
+            queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
+                step: i + 1,
+                total,
+                description: step.description.to_string(),
+            });
+            if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
+                return;
+            }
+        }
+        queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
+    });
 }
 
-fn load_winetricks_verbs() -> Vec<WinetricksVerb> {
-    match fs::read_to_string(get_winetricks_verbs_path()) {
-        Ok(content) => parse_winetricks_verbs(&content),
-        Err(_) => Vec::new(),
-    }
-}
+// ── Markup escaping helper ───────────────────────────────────────────────────
 
-fn category_display_name(cat: &str) -> &str {
-    match cat {
-        "dlls" => "DLLs",
-        "fonts" => "Fonts",
-        "apps" => "Applications",
-        "benchmarks" => "Benchmarks",
-        "settings" => "Settings",
-        _ => cat,
-    }
-}
-
-/// Escapes the five XML/Pango special characters so the text can be safely
-/// passed to widgets that interpret their label/subtitle as Pango markup.
-fn escape_markup(s: &str) -> String {
+fn escape_dep_markup(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -1873,106 +2189,82 @@ fn escape_markup(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-// Display order for categories.
-const CATEGORY_ORDER: &[&str] = &["dlls", "fonts", "apps", "settings", "benchmarks"];
+// ── Dependencies dialog ───────────────────────────────────────────────────────
 
-// --- WINETRICKS INTEGRATION ---
+const DEP_CATEGORY_ORDER: &[&str] = &["Runtime", "Wine Components"];
 
-/// Opens a verb-browser dialog: search bar + grouped, checkable verb list, then
-/// calls `launch_winetricks` with the user's selection.
-fn show_winetricks_dialog(
+fn dep_category_order(cat: &str) -> usize {
+    DEP_CATEGORY_ORDER
+        .iter()
+        .position(|&c| c == cat)
+        .unwrap_or(usize::MAX)
+}
+
+fn show_dependencies_dialog(
     parent: &adw::ApplicationWindow,
     prefix_path: &str,
     proton_path: &str,
     overlay: &adw::ToastOverlay,
 ) {
-    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
-        overlay.add_toast(adw::Toast::new(
-            "umu-launcher is still downloading, please wait…",
-        ));
-        return;
-    }
+    let resolved_prefix = if !prefix_path.is_empty() {
+        prefix_path.to_string()
+    } else {
+        let s = load_settings();
+        if !s.default_prefix_path.is_empty() {
+            s.default_prefix_path
+        } else {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            format!("{}/.local/share/leyen/prefixes/default", home)
+        }
+    };
 
-    if !is_umu_run_available() {
-        overlay.add_toast(adw::Toast::new(
-            "umu-launcher is not installed. Please check your internet connection and restart.",
-        ));
-        return;
-    }
+    let installed = read_installed_deps(&resolved_prefix);
+    let installed_count = installed.len();
 
-    // Load verbs from disk cache.
-    let verbs = load_winetricks_verbs();
-    if verbs.is_empty() {
-        // Cache not ready yet — trigger download and ask user to retry.
-        ensure_winetricks_verbs_cached();
-        overlay.add_toast(adw::Toast::new(
-            "Downloading verb list… Please re-open Winetricks in a moment.",
-        ));
-        return;
-    }
-
-    // Resolve prefix now so we can load the installed-components list for
-    // this prefix and display it in the dialog.
-    let resolved_prefix = resolve_winetricks_prefix_path(prefix_path);
-    let installed = read_installed_winetricks_components(&resolved_prefix);
-
-    // ── Dialog window ──────────────────────────────────────────────────────
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(480)
-        .default_height(600)
+        .default_width(520)
+        .default_height(640)
         .destroy_with_parent(true)
         .build();
 
-    let installed_count = installed.len();
-    let subtitle = if installed_count == 0 {
-        "Install Windows components".to_string()
-    } else if installed_count == 1 {
-        "1 component already installed".to_string()
-    } else {
-        format!("{} components already installed", installed_count)
+    let subtitle = match installed_count {
+        0 => "No components installed".to_string(),
+        1 => "1 component installed".to_string(),
+        n => format!("{} components installed", n),
     };
+
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Winetricks", &subtitle))
+        .title_widget(&adw::WindowTitle::new("Manage Dependencies", &subtitle))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
 
-    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
-    let run_btn = gtk4::Button::builder()
-        .label("Install")
-        .css_classes(["suggested-action"])
-        .build();
+    let close_btn = gtk4::Button::builder().label("Close").build();
+    header.pack_start(&close_btn);
 
-    header.pack_start(&cancel_btn);
-    header.pack_end(&run_btn);
-
-    let progress_bar = gtk4::ProgressBar::builder()
-        .visible(false)
-        .hexpand(true)
-        .build();
-
-    // ── Search entry (pinned above the scroll) ─────────────────────────────
     let search_entry = gtk4::SearchEntry::builder()
-        .placeholder_text("Search verbs…")
+        .placeholder_text("Search dependencies…")
         .margin_top(8)
-        .margin_bottom(8)
+        .margin_bottom(4)
         .margin_start(12)
         .margin_end(12)
         .build();
 
-    // ── Scrollable content: one PreferencesGroup per category ─────────────
-    let clamp = adw::Clamp::builder().margin_top(4).margin_bottom(8).build();
+    let clamp = adw::Clamp::builder()
+        .margin_top(4)
+        .margin_bottom(8)
+        .build();
 
-    let verb_box = gtk4::Box::builder()
+    let dep_box = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .spacing(8)
         .margin_start(12)
         .margin_end(12)
         .build();
 
-    clamp.set_child(Some(&verb_box));
+    clamp.set_child(Some(&dep_box));
 
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -1980,91 +2272,83 @@ fn show_winetricks_dialog(
         .child(&clamp)
         .build();
 
-    // ── Selected-verbs footer ──────────────────────────────────────────────
-    let footer_box = gtk4::Box::builder()
-        .orientation(gtk4::Orientation::Horizontal)
-        .spacing(6)
-        .margin_top(6)
-        .margin_bottom(8)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-
-    let footer_caption = gtk4::Label::builder()
-        .label("Selected:")
-        .css_classes(["dim-label"])
-        .build();
-
-    let footer_label = gtk4::Label::builder()
-        .label("none")
-        .xalign(0.0)
-        .wrap(true)
-        .selectable(true)
-        .hexpand(true)
-        .build();
-
-    footer_box.append(&footer_caption);
-    footer_box.append(&footer_label);
-
-    // ── Outer layout ───────────────────────────────────────────────────────
     let content_box = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .build();
     content_box.append(&search_entry);
     content_box.append(&scroll);
 
-    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-    content_box.append(&sep);
-    content_box.append(&footer_box);
-
-    let outer = gtk4::Box::builder()
-        .orientation(gtk4::Orientation::Vertical)
-        .build();
-    outer.append(&progress_bar);
-    outer.append(&content_box);
-
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&outer));
+    toolbar_view.set_content(Some(&content_box));
     dialog.set_content(Some(&toolbar_view));
 
-    // ── Build grouped rows ─────────────────────────────────────────────────
-    // selected: shared mutable set of chosen verb names
-    let selected: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let mut entries: Vec<&DepCatalogEntry> = DEP_CATALOG.iter().collect();
+    entries.sort_by(|a, b| {
+        dep_category_order(a.category)
+            .cmp(&dep_category_order(b.category))
+            .then(a.name.cmp(b.name))
+    });
 
-    // groups: (group_widget, Vec<(row, verb_name)>) — used for search filtering
-    let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, String)>)> = Vec::new();
-
-    // Collect verbs grouped and ordered by CATEGORY_ORDER.
-    let mut ordered_cats: Vec<&str> = CATEGORY_ORDER.to_vec();
-    // Append any categories not in CATEGORY_ORDER (forward-compat).
-    for v in &verbs {
-        if !ordered_cats.contains(&v.category.as_str()) {
-            ordered_cats.push(&v.category);
+    let mut categories: Vec<&str> = Vec::new();
+    for e in &entries {
+        if !categories.contains(&e.category) {
+            categories.push(e.category);
         }
     }
 
-    for cat in ordered_cats {
-        let cat_verbs: Vec<&WinetricksVerb> = verbs.iter().filter(|v| v.category == cat).collect();
-        if cat_verbs.is_empty() {
-            continue;
-        }
+    let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)> = Vec::new();
 
-        let group = adw::PreferencesGroup::builder()
-            .title(category_display_name(cat))
-            .build();
+    for cat in &categories {
+        let group = adw::PreferencesGroup::builder().title(*cat).build();
+        let mut rows_in_group: Vec<(adw::ActionRow, &'static str)> = Vec::new();
 
-        let mut group_rows: Vec<(adw::ActionRow, String)> = Vec::new();
+        for entry in entries.iter().filter(|e| e.category == *cat) {
+            let dep_id = entry.id;
+            let is_installed = installed.contains(dep_id);
 
-        for wv in cat_verbs {
             let row = adw::ActionRow::builder()
-                .title(&wv.verb)
-                .subtitle(&escape_markup(&wv.description))
-                .activatable(true)
+                .title(entry.name)
+                .subtitle(&escape_dep_markup(entry.description))
                 .build();
 
-            // If this verb is already installed in the prefix, add a badge.
-            if installed.contains(&wv.verb) {
+            let spinner = gtk4::Spinner::builder()
+                .valign(gtk4::Align::Center)
+                .visible(false)
+                .build();
+
+            let progress_label = gtk4::Label::builder()
+                .label("")
+                .css_classes(["caption", "dim-label"])
+                .valign(gtk4::Align::Center)
+                .visible(false)
+                .max_width_chars(24)
+                .ellipsize(gtk4::pango::EllipsizeMode::End)
+                .build();
+
+            let install_btn = gtk4::Button::builder()
+                .label("Install")
+                .css_classes(["suggested-action"])
+                .valign(gtk4::Align::Center)
+                .visible(!is_installed)
+                .build();
+
+            let reinstall_btn = gtk4::Button::builder()
+                .icon_name("view-refresh-symbolic")
+                .tooltip_text("Reinstall")
+                .valign(gtk4::Align::Center)
+                .visible(is_installed)
+                .build();
+
+            let remove_btn = gtk4::Button::builder()
+                .icon_name("user-trash-symbolic")
+                .tooltip_text("Remove")
+                .css_classes(["destructive-action"])
+                .valign(gtk4::Align::Center)
+                .visible(is_installed)
+                .build();
+
+            if is_installed {
                 let badge = gtk4::Label::builder()
                     .label("✓ Installed")
                     .css_classes(["success", "caption"])
@@ -2073,58 +2357,221 @@ fn show_winetricks_dialog(
                 row.add_suffix(&badge);
             }
 
-            let check = gtk4::CheckButton::builder()
-                .valign(gtk4::Align::Center)
-                .build();
-            row.add_suffix(&check);
-            row.set_activatable_widget(Some(&check));
+            row.add_suffix(&spinner);
+            row.add_suffix(&progress_label);
+            row.add_suffix(&install_btn);
+            row.add_suffix(&reinstall_btn);
+            row.add_suffix(&remove_btn);
 
-            // Checkbox toggled → update selected list + footer label.
-            let selected_clone = Rc::clone(&selected);
-            let footer_clone = footer_label.clone();
-            let verb_name = wv.verb.clone();
-            check.connect_toggled(move |b| {
-                let mut sel = selected_clone.borrow_mut();
-                if b.is_active() {
-                    if !sel.contains(&verb_name) {
-                        sel.push(verb_name.clone());
-                    }
-                } else {
-                    sel.retain(|v| v != &verb_name);
-                }
-                footer_clone.set_text(
-                    if sel.is_empty() {
-                        "none".to_string()
-                    } else {
-                        format!("{} verb(s) selected", sel.len())
-                    }
-                    .as_str(),
-                );
-            });
+            // ── Install button ─────────────────────────────────────────────
+            {
+                let install_btn2 = install_btn.clone();
+                let reinstall_btn2 = reinstall_btn.clone();
+                let remove_btn2 = remove_btn.clone();
+                let spinner2 = spinner.clone();
+                let progress_label2 = progress_label.clone();
+                let row2 = row.clone();
+                let prefix2 = resolved_prefix.clone();
+                let proton2 = proton_path.to_string();
+                let overlay2 = overlay.clone();
+
+                install_btn.connect_clicked(move |_| {
+                    install_btn2.set_visible(false);
+                    spinner2.set_visible(true);
+                    spinner2.start();
+                    progress_label2.set_visible(true);
+                    row2.set_sensitive(false);
+
+                    let install_btn3 = install_btn2.clone();
+                    let reinstall_btn3 = reinstall_btn2.clone();
+                    let remove_btn3 = remove_btn2.clone();
+                    let spinner3 = spinner2.clone();
+                    let progress_label3 = progress_label2.clone();
+                    let row3 = row2.clone();
+                    let prefix3 = prefix2.clone();
+                    let overlay3 = overlay2.clone();
+
+                    let progress_label_p = progress_label2.clone();
+                    let on_progress = move |_step: usize, _total: usize, desc: String| {
+                        progress_label_p.set_label(&desc);
+                    };
+
+                    let on_finish = move |success: bool, err: Option<String>| {
+                        spinner3.stop();
+                        spinner3.set_visible(false);
+                        progress_label3.set_visible(false);
+                        row3.set_sensitive(true);
+                        if success {
+                            add_installed_dep(&prefix3, dep_id);
+                            install_btn3.set_visible(false);
+                            reinstall_btn3.set_visible(true);
+                            remove_btn3.set_visible(true);
+                            overlay3.add_toast(adw::Toast::new(&format!(
+                                "'{}' installed successfully.",
+                                dep_id
+                            )));
+                        } else {
+                            install_btn3.set_visible(true);
+                            let msg = err.unwrap_or_else(|| "Installation failed.".to_string());
+                            overlay3.add_toast(adw::Toast::new(&msg));
+                        }
+                    };
+
+                    install_dep_async(
+                        dep_id,
+                        &prefix2,
+                        &proton2,
+                        &overlay2,
+                        on_progress,
+                        on_finish,
+                    );
+                });
+            }
+
+            // ── Reinstall button ───────────────────────────────────────────
+            {
+                let install_btn2 = install_btn.clone();
+                let reinstall_btn2 = reinstall_btn.clone();
+                let remove_btn2 = remove_btn.clone();
+                let spinner2 = spinner.clone();
+                let progress_label2 = progress_label.clone();
+                let row2 = row.clone();
+                let prefix2 = resolved_prefix.clone();
+                let proton2 = proton_path.to_string();
+                let overlay2 = overlay.clone();
+
+                reinstall_btn.connect_clicked(move |_| {
+                    reinstall_btn2.set_visible(false);
+                    remove_btn2.set_visible(false);
+                    spinner2.set_visible(true);
+                    spinner2.start();
+                    progress_label2.set_visible(true);
+                    row2.set_sensitive(false);
+
+                    let install_btn3 = install_btn2.clone();
+                    let reinstall_btn3 = reinstall_btn2.clone();
+                    let remove_btn3 = remove_btn2.clone();
+                    let spinner3 = spinner2.clone();
+                    let progress_label3 = progress_label2.clone();
+                    let row3 = row2.clone();
+                    let prefix3 = prefix2.clone();
+                    let overlay3 = overlay2.clone();
+
+                    let progress_label_p = progress_label2.clone();
+                    let on_progress = move |_step: usize, _total: usize, desc: String| {
+                        progress_label_p.set_label(&desc);
+                    };
+
+                    let on_finish = move |success: bool, err: Option<String>| {
+                        spinner3.stop();
+                        spinner3.set_visible(false);
+                        progress_label3.set_visible(false);
+                        row3.set_sensitive(true);
+                        if success {
+                            add_installed_dep(&prefix3, dep_id);
+                            install_btn3.set_visible(false);
+                            reinstall_btn3.set_visible(true);
+                            remove_btn3.set_visible(true);
+                            overlay3.add_toast(adw::Toast::new(&format!(
+                                "'{}' reinstalled successfully.",
+                                dep_id
+                            )));
+                        } else {
+                            install_btn3.set_visible(false);
+                            reinstall_btn3.set_visible(true);
+                            remove_btn3.set_visible(true);
+                            let msg = err.unwrap_or_else(|| "Reinstall failed.".to_string());
+                            overlay3.add_toast(adw::Toast::new(&msg));
+                        }
+                    };
+
+                    install_dep_async(
+                        dep_id,
+                        &prefix2,
+                        &proton2,
+                        &overlay2,
+                        on_progress,
+                        on_finish,
+                    );
+                });
+            }
+
+            // ── Remove button ──────────────────────────────────────────────
+            {
+                let install_btn2 = install_btn.clone();
+                let reinstall_btn2 = reinstall_btn.clone();
+                let remove_btn2 = remove_btn.clone();
+                let row2 = row.clone();
+                let prefix2 = resolved_prefix.clone();
+                let overlay2 = overlay.clone();
+                let dialog2 = dialog.clone();
+
+                remove_btn.connect_clicked(move |_| {
+                    let confirm = gtk4::AlertDialog::builder()
+                        .message(&format!("Remove '{}'?", dep_id))
+                        .detail(
+                            "This removes the dependency from leyen's tracking. \
+                             Installed files may remain in the Wine prefix — use \
+                             Wine's Add/Remove Programs for a full uninstall.",
+                        )
+                        .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
+                        .cancel_button(0)
+                        .default_button(0)
+                        .build();
+
+                    let install_btn3 = install_btn2.clone();
+                    let reinstall_btn3 = reinstall_btn2.clone();
+                    let remove_btn3 = remove_btn2.clone();
+                    let row3 = row2.clone();
+                    let prefix3 = prefix2.clone();
+                    let overlay3 = overlay2.clone();
+
+                    confirm.choose(
+                        Some(&dialog2),
+                        gio::Cancellable::NONE,
+                        move |result| {
+                            if let Ok(1) = result {
+                                remove_installed_dep(&prefix3, dep_id);
+                                row3.set_sensitive(true);
+                                install_btn3.set_visible(true);
+                                reinstall_btn3.set_visible(false);
+                                remove_btn3.set_visible(false);
+                                overlay3.add_toast(adw::Toast::new(&format!(
+                                    "'{}' removed from tracking.",
+                                    dep_id
+                                )));
+                            }
+                        },
+                    );
+                });
+            }
 
             group.add(&row);
-            group_rows.push((row, wv.verb.clone()));
+            rows_in_group.push((row, dep_id));
         }
 
-        verb_box.append(&group);
-        groups.push((group, group_rows));
+        dep_box.append(&group);
+        groups.push((group, rows_in_group));
     }
 
-    // ── Search filtering ───────────────────────────────────────────────────
+    // ── Search filtering ──────────────────────────────────────────────────
     let groups_for_search = groups.clone();
     search_entry.connect_search_changed(move |entry| {
         let query = entry.text().to_lowercase();
         for (group, rows) in &groups_for_search {
             let mut any_visible = false;
-            for (row, verb) in rows {
+            for (row, dep_id) in rows {
                 let visible = if query.is_empty() {
                     true
                 } else {
-                    verb.to_lowercase().contains(&query)
-                        || row
-                            .subtitle()
-                            .map(|s| s.to_lowercase().contains(&query))
-                            .unwrap_or(false)
+                    let title = row.title().to_lowercase();
+                    let subtitle = row
+                        .subtitle()
+                        .map(|s| s.to_lowercase())
+                        .unwrap_or_default();
+                    title.contains(&query)
+                        || subtitle.contains(&query)
+                        || dep_id.contains(&query)
                 };
                 row.set_visible(visible);
                 if visible {
@@ -2135,172 +2582,8 @@ fn show_winetricks_dialog(
         }
     });
 
-    // ── Button actions ─────────────────────────────────────────────────────
-    let dialog_cancel = dialog.clone();
-    cancel_btn.connect_clicked(move |_| dialog_cancel.destroy());
-
-    let prefix_owned = prefix_path.to_string();
-    let proton_owned = proton_path.to_string();
-    let overlay_clone = overlay.clone();
-    let run_btn_run = run_btn.clone();
-    let cancel_btn_run = cancel_btn.clone();
-    let content_box_run = content_box.clone();
-    let progress_bar_run = progress_bar.clone();
-    let progress_pulse_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
-    let progress_pulse_source_run = progress_pulse_source.clone();
-    let progress_pulse_source_finish = progress_pulse_source.clone();
-    let dialog_run = dialog.clone();
-    run_btn.connect_clicked(move |_| {
-        let sel = selected.borrow();
-        if sel.is_empty() {
-            overlay_clone.add_toast(adw::Toast::new(
-                "Please select at least one verb to install.",
-            ));
-            return;
-        }
-        let selected_verbs: Vec<String> = sel.iter().cloned().collect();
-        let verbs_str = selected_verbs.join(" ");
-        let verb_count = selected_verbs.len();
-        drop(sel);
-
-        content_box_run.set_sensitive(false);
-        run_btn_run.set_sensitive(false);
-        cancel_btn_run.set_sensitive(false);
-        progress_bar_run.set_visible(true);
-        progress_bar_run.pulse();
-        if let Some(source_id) = progress_pulse_source_run.borrow_mut().take() {
-            source_id.remove();
-        }
-        let progress_bar_anim = progress_bar_run.clone();
-        let source_id = glib::timeout_add_local(
-            std::time::Duration::from_millis(WINETRICKS_PROGRESS_PULSE_INTERVAL_MS),
-            move || {
-                if progress_bar_anim.is_visible() {
-                    progress_bar_anim.pulse();
-                    glib::ControlFlow::Continue
-                } else {
-                    glib::ControlFlow::Break
-                }
-            },
-        );
-        *progress_pulse_source_run.borrow_mut() = Some(source_id);
-        dialog_run.set_deletable(false);
-
-        let content_box_finish = content_box_run.clone();
-        let run_btn_finish = run_btn_run.clone();
-        let cancel_btn_finish = cancel_btn_run.clone();
-        let progress_bar_finish = progress_bar_run.clone();
-        let progress_pulse_source_finish_local = progress_pulse_source_finish.clone();
-        let dialog_finish = dialog_run.clone();
-        launch_winetricks(
-            &prefix_owned,
-            &proton_owned,
-            &verbs_str,
-            verb_count,
-            &overlay_clone,
-            &selected_verbs,
-            move |success| {
-                if let Some(source_id) = progress_pulse_source_finish_local.borrow_mut().take() {
-                    source_id.remove();
-                }
-                content_box_finish.set_sensitive(true);
-                run_btn_finish.set_sensitive(true);
-                cancel_btn_finish.set_sensitive(true);
-                progress_bar_finish.set_visible(false);
-                dialog_finish.set_deletable(true);
-                if success {
-                    dialog_finish.destroy();
-                }
-            },
-        );
-    });
+    let dialog_close = dialog.clone();
+    close_btn.connect_clicked(move |_| dialog_close.destroy());
 
     dialog.present();
-}
-
-/// Launches `umu-run winetricks <verbs…>` for the given Wine prefix and Proton build.
-/// Shows a persistent "Installing…" toast while the process runs, then a
-/// completion/error toast once it exits.
-fn launch_winetricks(
-    prefix_path: &str,
-    proton_path: &str,
-    verbs: &str,
-    verb_count: usize,
-    overlay: &adw::ToastOverlay,
-    selected_verbs: &[String],
-    on_finish: impl FnOnce(bool) + 'static,
-) {
-    let umu = get_umu_run_path();
-    // Do not pipe stdout/stderr — winetricks/wine output can contain non-UTF-8
-    // bytes and an unread pipe buffer would deadlock the subprocess.  Inherit
-    // the parent's file descriptors so output flows naturally to the terminal.
-    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
-
-    let resolved_prefix_path = resolve_winetricks_prefix_path(prefix_path);
-    if !resolved_prefix_path.is_empty() {
-        launcher.setenv("WINEPREFIX", &resolved_prefix_path, true);
-    }
-
-    if !proton_path.is_empty() {
-        launcher.setenv("PROTONPATH", proton_path, true);
-    }
-
-    let mut cmd_args = vec![umu, "winetricks".to_string()];
-    cmd_args.extend(verbs.split_whitespace().map(|s| s.to_string()));
-
-    let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
-
-    match launcher.spawn(&os_args) {
-        Ok(subprocess) => {
-            let progress_toast = adw::Toast::builder()
-                .title(&format!("Installing {} verb(s)…", verb_count))
-                .timeout(0)
-                .build();
-            overlay.add_toast(progress_toast.clone());
-            let overlay_clone = overlay.clone();
-            let prefix_for_log = resolved_prefix_path.clone();
-            let verbs_for_log = selected_verbs.to_vec();
-            write_winetricks_log(
-                &prefix_for_log,
-                &format!("Starting winetricks install: {}", verbs_for_log.join(" ")),
-            );
-            // wait_check_async fires the callback with Ok(()) when the process
-            // exits with code 0, Err otherwise — no output buffering needed.
-            subprocess.wait_check_async(None::<&gio::Cancellable>, move |result| {
-                let finished_ok = result.is_ok();
-                if finished_ok {
-                    write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
-                }
-                write_winetricks_log(
-                    &prefix_for_log,
-                    &format!(
-                        "Finished winetricks install [{}]: {}",
-                        if finished_ok { "success" } else { "error" },
-                        verbs_for_log.join(" ")
-                    ),
-                );
-                progress_toast.dismiss();
-                let msg = if finished_ok {
-                    format!("{} verb(s) installed successfully.", verb_count)
-                } else {
-                    "Winetricks failed. If you see a pressure-vessel error, use \
-Settings → Reset umu Runtime, then try again."
-                        .to_string()
-                };
-                overlay_clone.add_toast(adw::Toast::new(&msg));
-                on_finish(finished_ok);
-            });
-        }
-        Err(e) => {
-            overlay.add_toast(adw::Toast::new(&format!(
-                "Failed to launch winetricks: {}",
-                e
-            )));
-            write_winetricks_log(
-                &resolved_prefix_path,
-                &format!("Failed to launch winetricks: {}", e),
-            );
-            on_finish(false);
-        }
-    }
 }

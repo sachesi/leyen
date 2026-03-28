@@ -2086,6 +2086,12 @@ fn show_winetricks_dialog(
         *progress_pulse_source_run.borrow_mut() = Some(source_id);
         dialog_run.set_deletable(false);
 
+        let content_box_finish = content_box_run.clone();
+        let run_btn_finish = run_btn_run.clone();
+        let cancel_btn_finish = cancel_btn_run.clone();
+        let progress_bar_finish = progress_bar_run.clone();
+        let progress_pulse_source_finish_local = progress_pulse_source_finish.clone();
+        let dialog_finish = dialog_run.clone();
         launch_winetricks(
             &prefix_owned,
             &proton_owned,
@@ -2094,16 +2100,16 @@ fn show_winetricks_dialog(
             &overlay_clone,
             &selected_verbs,
             move |success| {
-                if let Some(source_id) = progress_pulse_source_finish.borrow_mut().take() {
+                if let Some(source_id) = progress_pulse_source_finish_local.borrow_mut().take() {
                     source_id.remove();
                 }
-                content_box_run.set_sensitive(true);
-                run_btn_run.set_sensitive(true);
-                cancel_btn_run.set_sensitive(true);
-                progress_bar_run.set_visible(false);
-                dialog_run.set_deletable(true);
+                content_box_finish.set_sensitive(true);
+                run_btn_finish.set_sensitive(true);
+                cancel_btn_finish.set_sensitive(true);
+                progress_bar_finish.set_visible(false);
+                dialog_finish.set_deletable(true);
                 if success {
-                    dialog_run.destroy();
+                    dialog_finish.destroy();
                 }
             },
         );
@@ -2158,7 +2164,7 @@ fn launch_winetricks(
                 &format!("Starting winetricks install: {}", verbs_for_log.join(" ")),
             );
             subprocess.communicate_utf8_async(
-                None::<&str>,
+                None::<String>,
                 None::<&gio::Cancellable>,
                 move |result| {
                     let mut finished_ok = false;

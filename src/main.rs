@@ -1457,10 +1457,11 @@ fn show_edit_game_dialog(
     let winetricks_btn = gtk4::Button::builder().label("Open Winetricks").build();
 
     let game_prefix = game.prefix_path.clone();
+    let game_proton = resolve_proton_path(&game.proton).unwrap_or_default();
     let overlay_clone_wt = overlay.clone();
     let dialog_parent = parent.clone();
     winetricks_btn.connect_clicked(move |_| {
-        show_winetricks_dialog(&dialog_parent, &game_prefix, &overlay_clone_wt);
+        show_winetricks_dialog(&dialog_parent, &game_prefix, &game_proton, &overlay_clone_wt);
     });
 
     let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
@@ -1707,6 +1708,7 @@ const CATEGORY_ORDER: &[&str] = &["dlls", "fonts", "apps", "settings", "benchmar
 fn show_winetricks_dialog(
     parent: &adw::ApplicationWindow,
     prefix_path: &str,
+    proton_path: &str,
     overlay: &adw::ToastOverlay,
 ) {
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1890,7 +1892,7 @@ fn show_winetricks_dialog(
                 footer_clone.set_text(if sel.is_empty() {
                     "none".to_string()
                 } else {
-                    sel.join("  ")
+                    format!("{} verb(s) selected", sel.len())
                 }.as_str());
             });
 
@@ -1932,29 +1934,45 @@ fn show_winetricks_dialog(
     cancel_btn.connect_clicked(move |_| dialog_cancel.destroy());
 
     let prefix_owned = prefix_path.to_string();
+    let proton_owned = proton_path.to_string();
     let overlay_clone = overlay.clone();
     let dialog_run = dialog.clone();
     run_btn.connect_clicked(move |_| {
-        let verbs_str = selected.borrow().join(" ");
+        let sel = selected.borrow();
+        let verbs_str = sel.join(" ");
         if verbs_str.is_empty() {
             overlay_clone
                 .add_toast(adw::Toast::new("Please select at least one verb to install."));
             return;
         }
+        let verb_count = sel.len();
+        drop(sel);
         dialog_run.destroy();
-        launch_winetricks(&prefix_owned, &verbs_str, &overlay_clone);
+        launch_winetricks(&prefix_owned, &proton_owned, &verbs_str, verb_count, &overlay_clone);
     });
 
     dialog.present();
 }
 
-/// Launches `umu-run winetricks <verbs…>` for the given Wine prefix.
-fn launch_winetricks(prefix_path: &str, verbs: &str, overlay: &adw::ToastOverlay) {
+/// Launches `umu-run winetricks <verbs…>` for the given Wine prefix and Proton build.
+/// Shows a persistent "Installing…" toast while the process runs, then a
+/// completion/error toast once it exits.
+fn launch_winetricks(
+    prefix_path: &str,
+    proton_path: &str,
+    verbs: &str,
+    verb_count: usize,
+    overlay: &adw::ToastOverlay,
+) {
     let umu = get_umu_run_path();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
     if !prefix_path.is_empty() {
         launcher.setenv("WINEPREFIX", prefix_path, true);
+    }
+
+    if !proton_path.is_empty() {
+        launcher.setenv("PROTONPATH", proton_path, true);
     }
 
     let mut cmd_args = vec![umu, "winetricks".to_string()];
@@ -1963,8 +1981,22 @@ fn launch_winetricks(prefix_path: &str, verbs: &str, overlay: &adw::ToastOverlay
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
     match launcher.spawn(&os_args) {
-        Ok(_) => {
-            overlay.add_toast(adw::Toast::new(&format!("Running winetricks {}…", verbs)));
+        Ok(subprocess) => {
+            let progress_toast = adw::Toast::builder()
+                .title(&format!("Installing {} verb(s)…", verb_count))
+                .timeout(0)
+                .build();
+            overlay.add_toast(progress_toast.clone());
+            let overlay_clone = overlay.clone();
+            subprocess.wait_async(None::<&gio::Cancellable>, move |_| {
+                progress_toast.dismiss();
+                let msg = if subprocess.is_successful() {
+                    format!("{} verb(s) installed successfully.", verb_count)
+                } else {
+                    "Winetricks installation encountered errors.".to_string()
+                };
+                overlay_clone.add_toast(adw::Toast::new(&msg));
+            });
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(

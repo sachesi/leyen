@@ -1687,6 +1687,16 @@ fn category_display_name(cat: &str) -> &str {
     }
 }
 
+/// Escapes the five XML/Pango special characters so the text can be safely
+/// passed to widgets that interpret their label/subtitle as Pango markup.
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 // Display order for categories.
 const CATEGORY_ORDER: &[&str] = &["dlls", "fonts", "apps", "settings", "benchmarks"];
 
@@ -1854,7 +1864,7 @@ fn show_winetricks_dialog(
         for wv in cat_verbs {
             let row = adw::ActionRow::builder()
                 .title(&wv.verb)
-                .subtitle(&wv.description)
+                .subtitle(&escape_markup(&wv.description))
                 .activatable(true)
                 .build();
 

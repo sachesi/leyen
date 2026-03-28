@@ -1988,9 +1988,10 @@ fn launch_winetricks(
                 .build();
             overlay.add_toast(progress_toast.clone());
             let overlay_clone = overlay.clone();
+            let subprocess_done = subprocess.clone();
             subprocess.wait_async(None::<&gio::Cancellable>, move |_| {
                 progress_toast.dismiss();
-                let msg = if subprocess.is_successful() {
+                let msg = if subprocess_done.is_successful() {
                     format!("{} verb(s) installed successfully.", verb_count)
                 } else {
                     "Winetricks installation encountered errors.".to_string()

@@ -152,8 +152,14 @@ fn detect_proton_versions() -> GlobalSettings {
         }
     }
 
+    let default_prefix_path = format!("{}/.local/share/leyen/prefixes/default", home);
+    let default_prefix_dir = PathBuf::from(&default_prefix_path);
+    if !default_prefix_dir.exists() {
+        let _ = fs::create_dir_all(&default_prefix_dir);
+    }
+
     GlobalSettings {
-        default_prefix_path: format!("{}/.wine", home),
+        default_prefix_path,
         default_proton: "Default".to_string(),
         global_mangohud: false,
         global_gamemode: false,
@@ -196,10 +202,37 @@ fn build_ui(app: &adw::Application) {
         .margin_end(16)
         .build();
 
-    let game_list_box = gtk4::ListBox::builder()
-        .css_classes(["boxed-list"])
-        .selection_mode(gtk4::SelectionMode::None)
+    let game_list_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(12)
+        .hexpand(true)
         .build();
+
+    let empty_state = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .halign(gtk4::Align::Center)
+        .valign(gtk4::Align::Center)
+        .spacing(6)
+        .build();
+
+    let empty_label = gtk4::Label::builder()
+        .label("No games added yet")
+        .wrap(true)
+        .justify(gtk4::Justification::Center)
+        .css_classes(["title-3"])
+        .build();
+
+    let empty_hint = gtk4::Label::builder()
+        .label("Add a game to see it listed here.")
+        .wrap(true)
+        .justify(gtk4::Justification::Center)
+        .css_classes(["dim-label"])
+        .build();
+
+    empty_state.append(&empty_label);
+    empty_state.append(&empty_hint);
 
     clamp.set_child(Some(&game_list_box));
 
@@ -222,7 +255,13 @@ fn build_ui(app: &adw::Application) {
 
     // Load games from disk and populate the list
     let games = load_games();
-    populate_game_list(&game_list_box, &games, &toast_overlay, &window);
+    populate_game_list(
+        &game_list_box,
+        &empty_state,
+        &games,
+        &toast_overlay,
+        &window,
+    );
 
     /* --- EVENT HANDLERS --- */
 
@@ -233,9 +272,15 @@ fn build_ui(app: &adw::Application) {
 
     let window_clone_2 = window.clone();
     let list_box_clone = game_list_box.clone();
+    let empty_state_clone = empty_state.clone();
     let overlay_clone = toast_overlay.clone();
     add_btn.connect_clicked(move |_| {
-        show_add_game_dialog(&window_clone_2, &list_box_clone, &overlay_clone);
+        show_add_game_dialog(
+            &window_clone_2,
+            &list_box_clone,
+            &empty_state_clone,
+            &overlay_clone,
+        );
     });
 
     window.present();
@@ -244,7 +289,8 @@ fn build_ui(app: &adw::Application) {
 // --- DYNAMIC UI GENERATOR ---
 
 fn populate_game_list(
-    list_box: &gtk4::ListBox,
+    list_box: &gtk4::Box,
+    empty_state: &gtk4::Box,
     games: &[Game],
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
@@ -254,26 +300,61 @@ fn populate_game_list(
         list_box.remove(&child);
     }
 
+    if games.is_empty() {
+        list_box.append(empty_state);
+        return;
+    }
+
     for game in games {
-        let row = adw::ActionRow::builder()
-            .title(&game.title)
-            .subtitle(&game.exe_path)
+        let card = gtk4::Frame::builder()
+            .hexpand(true)
+            .margin_top(4)
+            .margin_bottom(4)
+            .build();
+        card.add_css_class("card");
+
+        let content = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .spacing(12)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
             .build();
 
         let icon = gtk4::Image::builder()
             .icon_name("application-x-executable-symbolic")
             .pixel_size(48)
-            .margin_top(8)
-            .margin_bottom(8)
+            .valign(gtk4::Align::Start)
             .build();
+
+        let info_column = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Vertical)
+            .spacing(4)
+            .hexpand(true)
+            .build();
+
+        let title_label = gtk4::Label::builder()
+            .label(&game.title)
+            .xalign(0.0)
+            .css_classes(["title-4"])
+            .build();
+
+        let path_label = gtk4::Label::builder()
+            .label(&game.exe_path)
+            .wrap(true)
+            .xalign(0.0)
+            .css_classes(["dim-label"])
+            .build();
+
+        info_column.append(&title_label);
+        info_column.append(&path_label);
 
         // Button box for actions
         let button_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
             .spacing(6)
             .valign(gtk4::Align::Center)
-            .margin_top(8)
-            .margin_bottom(8)
             .build();
 
         let edit_btn = gtk4::Button::builder()
@@ -306,28 +387,45 @@ fn populate_game_list(
         // Edit Logic
         let game_clone = game.clone();
         let list_box_clone = list_box.clone();
+        let empty_state_clone = empty_state.clone();
         let overlay_clone = overlay.clone();
         let window_clone = window.clone();
         edit_btn.connect_clicked(move |_| {
-            show_edit_game_dialog(&window_clone, &list_box_clone, &overlay_clone, &game_clone);
+            show_edit_game_dialog(
+                &window_clone,
+                &list_box_clone,
+                &empty_state_clone,
+                &overlay_clone,
+                &game_clone,
+            );
         });
 
         // Delete Logic
         let game_id = game.id.clone();
         let list_box_clone = list_box.clone();
+        let empty_state_clone = empty_state.clone();
         let overlay_clone = overlay.clone();
         let window_clone = window.clone();
         delete_btn.connect_clicked(move |_| {
-            show_delete_confirmation(&window_clone, &list_box_clone, &overlay_clone, &game_id);
+            show_delete_confirmation(
+                &window_clone,
+                &list_box_clone,
+                &empty_state_clone,
+                &overlay_clone,
+                &game_id,
+            );
         });
 
         button_box.append(&edit_btn);
         button_box.append(&delete_btn);
         button_box.append(&play_btn);
 
-        row.add_prefix(&icon);
-        row.add_suffix(&button_box);
-        list_box.append(&row);
+        content.append(&icon);
+        content.append(&info_column);
+        content.append(&button_box);
+
+        card.set_child(Some(&content));
+        list_box.append(&card);
     }
 }
 
@@ -469,7 +567,8 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
 
 fn show_add_game_dialog(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::ListBox,
+    list_box: &gtk4::Box,
+    empty_state: &gtk4::Box,
     overlay: &adw::ToastOverlay,
 ) {
     let settings = load_settings();
@@ -526,7 +625,9 @@ fn show_add_game_dialog(
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
-        let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
+        let file_dialog = gtk4::FileDialog::builder()
+            .title("Select Executable")
+            .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result {
                 if let Some(path) = file.path() {
@@ -542,7 +643,11 @@ fn show_add_game_dialog(
         .build();
 
     // Build Proton dropdown
-    let proton_strings: Vec<&str> = settings.available_proton_versions.iter().map(|s| s.as_str()).collect();
+    let proton_strings: Vec<&str> = settings
+        .available_proton_versions
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
     let proton_row = adw::ComboRow::builder()
         .title("Proton")
         .model(&gtk4::StringList::new(&proton_strings))
@@ -587,6 +692,7 @@ fn show_add_game_dialog(
     // --- SAVE NEW GAME LOGIC ---
     let dialog_clone_2 = dialog.clone();
     let list_box_clone = list_box.clone();
+    let empty_state_clone = empty_state.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
 
@@ -620,7 +726,13 @@ fn show_add_game_dialog(
         save_games(&games);
 
         // Refresh UI
-        populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+        populate_game_list(
+            &list_box_clone,
+            &empty_state_clone,
+            &games,
+            &overlay_clone,
+            &parent_clone,
+        );
 
         overlay_clone.add_toast(adw::Toast::new("Game added successfully"));
         dialog_clone_2.destroy();
@@ -633,7 +745,8 @@ fn show_add_game_dialog(
 
 fn show_edit_game_dialog(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::ListBox,
+    list_box: &gtk4::Box,
+    empty_state: &gtk4::Box,
     overlay: &adw::ToastOverlay,
     game: &Game,
 ) {
@@ -699,7 +812,9 @@ fn show_edit_game_dialog(
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
-        let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
+        let file_dialog = gtk4::FileDialog::builder()
+            .title("Select Executable")
+            .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result {
                 if let Some(path) = file.path() {
@@ -761,9 +876,7 @@ fn show_edit_game_dialog(
     advanced_group.add(&gamemode_row);
 
     // Add winetricks button
-    let winetricks_btn = gtk4::Button::builder()
-        .label("Open Winetricks")
-        .build();
+    let winetricks_btn = gtk4::Button::builder().label("Open Winetricks").build();
 
     let game_prefix = game.prefix_path.clone();
     let overlay_clone_wt = overlay.clone();
@@ -794,6 +907,7 @@ fn show_edit_game_dialog(
     // --- SAVE EDITED GAME LOGIC ---
     let dialog_clone_2 = dialog.clone();
     let list_box_clone = list_box.clone();
+    let empty_state_clone = empty_state.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
 
@@ -828,7 +942,13 @@ fn show_edit_game_dialog(
             save_games(&games);
 
             // Refresh UI
-            populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+            populate_game_list(
+                &list_box_clone,
+                &empty_state_clone,
+                &games,
+                &overlay_clone,
+                &parent_clone,
+            );
 
             overlay_clone.add_toast(adw::Toast::new("Game updated successfully"));
             dialog_clone_2.destroy();
@@ -844,7 +964,8 @@ fn show_edit_game_dialog(
 
 fn show_delete_confirmation(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::ListBox,
+    list_box: &gtk4::Box,
+    empty_state: &gtk4::Box,
     overlay: &adw::ToastOverlay,
     game_id: &str,
 ) {
@@ -866,12 +987,14 @@ fn show_delete_confirmation(
 
     let game_id = game_id.to_string();
     let list_box_clone = list_box.clone();
+    let empty_state_clone = empty_state.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
 
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
         if let Ok(response) = result {
-            if response == 1 {  // "Delete" button is at index 1
+            if response == 1 {
+                // "Delete" button is at index 1
                 let mut games = load_games();
                 if let Some(pos) = games.iter().position(|g| g.id == game_id) {
                     let deleted_title = games[pos].title.clone();
@@ -879,7 +1002,13 @@ fn show_delete_confirmation(
                     save_games(&games);
 
                     // Refresh UI
-                    populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+                    populate_game_list(
+                        &list_box_clone,
+                        &empty_state_clone,
+                        &games,
+                        &overlay_clone,
+                        &parent_clone,
+                    );
 
                     overlay_clone.add_toast(adw::Toast::new(&format!(
                         "'{}' deleted successfully",

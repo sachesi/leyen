@@ -2159,6 +2159,7 @@ fn launch_winetricks(
             let overlay_clone = overlay.clone();
             let prefix_for_log = resolved_prefix_path.clone();
             let verbs_for_log = selected_verbs.to_vec();
+            let subprocess_for_status = subprocess.clone();
             write_winetricks_log(
                 &prefix_for_log,
                 &format!("Starting winetricks install: {}", verbs_for_log.join(" ")),
@@ -2186,7 +2187,7 @@ fn launch_winetricks(
                                     );
                                 }
                             }
-                            if subprocess.is_successful() {
+                            if subprocess_for_status.is_successful() {
                                 finished_ok = true;
                                 write_installed_winetricks_components(
                                     &prefix_for_log,

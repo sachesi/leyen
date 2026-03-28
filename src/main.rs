@@ -1735,6 +1735,15 @@ enum DepStepAction {
     RunWinetricks {
         verb: &'static str,
     },
+    /// Remove DLLs from a Wine prefix system directory (reverses CopyDllsToPrefix).
+    RemoveDllsFromPrefix {
+        dlls: &'static str,
+        wine_dir: &'static str,
+    },
+    /// Delete DLL override entries from the Wine registry (reverses OverrideDlls).
+    RemoveDllOverrides {
+        dlls: &'static str,
+    },
 }
 
 #[derive(Clone)]
@@ -2350,6 +2359,134 @@ fn wmp11_steps() -> Vec<DepStep> {
     ]
 }
 
+// ── Uninstall step functions ──────────────────────────────────────────────────
+
+fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
+    match id {
+        "dxvk" => dxvk_uninstall_steps(),
+        "vkd3d" => vkd3d_uninstall_steps(),
+        "vcredist2022" => vcredist2022_uninstall_steps(),
+        "vcredist2013" => vcredist2013_uninstall_steps(),
+        "vcredist2010" => vcredist2010_uninstall_steps(),
+        "vcredist2008" => vcredist2008_uninstall_steps(),
+        "dotnet48" | "dotnet40" | "dotnet35" => dotnet_uninstall_steps(),
+        "mono" => mono_uninstall_steps(),
+        "directx" => directx_uninstall_steps(),
+        _ => Vec::new(),
+    }
+}
+
+fn dxvk_uninstall_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Removing DXVK DLLs (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing DXVK DLLs (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing DXVK DLL overrides…",
+            action: DepStepAction::RemoveDllOverrides {
+                dlls: "d3d9,d3d10core,d3d11,dxgi",
+            },
+        },
+    ]
+}
+
+fn vkd3d_uninstall_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Removing VKD3D-Proton DLLs (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3d12,d3d12core",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing VKD3D-Proton DLLs (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3d12,d3d12core",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing VKD3D-Proton DLL overrides…",
+            action: DepStepAction::RemoveDllOverrides {
+                dlls: "d3d12,d3d12core",
+            },
+        },
+    ]
+}
+
+fn vcredist2022_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2022 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "vcruntime140,vcruntime140_1,msvcp140,msvcp140_1,msvcp140_2,concrt140,atl140,vcomp140",
+        },
+    }]
+}
+
+fn vcredist2013_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2013 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr120,msvcp120,vccorlib120",
+        },
+    }]
+}
+
+fn vcredist2010_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2010 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr100,msvcp100",
+        },
+    }]
+}
+
+fn vcredist2008_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2008 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr90,msvcp90",
+        },
+    }]
+}
+
+fn dotnet_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing .NET Framework DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides { dlls: "mscoree" },
+    }]
+}
+
+fn mono_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Wine Mono DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides { dlls: "mscoree" },
+    }]
+}
+
+fn directx_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing DirectX DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
+                   d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
+                   d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43",
+        },
+    }]
+}
+
 // ── Cache & tracking helpers ──────────────────────────────────────────────────
 
 fn get_deps_cache_dir() -> String {
@@ -2600,6 +2737,55 @@ fn execute_dep_step(
             }
             Ok(())
         }
+
+        DepStepAction::RemoveDllsFromPrefix { dlls, wine_dir } => {
+            let dst_dir = format!("{}/drive_c/windows/{}", prefix_path, wine_dir);
+            for dll in dlls.split(',') {
+                let dll = dll.trim();
+                let path = format!("{}/{}.dll", dst_dir, dll);
+                let _ = fs::remove_file(&path);
+            }
+            Ok(())
+        }
+
+        DepStepAction::RemoveDllOverrides { dlls } => {
+            let reg_lines: Vec<String> = dlls
+                .split(',')
+                .map(|d| format!("\"{}\"=-", d.trim()))
+                .collect();
+            let reg_content = format!(
+                "Windows Registry Editor Version 5.00\r\n\r\n\
+                 [HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\r\n\
+                 {}\r\n",
+                reg_lines.join("\r\n")
+            );
+            let safe_name = dlls
+                .split(',')
+                .next()
+                .unwrap_or("dll")
+                .trim()
+                .replace(['-', '.'], "_");
+            let reg_path = format!("{}/remove_override_{}.reg", cache_dir, safe_name);
+            fs::write(&reg_path, reg_content)
+                .map_err(|e| format!("Failed to write .reg file: {}", e))?;
+
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            cmd.args(["regedit.exe", "/S", &reg_path]);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run regedit: {}", e))?;
+            let _ = fs::remove_file(&reg_path);
+            if !status.success() {
+                return Err(format!("DLL override removal failed for: {}", dlls));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -2642,6 +2828,83 @@ fn install_dep_async(
     let cache_dir = get_deps_cache_dir();
 
     // Shared queue: background thread pushes messages; idle callback drains them on GTK thread.
+    let queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<DepInstallMsg>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let queue_bg = queue.clone();
+
+    let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
+    let on_progress = std::rc::Rc::new(on_progress);
+
+    glib::idle_add_local(move || {
+        let mut q = queue.lock().unwrap();
+        while let Some(msg) = q.pop_front() {
+            match msg {
+                DepInstallMsg::Progress { step, total, description } => {
+                    on_progress(step, total, description);
+                }
+                DepInstallMsg::Done => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(true, None); }
+                    return glib::ControlFlow::Break;
+                }
+                DepInstallMsg::Failed(err) => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(false, Some(err)); }
+                    return glib::ControlFlow::Break;
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    std::thread::spawn(move || {
+        for (i, step) in steps.iter().enumerate() {
+            queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
+                step: i + 1,
+                total,
+                description: step.description.to_string(),
+            });
+            if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
+                return;
+            }
+        }
+        queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
+    });
+}
+
+fn uninstall_dep_async(
+    dep_id: &str,
+    prefix_path: &str,
+    proton_path: &str,
+    overlay: &adw::ToastOverlay,
+    on_progress: impl Fn(usize, usize, String) + 'static,
+    on_finish: impl FnOnce(bool, Option<String>) + 'static,
+) {
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        on_finish(false, Some("umu-launcher not ready".to_string()));
+        return;
+    }
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        on_finish(false, Some("umu-launcher not available".to_string()));
+        return;
+    }
+
+    let steps = get_dep_uninstall_steps(dep_id);
+    if steps.is_empty() {
+        on_finish(true, None);
+        return;
+    }
+
+    let total = steps.len();
+    let prefix_t = prefix_path.to_string();
+    let proton_t = proton_path.to_string();
+    let cache_dir = get_deps_cache_dir();
+
     let queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<DepInstallMsg>>> =
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
     let queue_bg = queue.clone();
@@ -3007,19 +3270,28 @@ fn show_dependencies_dialog(
                 let install_btn2 = install_btn.clone();
                 let reinstall_btn2 = reinstall_btn.clone();
                 let remove_btn2 = remove_btn.clone();
+                let spinner2 = spinner.clone();
+                let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
                 let prefix2 = resolved_prefix.clone();
+                let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
                 let dialog2 = dialog.clone();
 
                 remove_btn.connect_clicked(move |_| {
+                    let has_uninstall_steps = !get_dep_uninstall_steps(dep_id).is_empty();
+                    let detail = if has_uninstall_steps {
+                        "This will remove installed files and DLL overrides from the Wine prefix. \
+                         This action cannot be undone."
+                    } else {
+                        "This removes the dependency from leyen's tracking. \
+                         Installed files may remain in the Wine prefix — use \
+                         Wine's Add/Remove Programs for a full uninstall."
+                    };
+
                     let confirm = gtk4::AlertDialog::builder()
                         .message(&format!("Remove '{}'?", dep_id))
-                        .detail(
-                            "This removes the dependency from leyen's tracking. \
-                             Installed files may remain in the Wine prefix — use \
-                             Wine's Add/Remove Programs for a full uninstall.",
-                        )
+                        .detail(detail)
                         .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
                         .cancel_button(0)
                         .default_button(0)
@@ -3028,8 +3300,11 @@ fn show_dependencies_dialog(
                     let install_btn3 = install_btn2.clone();
                     let reinstall_btn3 = reinstall_btn2.clone();
                     let remove_btn3 = remove_btn2.clone();
+                    let spinner3 = spinner2.clone();
+                    let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
                     let prefix3 = prefix2.clone();
+                    let proton3 = proton2.clone();
                     let overlay3 = overlay2.clone();
 
                     confirm.choose(
@@ -3037,15 +3312,75 @@ fn show_dependencies_dialog(
                         gio::Cancellable::NONE,
                         move |result| {
                             if let Ok(1) = result {
-                                remove_installed_dep(&prefix3, dep_id);
-                                row3.set_sensitive(true);
-                                install_btn3.set_visible(true);
-                                reinstall_btn3.set_visible(false);
-                                remove_btn3.set_visible(false);
-                                overlay3.add_toast(adw::Toast::new(&format!(
-                                    "'{}' removed from tracking.",
-                                    dep_id
-                                )));
+                                if has_uninstall_steps {
+                                    reinstall_btn3.set_visible(false);
+                                    remove_btn3.set_visible(false);
+                                    spinner3.set_visible(true);
+                                    spinner3.start();
+                                    progress_label3.set_visible(true);
+                                    row3.set_sensitive(false);
+
+                                    let install_btn4 = install_btn3.clone();
+                                    let reinstall_btn4 = reinstall_btn3.clone();
+                                    let remove_btn4 = remove_btn3.clone();
+                                    let spinner4 = spinner3.clone();
+                                    let progress_label4 = progress_label3.clone();
+                                    let row4 = row3.clone();
+                                    let prefix4 = prefix3.clone();
+                                    let overlay4 = overlay3.clone();
+
+                                    let progress_label_p = progress_label3.clone();
+                                    let on_progress =
+                                        move |_step: usize, _total: usize, desc: String| {
+                                            progress_label_p.set_label(&desc);
+                                        };
+
+                                    let on_finish =
+                                        move |success: bool, err: Option<String>| {
+                                            spinner4.stop();
+                                            spinner4.set_visible(false);
+                                            progress_label4.set_visible(false);
+                                            row4.set_sensitive(true);
+                                            if success {
+                                                remove_installed_dep(&prefix4, dep_id);
+                                                install_btn4.set_visible(true);
+                                                reinstall_btn4.set_visible(false);
+                                                remove_btn4.set_visible(false);
+                                                overlay4.add_toast(adw::Toast::new(
+                                                    &format!(
+                                                        "'{}' uninstalled successfully.",
+                                                        dep_id
+                                                    ),
+                                                ));
+                                            } else {
+                                                reinstall_btn4.set_visible(true);
+                                                remove_btn4.set_visible(true);
+                                                let msg = err.unwrap_or_else(|| {
+                                                    "Uninstall failed.".to_string()
+                                                });
+                                                overlay4.add_toast(adw::Toast::new(&msg));
+                                            }
+                                        };
+
+                                    uninstall_dep_async(
+                                        dep_id,
+                                        &prefix3,
+                                        &proton3,
+                                        &overlay3,
+                                        on_progress,
+                                        on_finish,
+                                    );
+                                } else {
+                                    remove_installed_dep(&prefix3, dep_id);
+                                    row3.set_sensitive(true);
+                                    install_btn3.set_visible(true);
+                                    reinstall_btn3.set_visible(false);
+                                    remove_btn3.set_visible(false);
+                                    overlay3.add_toast(adw::Toast::new(&format!(
+                                        "'{}' removed from tracking.",
+                                        dep_id
+                                    )));
+                                }
                             }
                         },
                     );

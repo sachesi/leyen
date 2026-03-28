@@ -154,6 +154,7 @@ The application will automatically create the `~/.local/share/leyen/proton/` dir
 
 ### Winetricks Integration
 When editing a game, you can launch winetricks with the `WINEPREFIX` environment variable set to that game's prefix, allowing you to install dependencies (DirectX, Visual C++ redistributables, .NET Framework, etc.) specific to that game.
+If winetricks is not available on your system, Leyen will automatically download the latest script from the upstream repository into `~/.local/share/leyen/umu-launcher/winetricks` and use that copy.
 
 ## Troubleshooting
 
@@ -164,8 +165,8 @@ When editing a game, you can launch winetricks with the `WINEPREFIX` environment
 - Check that the prefix path exists and has proper permissions
 
 ### Winetricks Doesn't Open
-- Install winetricks: `sudo pacman -S winetricks` (Arch) or equivalent
-- Ensure winetricks is in your PATH
+- Leyen will attempt to download winetricks automatically; ensure `curl` can reach `https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks`
+- Alternatively, install winetricks via your package manager so it is available in your PATH
 
 ### Missing Proton Versions
 - Install Proton-GE from https://github.com/GloriousEggroll/proton-ge-custom

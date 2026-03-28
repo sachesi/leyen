@@ -27,6 +27,8 @@ struct Game {
     game_wow64: bool,
     #[serde(default)]
     game_ntsync: bool,
+    #[serde(default)]
+    game_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -637,6 +639,11 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
         launcher.setenv("WINEPREFIX", &game.prefix_path, true);
     }
 
+    // Game ID for umu-run
+    if !game.game_id.is_empty() {
+        launcher.setenv("GAMEID", &game.game_id, true);
+    }
+
     // Proton path (resolve backward-compat names to full paths)
     if let Some(proton_path) = resolve_proton_path(&game.proton) {
         launcher.setenv("PROTONPATH", &proton_path, true);
@@ -912,7 +919,7 @@ fn show_add_game_dialog(
 
     // Input Fields
     let title_row = adw::EntryRow::builder().title("Title").build();
-    let path_row = adw::EntryRow::builder().title("Path (.exe)").build();
+    let path_row = adw::EntryRow::builder().title("Executable").build();
 
     let browse_btn = gtk4::Button::builder()
         .label("Browse...")
@@ -943,9 +950,37 @@ fn show_add_game_dialog(
     });
 
     let prefix_row = adw::EntryRow::builder()
-        .title("Prefix Path (Leave blank for global)")
+        .title("Prefix")
         .text(&settings.default_prefix_path)
         .build();
+
+    let prefix_browse_btn = gtk4::Button::builder()
+        .label("Browse...")
+        .valign(gtk4::Align::Center)
+        .build();
+    prefix_row.add_suffix(&prefix_browse_btn);
+
+    let prefix_row_clone = prefix_row.clone();
+    let parent_clone2 = parent.clone();
+    prefix_browse_btn.connect_clicked(move |_| {
+        let prefix_row_clone = prefix_row_clone.clone();
+        let file_dialog = gtk4::FileDialog::builder()
+            .title("Select Prefix Folder")
+            .build();
+        file_dialog.select_folder(
+            Some(&parent_clone2),
+            gio::Cancellable::NONE,
+            move |result| {
+                if let Ok(file) = result {
+                    if let Some(path) = file.path() {
+                        prefix_row_clone.set_text(&path.to_string_lossy());
+                    }
+                }
+            },
+        );
+    });
+
+    let game_id_row = adw::EntryRow::builder().title("Game ID").build();
 
     // Build Proton dropdown – display basenames, store full paths via index
     let proton_display_names_add: Vec<String> = settings
@@ -975,6 +1010,7 @@ fn show_add_game_dialog(
         .title("Environment")
         .build();
     env_group.add(&prefix_row);
+    env_group.add(&game_id_row);
     env_group.add(&proton_row);
 
     let args_row = adw::EntryRow::builder().title("Launch Arguments").build();
@@ -1054,6 +1090,7 @@ fn show_add_game_dialog(
             game_wayland: wayland_row_game.is_active(),
             game_wow64: wow64_row_game.is_active(),
             game_ntsync: ntsync_row_game.is_active(),
+            game_id: game_id_row.text().to_string(),
         };
 
         // Load existing games, add new one, save back to disk
@@ -1128,7 +1165,7 @@ fn show_edit_game_dialog(
         .build();
 
     let path_row = adw::EntryRow::builder()
-        .title("Path (.exe)")
+        .title("Executable")
         .text(&game.exe_path)
         .build();
 
@@ -1161,8 +1198,39 @@ fn show_edit_game_dialog(
     });
 
     let prefix_row = adw::EntryRow::builder()
-        .title("Prefix Path (Leave blank for global)")
+        .title("Prefix")
         .text(&game.prefix_path)
+        .build();
+
+    let prefix_browse_btn = gtk4::Button::builder()
+        .label("Browse...")
+        .valign(gtk4::Align::Center)
+        .build();
+    prefix_row.add_suffix(&prefix_browse_btn);
+
+    let prefix_row_clone = prefix_row.clone();
+    let parent_clone2 = parent.clone();
+    prefix_browse_btn.connect_clicked(move |_| {
+        let prefix_row_clone = prefix_row_clone.clone();
+        let file_dialog = gtk4::FileDialog::builder()
+            .title("Select Prefix Folder")
+            .build();
+        file_dialog.select_folder(
+            Some(&parent_clone2),
+            gio::Cancellable::NONE,
+            move |result| {
+                if let Ok(file) = result {
+                    if let Some(path) = file.path() {
+                        prefix_row_clone.set_text(&path.to_string_lossy());
+                    }
+                }
+            },
+        );
+    });
+
+    let game_id_row = adw::EntryRow::builder()
+        .title("Game ID")
+        .text(&game.game_id)
         .build();
 
     // Build Proton dropdown – display basenames, store full paths via index
@@ -1202,6 +1270,7 @@ fn show_edit_game_dialog(
         .title("Environment")
         .build();
     env_group.add(&prefix_row);
+    env_group.add(&game_id_row);
     env_group.add(&proton_row);
 
     let args_row = adw::EntryRow::builder()
@@ -1303,6 +1372,7 @@ fn show_edit_game_dialog(
             game_wayland: wayland_row_game.is_active(),
             game_wow64: wow64_row_game.is_active(),
             game_ntsync: ntsync_row_game.is_active(),
+            game_id: game_id_row.text().to_string(),
         };
 
         // Load games, find and replace the edited one

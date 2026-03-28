@@ -23,15 +23,32 @@ struct Game {
     force_gamemode: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct GlobalSettings {
+    default_prefix_path: String,
+    default_proton: String,
+    global_mangohud: bool,
+    global_gamemode: bool,
+    available_proton_versions: Vec<String>,
+}
+
 // --- FILE IO ---
 
-fn get_config_path() -> PathBuf {
+fn get_config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let config_dir = PathBuf::from(format!("{}/.config/umu_gui", home));
     if !config_dir.exists() {
         let _ = fs::create_dir_all(&config_dir);
     }
-    config_dir.join("games.json")
+    config_dir
+}
+
+fn get_config_path() -> PathBuf {
+    get_config_dir().join("games.json")
+}
+
+fn get_settings_path() -> PathBuf {
+    get_config_dir().join("settings.json")
 }
 
 fn load_games() -> Vec<Game> {
@@ -47,6 +64,73 @@ fn save_games(games: &[Game]) {
     let path = get_config_path();
     if let Ok(data) = serde_json::to_string_pretty(games) {
         let _ = fs::write(path, data);
+    }
+}
+
+fn load_settings() -> GlobalSettings {
+    let path = get_settings_path();
+    if let Ok(data) = fs::read_to_string(path) {
+        serde_json::from_str(&data).unwrap_or_else(|_| {
+            let settings = detect_proton_versions();
+            save_settings(&settings);
+            settings
+        })
+    } else {
+        let settings = detect_proton_versions();
+        save_settings(&settings);
+        settings
+    }
+}
+
+fn save_settings(settings: &GlobalSettings) {
+    let path = get_settings_path();
+    if let Ok(data) = serde_json::to_string_pretty(settings) {
+        let _ = fs::write(path, data);
+    }
+}
+
+fn detect_proton_versions() -> GlobalSettings {
+    let mut versions = vec!["Default".to_string()];
+
+    // Check common Proton installation locations
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+
+    // Steam's compatibility tools
+    let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
+    if steam_compat.exists() {
+        if let Ok(entries) = fs::read_dir(steam_compat) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        versions.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for system-installed Proton
+    let steam_root = PathBuf::from(format!("{}/.steam/steam/steamapps/common", home));
+    if steam_root.exists() {
+        if let Ok(entries) = fs::read_dir(steam_root) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if name.contains("Proton") {
+                            versions.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    GlobalSettings {
+        default_prefix_path: format!("{}/.wine", home),
+        default_proton: "Default".to_string(),
+        global_mangohud: false,
+        global_gamemode: false,
+        available_proton_versions: versions,
     }
 }
 
@@ -111,7 +195,7 @@ fn build_ui(app: &adw::Application) {
 
     // Load games from disk and populate the list
     let games = load_games();
-    populate_game_list(&game_list_box, &games, &toast_overlay);
+    populate_game_list(&game_list_box, &games, &toast_overlay, &window);
 
     /* --- EVENT HANDLERS --- */
 
@@ -132,7 +216,12 @@ fn build_ui(app: &adw::Application) {
 
 // --- DYNAMIC UI GENERATOR ---
 
-fn populate_game_list(list_box: &gtk4::ListBox, games: &[Game], overlay: &adw::ToastOverlay) {
+fn populate_game_list(
+    list_box: &gtk4::ListBox,
+    games: &[Game],
+    overlay: &adw::ToastOverlay,
+    window: &adw::ApplicationWindow,
+) {
     // Clear existing children
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
@@ -151,12 +240,33 @@ fn populate_game_list(list_box: &gtk4::ListBox, games: &[Game], overlay: &adw::T
             .margin_bottom(8)
             .build();
 
+        // Button box for actions
+        let button_box = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .spacing(6)
+            .valign(gtk4::Align::Center)
+            .margin_top(8)
+            .margin_bottom(8)
+            .build();
+
+        let edit_btn = gtk4::Button::builder()
+            .icon_name("document-edit-symbolic")
+            .valign(gtk4::Align::Center)
+            .tooltip_text("Edit Game")
+            .build();
+
+        let delete_btn = gtk4::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .valign(gtk4::Align::Center)
+            .tooltip_text("Delete Game")
+            .css_classes(["destructive-action"])
+            .build();
+
         let play_btn = gtk4::Button::builder()
             .icon_name("media-playback-start-symbolic")
             .css_classes(["suggested-action", "circular"])
             .valign(gtk4::Align::Center)
-            .margin_top(8)
-            .margin_bottom(8)
+            .tooltip_text("Launch Game")
             .build();
 
         // Launch Logic!
@@ -166,8 +276,30 @@ fn populate_game_list(list_box: &gtk4::ListBox, games: &[Game], overlay: &adw::T
             launch_game(&game_clone, &overlay_clone);
         });
 
+        // Edit Logic
+        let game_clone = game.clone();
+        let list_box_clone = list_box.clone();
+        let overlay_clone = overlay.clone();
+        let window_clone = window.clone();
+        edit_btn.connect_clicked(move |_| {
+            show_edit_game_dialog(&window_clone, &list_box_clone, &overlay_clone, &game_clone);
+        });
+
+        // Delete Logic
+        let game_id = game.id.clone();
+        let list_box_clone = list_box.clone();
+        let overlay_clone = overlay.clone();
+        let window_clone = window.clone();
+        delete_btn.connect_clicked(move |_| {
+            show_delete_confirmation(&window_clone, &list_box_clone, &overlay_clone, &game_id);
+        });
+
+        button_box.append(&edit_btn);
+        button_box.append(&delete_btn);
+        button_box.append(&play_btn);
+
         row.add_prefix(&icon);
-        row.add_suffix(&play_btn);
+        row.add_suffix(&button_box);
         list_box.append(&row);
     }
 }
@@ -214,6 +346,8 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 // --- GLOBAL SETTINGS DIALOG ---
 
 fn show_global_settings(parent: &adw::ApplicationWindow) {
+    let mut settings = load_settings();
+
     let pref_window = adw::PreferencesWindow::builder()
         .transient_for(parent)
         .modal(true)
@@ -230,30 +364,72 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
     let paths_group = adw::PreferencesGroup::builder()
         .title("Default Paths")
         .build();
-    paths_group.add(
-        &adw::EntryRow::builder()
-            .title("Default Prefix Path")
-            .build(),
-    );
-    paths_group.add(
-        &adw::ComboRow::builder()
-            .title("Default Proton")
-            .model(&gtk4::StringList::new(&[
-                "GE-Proton Latest",
-                "System Default",
-            ]))
-            .build(),
-    );
+
+    let prefix_row = adw::EntryRow::builder()
+        .title("Default Prefix Path")
+        .text(&settings.default_prefix_path)
+        .build();
+
+    // Build Proton dropdown list
+    let proton_list = gtk4::StringList::new(&[]);
+    for version in &settings.available_proton_versions {
+        proton_list.append(version);
+    }
+
+    let proton_row = adw::ComboRow::builder()
+        .title("Default Proton")
+        .model(&proton_list)
+        .build();
+
+    // Set selected index
+    if let Some(pos) = settings
+        .available_proton_versions
+        .iter()
+        .position(|v| v == &settings.default_proton)
+    {
+        proton_row.set_selected(pos as u32);
+    }
+
+    paths_group.add(&prefix_row);
+    paths_group.add(&proton_row);
 
     let tools_group = adw::PreferencesGroup::builder()
         .title("Global Environment")
         .build();
-    tools_group.add(&adw::SwitchRow::builder().title("MangoHud Overlay").build());
-    tools_group.add(&adw::SwitchRow::builder().title("GameMode").build());
+
+    let mangohud_row = adw::SwitchRow::builder()
+        .title("MangoHud Overlay")
+        .active(settings.global_mangohud)
+        .build();
+
+    let gamemode_row = adw::SwitchRow::builder()
+        .title("GameMode")
+        .active(settings.global_gamemode)
+        .build();
+
+    tools_group.add(&mangohud_row);
+    tools_group.add(&gamemode_row);
 
     page.add(&paths_group);
     page.add(&tools_group);
     pref_window.add(&page);
+
+    // Save settings when window is closed
+    pref_window.connect_close_request(move |_| {
+        settings.default_prefix_path = prefix_row.text().to_string();
+        settings.default_proton = if proton_row.selected() < proton_list.n_items() {
+            proton_list
+                .string(proton_row.selected())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "Default".to_string())
+        } else {
+            "Default".to_string()
+        };
+        settings.global_mangohud = mangohud_row.is_active();
+        settings.global_gamemode = gamemode_row.is_active();
+        save_settings(&settings);
+        glib::Propagation::Proceed
+    });
 
     pref_window.present();
 }
@@ -265,6 +441,8 @@ fn show_add_game_dialog(
     list_box: &gtk4::ListBox,
     overlay: &adw::ToastOverlay,
 ) {
+    let settings = load_settings();
+
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
@@ -300,17 +478,44 @@ fn show_add_game_dialog(
     // Input Fields
     let title_row = adw::EntryRow::builder().title("Title").build();
     let path_row = adw::EntryRow::builder().title("Path (.exe)").build();
+
+    let browse_btn = gtk4::Button::builder()
+        .label("Browse...")
+        .valign(gtk4::Align::Center)
+        .build();
+
+    path_row.add_suffix(&browse_btn);
+
     let game_group = adw::PreferencesGroup::builder().title("Executable").build();
     game_group.add(&title_row);
     game_group.add(&path_row);
 
+    // File chooser for executable
+    let path_row_clone = path_row.clone();
+    let parent_clone = parent.clone();
+    browse_btn.connect_clicked(move |_| {
+        let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result {
+                if let Some(path) = file.path() {
+                    path_row_clone.set_text(&path.to_string_lossy());
+                }
+            }
+        });
+    });
+
     let prefix_row = adw::EntryRow::builder()
         .title("Prefix Path (Leave blank for global)")
+        .text(&settings.default_prefix_path)
         .build();
+
+    // Build Proton dropdown
+    let proton_strings: Vec<&str> = settings.available_proton_versions.iter().map(|s| s.as_str()).collect();
     let proton_row = adw::ComboRow::builder()
         .title("Proton")
-        .model(&gtk4::StringList::new(&["Default", "GE-Proton Latest"]))
+        .model(&gtk4::StringList::new(&proton_strings))
         .build();
+
     let env_group = adw::PreferencesGroup::builder()
         .title("Environment")
         .build();
@@ -318,8 +523,14 @@ fn show_add_game_dialog(
     env_group.add(&proton_row);
 
     let args_row = adw::EntryRow::builder().title("Launch Arguments").build();
-    let mangohud_row = adw::SwitchRow::builder().title("Force MangoHud").build();
-    let gamemode_row = adw::SwitchRow::builder().title("Force GameMode").build();
+    let mangohud_row = adw::SwitchRow::builder()
+        .title("Force MangoHud")
+        .active(settings.global_mangohud)
+        .build();
+    let gamemode_row = adw::SwitchRow::builder()
+        .title("Force GameMode")
+        .active(settings.global_gamemode)
+        .build();
     let advanced_group = adw::PreferencesGroup::builder().title("Overrides").build();
     advanced_group.add(&args_row);
     advanced_group.add(&mangohud_row);
@@ -345,22 +556,24 @@ fn show_add_game_dialog(
     let dialog_clone_2 = dialog.clone();
     let list_box_clone = list_box.clone();
     let overlay_clone = overlay.clone();
+    let parent_clone = parent.clone();
 
     add_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
         let exe = path_row.text().to_string();
 
         if title.is_empty() || exe.is_empty() {
-            return; // Simple validation: prevent adding empty games
+            overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
+            return;
         }
 
         let new_game = Game {
-            id: uuid::Uuid::new_v4().to_string(), // Requires `uuid` crate, or we can just use the title for now
+            id: uuid::Uuid::new_v4().to_string(),
             title,
             exe_path: exe,
             prefix_path: prefix_row.text().to_string(),
-            proton: if proton_row.selected() == 1 {
-                "GE-Proton Latest".to_string()
+            proton: if proton_row.selected() < settings.available_proton_versions.len() as u32 {
+                settings.available_proton_versions[proton_row.selected() as usize].clone()
             } else {
                 "Default".to_string()
             },
@@ -375,10 +588,302 @@ fn show_add_game_dialog(
         save_games(&games);
 
         // Refresh UI
-        populate_game_list(&list_box_clone, &games, &overlay_clone);
+        populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
 
+        overlay_clone.add_toast(adw::Toast::new("Game added successfully"));
         dialog_clone_2.destroy();
     });
 
     dialog.present();
+}
+
+// --- EDIT GAME DIALOG ---
+
+fn show_edit_game_dialog(
+    parent: &adw::ApplicationWindow,
+    list_box: &gtk4::ListBox,
+    overlay: &adw::ToastOverlay,
+    game: &Game,
+) {
+    let settings = load_settings();
+    let game_id = game.id.clone();
+
+    let dialog = adw::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .default_width(450)
+        .default_height(600)
+        .destroy_with_parent(true)
+        .build();
+
+    let header = adw::HeaderBar::builder()
+        .title_widget(&adw::WindowTitle::new("Edit Game", ""))
+        .show_end_title_buttons(false)
+        .show_start_title_buttons(false)
+        .build();
+
+    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let save_btn = gtk4::Button::builder()
+        .label("Save")
+        .css_classes(["suggested-action"])
+        .build();
+
+    header.pack_start(&cancel_btn);
+    header.pack_end(&save_btn);
+
+    let toolbar_view = adw::ToolbarView::builder().build();
+    toolbar_view.add_top_bar(&header);
+
+    let clamp = adw::Clamp::builder()
+        .margin_top(16)
+        .margin_bottom(16)
+        .build();
+    let page = adw::PreferencesPage::builder().build();
+
+    // Input Fields - pre-populated with existing game data
+    let title_row = adw::EntryRow::builder()
+        .title("Title")
+        .text(&game.title)
+        .build();
+
+    let path_row = adw::EntryRow::builder()
+        .title("Path (.exe)")
+        .text(&game.exe_path)
+        .build();
+
+    let browse_btn = gtk4::Button::builder()
+        .label("Browse...")
+        .valign(gtk4::Align::Center)
+        .build();
+
+    path_row.add_suffix(&browse_btn);
+
+    let game_group = adw::PreferencesGroup::builder().title("Executable").build();
+    game_group.add(&title_row);
+    game_group.add(&path_row);
+
+    // File chooser for executable
+    let path_row_clone = path_row.clone();
+    let parent_clone = parent.clone();
+    browse_btn.connect_clicked(move |_| {
+        let file_dialog = gtk4::FileDialog::builder().title("Select Executable").build();
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result {
+                if let Some(path) = file.path() {
+                    path_row_clone.set_text(&path.to_string_lossy());
+                }
+            }
+        });
+    });
+
+    let prefix_row = adw::EntryRow::builder()
+        .title("Prefix Path (Leave blank for global)")
+        .text(&game.prefix_path)
+        .build();
+
+    // Build Proton dropdown
+    let proton_strings: Vec<&str> = settings
+        .available_proton_versions
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let proton_row = adw::ComboRow::builder()
+        .title("Proton")
+        .model(&gtk4::StringList::new(&proton_strings))
+        .build();
+
+    // Set selected Proton version
+    if let Some(pos) = settings
+        .available_proton_versions
+        .iter()
+        .position(|v| v == &game.proton)
+    {
+        proton_row.set_selected(pos as u32);
+    }
+
+    let env_group = adw::PreferencesGroup::builder()
+        .title("Environment")
+        .build();
+    env_group.add(&prefix_row);
+    env_group.add(&proton_row);
+
+    let args_row = adw::EntryRow::builder()
+        .title("Launch Arguments")
+        .text(&game.launch_args)
+        .build();
+
+    let mangohud_row = adw::SwitchRow::builder()
+        .title("Force MangoHud")
+        .active(game.force_mangohud)
+        .build();
+
+    let gamemode_row = adw::SwitchRow::builder()
+        .title("Force GameMode")
+        .active(game.force_gamemode)
+        .build();
+
+    let advanced_group = adw::PreferencesGroup::builder().title("Overrides").build();
+    advanced_group.add(&args_row);
+    advanced_group.add(&mangohud_row);
+    advanced_group.add(&gamemode_row);
+
+    // Add winetricks button
+    let winetricks_btn = gtk4::Button::builder()
+        .label("Open Winetricks")
+        .build();
+
+    let game_prefix = game.prefix_path.clone();
+    let overlay_clone_wt = overlay.clone();
+    winetricks_btn.connect_clicked(move |_| {
+        launch_winetricks(&game_prefix, &overlay_clone_wt);
+    });
+
+    let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
+    winetricks_group.add(&winetricks_btn);
+
+    page.add(&game_group);
+    page.add(&env_group);
+    page.add(&advanced_group);
+    page.add(&winetricks_group);
+
+    clamp.set_child(Some(&page));
+
+    let scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .child(&clamp)
+        .build();
+    toolbar_view.set_content(Some(&scroll));
+    dialog.set_content(Some(&toolbar_view));
+
+    let dialog_clone = dialog.clone();
+    cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
+
+    // --- SAVE EDITED GAME LOGIC ---
+    let dialog_clone_2 = dialog.clone();
+    let list_box_clone = list_box.clone();
+    let overlay_clone = overlay.clone();
+    let parent_clone = parent.clone();
+
+    save_btn.connect_clicked(move |_| {
+        let title = title_row.text().to_string();
+        let exe = path_row.text().to_string();
+
+        if title.is_empty() || exe.is_empty() {
+            overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
+            return;
+        }
+
+        let edited_game = Game {
+            id: game_id.clone(),
+            title,
+            exe_path: exe,
+            prefix_path: prefix_row.text().to_string(),
+            proton: if proton_row.selected() < settings.available_proton_versions.len() as u32 {
+                settings.available_proton_versions[proton_row.selected() as usize].clone()
+            } else {
+                "Default".to_string()
+            },
+            launch_args: args_row.text().to_string(),
+            force_mangohud: mangohud_row.is_active(),
+            force_gamemode: gamemode_row.is_active(),
+        };
+
+        // Load games, find and replace the edited one
+        let mut games = load_games();
+        if let Some(pos) = games.iter().position(|g| g.id == game_id) {
+            games[pos] = edited_game;
+            save_games(&games);
+
+            // Refresh UI
+            populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+
+            overlay_clone.add_toast(adw::Toast::new("Game updated successfully"));
+            dialog_clone_2.destroy();
+        } else {
+            overlay_clone.add_toast(adw::Toast::new("Error: Game not found"));
+        }
+    });
+
+    dialog.present();
+}
+
+// --- DELETE CONFIRMATION DIALOG ---
+
+fn show_delete_confirmation(
+    parent: &adw::ApplicationWindow,
+    list_box: &gtk4::ListBox,
+    overlay: &adw::ToastOverlay,
+    game_id: &str,
+) {
+    let games = load_games();
+    let game = games.iter().find(|g| g.id == game_id);
+
+    let game_title = game.map(|g| g.title.as_str()).unwrap_or("Unknown Game");
+
+    let dialog = adw::AlertDialog::builder()
+        .heading("Delete Game?")
+        .body(&format!(
+            "Are you sure you want to delete '{}'?\n\nThis action cannot be undone.",
+            game_title
+        ))
+        .build();
+
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("delete", "Delete");
+    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_close_response("cancel");
+
+    let game_id = game_id.to_string();
+    let list_box_clone = list_box.clone();
+    let overlay_clone = overlay.clone();
+    let parent_clone = parent.clone();
+
+    dialog.connect_response(None, move |_, response| {
+        if response == "delete" {
+            let mut games = load_games();
+            if let Some(pos) = games.iter().position(|g| g.id == game_id) {
+                let deleted_title = games[pos].title.clone();
+                games.remove(pos);
+                save_games(&games);
+
+                // Refresh UI
+                populate_game_list(&list_box_clone, &games, &overlay_clone, &parent_clone);
+
+                overlay_clone.add_toast(adw::Toast::new(&format!(
+                    "'{}' deleted successfully",
+                    deleted_title
+                )));
+            }
+        }
+    });
+
+    dialog.present(Some(parent));
+}
+
+// --- WINETRICKS INTEGRATION ---
+
+fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
+
+    // Set WINEPREFIX if provided
+    if !prefix_path.is_empty() {
+        launcher.setenv("WINEPREFIX", prefix_path, true);
+    }
+
+    // Try to launch winetricks
+    let cmd_args = vec!["winetricks"];
+    let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
+
+    match launcher.spawn(&os_args) {
+        Ok(_) => {
+            overlay.add_toast(adw::Toast::new("Launching winetricks..."));
+        }
+        Err(e) => {
+            overlay.add_toast(adw::Toast::new(&format!(
+                "Failed to launch winetricks: {}. Make sure winetricks is installed.",
+                e
+            )));
+        }
+    }
 }

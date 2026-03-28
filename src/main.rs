@@ -1455,8 +1455,9 @@ fn show_edit_game_dialog(
 
     let game_prefix = game.prefix_path.clone();
     let overlay_clone_wt = overlay.clone();
+    let dialog_parent = parent.clone();
     winetricks_btn.connect_clicked(move |_| {
-        launch_winetricks(&game_prefix, &overlay_clone_wt);
+        show_winetricks_dialog(&dialog_parent, &game_prefix, &overlay_clone_wt);
     });
 
     let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
@@ -1601,9 +1602,32 @@ fn show_delete_confirmation(
 
 // --- WINETRICKS INTEGRATION ---
 
-/// Launches winetricks for the given Wine prefix via `umu-run winetricks`.
-/// umu-launcher includes built-in winetricks support; no separate download needed.
-fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
+/// Common winetricks verbs shown as quick-select chips in the dialog.
+const COMMON_VERBS: &[(&str, &str)] = &[
+    ("corefonts", "Core Fonts"),
+    ("vcrun2022", "VC++ 2022"),
+    ("vcrun2019", "VC++ 2019"),
+    ("vcrun2017", "VC++ 2017"),
+    ("vcrun2015", "VC++ 2015"),
+    ("dotnet48", ".NET 4.8"),
+    ("dotnet40", ".NET 4.0"),
+    ("dotnet35", ".NET 3.5"),
+    ("dxvk", "DXVK"),
+    ("d3dx9", "DirectX 9"),
+    ("d3dx11_43", "DirectX 11"),
+    ("xna40", "XNA 4.0"),
+    ("physx", "PhysX"),
+    ("mfc42", "MFC 4.2"),
+    ("vb6run", "VB6 Runtime"),
+];
+
+/// Opens a small modal where the user can type winetricks verbs and pick from
+/// common presets, then invokes `umu-run winetricks <verbs…>`.
+fn show_winetricks_dialog(
+    parent: &adw::ApplicationWindow,
+    prefix_path: &str,
+    overlay: &adw::ToastOverlay,
+) {
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
@@ -1618,6 +1642,123 @@ fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
         return;
     }
 
+    let dialog = adw::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .default_width(420)
+        .default_height(480)
+        .destroy_with_parent(true)
+        .build();
+
+    let header = adw::HeaderBar::builder()
+        .title_widget(&adw::WindowTitle::new("Winetricks", ""))
+        .show_end_title_buttons(false)
+        .show_start_title_buttons(false)
+        .build();
+
+    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let run_btn = gtk4::Button::builder()
+        .label("Run")
+        .css_classes(["suggested-action"])
+        .build();
+
+    header.pack_start(&cancel_btn);
+    header.pack_end(&run_btn);
+
+    let toolbar_view = adw::ToolbarView::builder().build();
+    toolbar_view.add_top_bar(&header);
+
+    let content = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(16)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    // Verb entry row
+    let verbs_group = adw::PreferencesGroup::builder()
+        .title("Verbs to install")
+        .description("Space-separated list of winetricks verbs, e.g. vcrun2022 corefonts")
+        .build();
+    let verbs_entry = adw::EntryRow::builder()
+        .title("Verbs")
+        .build();
+    verbs_group.add(&verbs_entry);
+    content.append(&verbs_group);
+
+    // Common verbs as a flow of toggle buttons
+    let presets_group = adw::PreferencesGroup::builder()
+        .title("Common presets")
+        .description("Click to add/remove from the verbs list above")
+        .build();
+
+    let flow = gtk4::FlowBox::builder()
+        .selection_mode(gtk4::SelectionMode::None)
+        .homogeneous(false)
+        .column_spacing(6)
+        .row_spacing(6)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+
+    for (verb, label) in COMMON_VERBS {
+        let btn = gtk4::ToggleButton::builder()
+            .label(*label)
+            .tooltip_text(*verb)
+            .build();
+        let verb_str = verb.to_string();
+        let entry_clone = verbs_entry.clone();
+        btn.connect_toggled(move |b| {
+            let current = entry_clone.text().to_string();
+            let mut verbs: Vec<&str> = current.split_whitespace().collect();
+            if b.is_active() {
+                if !verbs.contains(&verb_str.as_str()) {
+                    verbs.push(&verb_str);
+                }
+            } else {
+                verbs.retain(|v| *v != verb_str.as_str());
+            }
+            entry_clone.set_text(&verbs.join(" "));
+        });
+        flow.append(&btn);
+    }
+
+    presets_group.add(&flow);
+    content.append(&presets_group);
+
+    let scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&content)
+        .build();
+
+    toolbar_view.set_content(Some(&scroll));
+    dialog.set_content(Some(&toolbar_view));
+
+    let dialog_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| dialog_cancel.destroy());
+
+    let prefix_path = prefix_path.to_string();
+    let overlay_clone = overlay.clone();
+    let dialog_run = dialog.clone();
+    run_btn.connect_clicked(move |_| {
+        let verbs = verbs_entry.text().to_string();
+        let verbs = verbs.trim().to_string();
+        if verbs.is_empty() {
+            overlay_clone.add_toast(adw::Toast::new("Please enter at least one winetricks verb."));
+            return;
+        }
+        dialog_run.destroy();
+        launch_winetricks(&prefix_path, &verbs, &overlay_clone);
+    });
+
+    dialog.present();
+}
+
+/// Launches `umu-run winetricks <verbs…>` for the given Wine prefix.
+fn launch_winetricks(prefix_path: &str, verbs: &str, overlay: &adw::ToastOverlay) {
     let umu = get_umu_run_path();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
@@ -1625,12 +1766,18 @@ fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
         launcher.setenv("WINEPREFIX", prefix_path, true);
     }
 
-    let cmd_args = vec![umu, "winetricks".to_string()];
+    // Build args: umu-run winetricks <verb1> <verb2> ...
+    let mut cmd_args = vec![umu, "winetricks".to_string()];
+    cmd_args.extend(verbs.split_whitespace().map(|s| s.to_string()));
+
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
     match launcher.spawn(&os_args) {
         Ok(_) => {
-            overlay.add_toast(adw::Toast::new("Launching winetricks…"));
+            overlay.add_toast(adw::Toast::new(&format!(
+                "Running winetricks {}…",
+                verbs
+            )));
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(

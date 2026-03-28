@@ -4,8 +4,10 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 const APP_ID: &str = "com.github.leyen";
 
@@ -119,7 +121,26 @@ fn save_settings(settings: &GlobalSettings) {
 
 // --- UMU LAUNCHER HELPERS ---
 
-/// Returns the path to `umu-run` to use when launching games.
+static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// `true` while the background download thread is actively running.
+/// The UI polls this to show/hide the download status banner.
+static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Directory where the umu-launcher zipapp is extracted.
+fn get_umu_core_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/leyen/core/umu-launcher", home)
+}
+
+/// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
+fn get_local_umu_run_path() -> String {
+    format!("{}/umu/umu-run", get_umu_core_dir())
+}
+
+/// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 fn get_umu_run_path() -> String {
     if std::process::Command::new("which")
@@ -131,8 +152,7 @@ fn get_umu_run_path() -> String {
         return "umu-run".to_string();
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/umu-run", home);
+    let local_path = get_local_umu_run_path();
     if std::path::Path::new(&local_path).exists() {
         return local_path;
     }
@@ -140,141 +160,125 @@ fn get_umu_run_path() -> String {
     "umu-run".to_string()
 }
 
-/// Checks whether `umu-run` is available.  If it is not found in the system
-/// PATH or in the local leyen data directory, spawns a background thread that
-/// downloads the latest release from the umu-launcher GitHub repository and
-/// places it at `~/.local/share/leyen/umu-launcher/umu-run`.
-fn check_or_install_umu() {
+/// Returns `true` when `umu-run` is actually available (system PATH or local
+/// install).  Unlike `get_umu_run_path()` this does not return a fallback
+/// string when umu-run is absent.
+fn is_umu_run_available() -> bool {
     if std::process::Command::new("which")
         .arg("umu-run")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
+        return true;
+    }
+    std::path::Path::new(&get_local_umu_run_path()).exists()
+}
+
+/// Checks whether `umu-run` is available.  If it is not found in the system
+/// PATH or in the local leyen data directory, spawns a background thread that
+/// downloads the latest zipapp release from the umu-launcher GitHub repository
+/// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
+fn check_or_install_umu() {
+    if is_umu_run_available() {
         return;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let umu_dir = format!("{}/.local/share/leyen/umu-launcher", home);
-    let umu_run_path = format!("{}/umu-run", umu_dir);
-
-    if std::path::Path::new(&umu_run_path).exists() {
+    if UMU_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         return;
     }
 
-    // Download in background so startup is not blocked
+    UMU_DOWNLOADING.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let umu_core_dir = get_umu_core_dir();
+
     std::thread::spawn(move || {
-        let _ = fs::create_dir_all(&umu_dir);
-        let url =
-            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest/download/umu-run";
-        let ok = std::process::Command::new("curl")
-            .args(["-L", "--fail", "-o", &umu_run_path, url])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-
-        if ok {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = fs::metadata(&umu_run_path) {
-                    let mut perms = meta.permissions();
-                    perms.set_mode(0o755);
-                    let _ = fs::set_permissions(&umu_run_path, perms);
-                }
-            }
+        let result = download_and_install_umu(&umu_core_dir);
+        if !result {
+            // Reset so the next application start can retry.
+            UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
         }
+        UMU_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
     });
 }
 
-static WINETRICKS_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+/// Downloads the latest umu-launcher zipapp tarball and extracts it into
+/// `dest_dir`.  Returns `true` on success.
+fn download_and_install_umu(dest_dir: &str) -> bool {
+    let _ = fs::create_dir_all(dest_dir);
 
-fn get_winetricks_path() -> Option<String> {
-    if std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return Some("winetricks".to_string());
+    // Resolve the latest release tag via the GitHub redirect.
+    let tag_output = std::process::Command::new("curl")
+        .args([
+            "-sI",
+            "-L",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{url_effective}",
+            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
+        ])
+        .output();
+
+    let version = match tag_output {
+        Ok(o) if o.status.success() => {
+            let url = String::from_utf8_lossy(&o.stdout);
+            url.trim()
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        }
+        _ => return false,
+    };
+
+    if version.is_empty() {
+        return false;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
-    if std::path::Path::new(&local_path).exists() {
-        return Some(local_path);
-    }
+    let tarball_name = format!("umu-launcher-{}-zipapp.tar", version);
+    let tarball_path = format!("{}/{}", dest_dir, tarball_name);
+    let download_url = format!(
+        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/{}/{}",
+        version, tarball_name
+    );
 
-    None
-}
-
-fn download_winetricks_to(path: &str) -> bool {
-    if let Some(parent) = std::path::Path::new(path).parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    let url = "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks";
     let ok = std::process::Command::new("curl")
-        .args(["-L", "--fail", "-o", path, url])
+        .args(["-sL", "--fail", "-o", &tarball_path, &download_url])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
 
-    if ok {
+    if !ok {
+        let _ = fs::remove_file(&tarball_path);
+        return false;
+    }
+
+    // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
+    let extracted = std::process::Command::new("tar")
+        .args(["-xf", &tarball_path, "-C", dest_dir])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let _ = fs::remove_file(&tarball_path);
+
+    if extracted {
+        // Ensure the binary is executable.
+        let umu_run = format!("{}/umu/umu-run", dest_dir);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = fs::metadata(path) {
+            if let Ok(meta) = fs::metadata(&umu_run) {
                 let mut perms = meta.permissions();
                 perms.set_mode(0o755);
-                let _ = fs::set_permissions(path, perms);
+                let _ = fs::set_permissions(&umu_run, perms);
             }
         }
     }
 
-    ok
-}
-
-fn ensure_winetricks_available(overlay: Option<&adw::ToastOverlay>) -> Option<String> {
-    if let Some(path) = get_winetricks_path() {
-        return Some(path);
-    }
-
-    if let Some(overlay) = overlay {
-        overlay.add_toast(adw::Toast::new("Downloading winetricks..."));
-    }
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
-
-    if download_winetricks_to(&local_path) {
-        if let Some(overlay) = overlay {
-            overlay.add_toast(adw::Toast::new("Winetricks downloaded."));
-        }
-        Some(local_path)
-    } else {
-        if let Some(overlay) = overlay {
-            overlay.add_toast(adw::Toast::new(
-                "Failed to download winetricks. Please install it manually.",
-            ));
-        }
-        None
-    }
-}
-
-fn check_or_install_winetricks() {
-    if get_winetricks_path().is_some() {
-        return;
-    }
-
-    if WINETRICKS_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
-
-    std::thread::spawn(|| {
-        let _ = ensure_winetricks_available(None);
-    });
+    extracted
 }
 
 static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
@@ -446,7 +450,7 @@ fn detect_proton_versions() -> GlobalSettings {
 
 fn main() -> glib::ExitCode {
     check_or_install_umu();
-    check_or_install_winetricks();
+    ensure_winetricks_verbs_cached();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -534,6 +538,14 @@ fn build_ui(app: &adw::Application) {
 
     let toast_overlay = adw::ToastOverlay::new();
     toast_overlay.set_child(Some(&scroll));
+
+    // Banner shown while umu-launcher is being downloaded in the background.
+    let download_banner = adw::Banner::builder()
+        .title("Downloading umu-launcher… Please wait before starting games.")
+        .revealed(UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed))
+        .build();
+    toolbar_view.add_top_bar(&download_banner);
+
     toolbar_view.set_content(Some(&toast_overlay));
 
     let window = adw::ApplicationWindow::builder()
@@ -553,6 +565,28 @@ fn build_ui(app: &adw::Application) {
         &toast_overlay,
         &window,
     );
+
+    // Poll every 2 seconds; hide the banner and show a toast once the download
+    // completes (or if it was never needed).
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        let banner_clone = download_banner.clone();
+        let overlay_clone = toast_overlay.clone();
+        glib::timeout_add_seconds_local(2, move || {
+            if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+                return glib::ControlFlow::Continue;
+            }
+            banner_clone.set_revealed(false);
+            if is_umu_run_available() {
+                overlay_clone
+                    .add_toast(adw::Toast::new("umu-launcher downloaded. Ready to play!"));
+            } else {
+                overlay_clone.add_toast(adw::Toast::new(
+                    "Failed to download umu-launcher. Check your internet connection.",
+                ));
+            }
+            glib::ControlFlow::Break
+        });
+    }
 
     /* --- EVENT HANDLERS --- */
 
@@ -723,6 +757,22 @@ fn populate_game_list(
 // --- CORE LAUNCH LOGIC ---
 
 fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
+    // Block launch while umu-launcher is being downloaded.
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        return;
+    }
+
+    // Block launch if umu-run is simply not available.
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
     let settings = load_settings();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
@@ -1407,9 +1457,11 @@ fn show_edit_game_dialog(
     let winetricks_btn = gtk4::Button::builder().label("Open Winetricks").build();
 
     let game_prefix = game.prefix_path.clone();
+    let game_proton = resolve_proton_path(&game.proton).unwrap_or_default();
     let overlay_clone_wt = overlay.clone();
+    let dialog_parent = parent.clone();
     winetricks_btn.connect_clicked(move |_| {
-        launch_winetricks(&game_prefix, &overlay_clone_wt);
+        show_winetricks_dialog(&dialog_parent, &game_prefix, &game_proton, &overlay_clone_wt);
     });
 
     let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
@@ -1552,30 +1604,404 @@ fn show_delete_confirmation(
     });
 }
 
+// --- WINETRICKS VERB LIST CACHE ---
+
+const WINETRICKS_VERBS_URL: &str =
+    "https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt";
+
+fn get_winetricks_verbs_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/leyen/core/winetricks/all.txt", home)
+}
+
+/// Downloads the winetricks verb list in the background if it is not yet cached.
+fn ensure_winetricks_verbs_cached() {
+    let cache_path = get_winetricks_verbs_path();
+    if std::path::Path::new(&cache_path).exists() {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Some(parent) = std::path::Path::new(&cache_path).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = std::process::Command::new("curl")
+            .args(["-sL", "--fail", "-o", &cache_path, WINETRICKS_VERBS_URL])
+            .status();
+    });
+}
+
+#[derive(Clone)]
+struct WinetricksVerb {
+    category: String,
+    verb: String,
+    description: String,
+}
+
+/// Parses the `all.txt` format:
+///   `===== category =====`
+///   `verb_name    Description text [optional tags]`
+fn parse_winetricks_verbs(content: &str) -> Vec<WinetricksVerb> {
+    let mut result = Vec::new();
+    let mut current_cat = String::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("=====") {
+            current_cat = trimmed
+                .trim_matches('=')
+                .trim()
+                .to_string();
+        } else if !trimmed.is_empty() && !current_cat.is_empty() && current_cat != "prefix" {
+            // Verb lines: verb followed by whitespace then description.
+            // Some lines use a single space, others use many — split on first space.
+            let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                let verb = parts[0].trim().to_string();
+                let description = parts[1].trim().to_string();
+                if !verb.is_empty() {
+                    result.push(WinetricksVerb {
+                        category: current_cat.clone(),
+                        verb,
+                        description,
+                    });
+                }
+            }
+        }
+    }
+    result
+}
+
+fn load_winetricks_verbs() -> Vec<WinetricksVerb> {
+    match fs::read_to_string(get_winetricks_verbs_path()) {
+        Ok(content) => parse_winetricks_verbs(&content),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn category_display_name(cat: &str) -> &str {
+    match cat {
+        "dlls" => "DLLs",
+        "fonts" => "Fonts",
+        "apps" => "Applications",
+        "benchmarks" => "Benchmarks",
+        "settings" => "Settings",
+        _ => cat,
+    }
+}
+
+/// Escapes the five XML/Pango special characters so the text can be safely
+/// passed to widgets that interpret their label/subtitle as Pango markup.
+fn escape_markup(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+// Display order for categories.
+const CATEGORY_ORDER: &[&str] = &["dlls", "fonts", "apps", "settings", "benchmarks"];
+
 // --- WINETRICKS INTEGRATION ---
 
-fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
-    let Some(winetricks_cmd) = ensure_winetricks_available(Some(overlay)) else {
+/// Opens a verb-browser dialog: search bar + grouped, checkable verb list, then
+/// calls `launch_winetricks` with the user's selection.
+fn show_winetricks_dialog(
+    parent: &adw::ApplicationWindow,
+    prefix_path: &str,
+    proton_path: &str,
+    overlay: &adw::ToastOverlay,
+) {
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
         return;
-    };
+    }
+
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
+    // Load verbs from disk cache.
+    let verbs = load_winetricks_verbs();
+    if verbs.is_empty() {
+        // Cache not ready yet — trigger download and ask user to retry.
+        ensure_winetricks_verbs_cached();
+        overlay.add_toast(adw::Toast::new(
+            "Downloading verb list… Please re-open Winetricks in a moment.",
+        ));
+        return;
+    }
+
+    // ── Dialog window ──────────────────────────────────────────────────────
+    let dialog = adw::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .default_width(480)
+        .default_height(600)
+        .destroy_with_parent(true)
+        .build();
+
+    let header = adw::HeaderBar::builder()
+        .title_widget(&adw::WindowTitle::new("Winetricks", "Install Windows components"))
+        .show_end_title_buttons(false)
+        .show_start_title_buttons(false)
+        .build();
+
+    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let run_btn = gtk4::Button::builder()
+        .label("Install")
+        .css_classes(["suggested-action"])
+        .build();
+
+    header.pack_start(&cancel_btn);
+    header.pack_end(&run_btn);
+
+    // ── Search entry (pinned above the scroll) ─────────────────────────────
+    let search_entry = gtk4::SearchEntry::builder()
+        .placeholder_text("Search verbs…")
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    // ── Scrollable content: one PreferencesGroup per category ─────────────
+    let clamp = adw::Clamp::builder()
+        .margin_top(4)
+        .margin_bottom(8)
+        .build();
+
+    let verb_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    clamp.set_child(Some(&verb_box));
+
+    let scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&clamp)
+        .build();
+
+    // ── Selected-verbs footer ──────────────────────────────────────────────
+    let footer_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(6)
+        .margin_top(6)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    let footer_caption = gtk4::Label::builder()
+        .label("Selected:")
+        .css_classes(["dim-label"])
+        .build();
+
+    let footer_label = gtk4::Label::builder()
+        .label("none")
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .hexpand(true)
+        .build();
+
+    footer_box.append(&footer_caption);
+    footer_box.append(&footer_label);
+
+    // ── Outer layout ───────────────────────────────────────────────────────
+    let outer = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+    outer.append(&search_entry);
+    outer.append(&scroll);
+
+    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    outer.append(&sep);
+    outer.append(&footer_box);
+
+    let toolbar_view = adw::ToolbarView::builder().build();
+    toolbar_view.add_top_bar(&header);
+    toolbar_view.set_content(Some(&outer));
+    dialog.set_content(Some(&toolbar_view));
+
+    // ── Build grouped rows ─────────────────────────────────────────────────
+    // selected: shared mutable set of chosen verb names
+    let selected: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+
+    // groups: (group_widget, Vec<(row, verb_name)>) — used for search filtering
+    let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, String)>)> = Vec::new();
+
+    // Collect verbs grouped and ordered by CATEGORY_ORDER.
+    let mut ordered_cats: Vec<&str> = CATEGORY_ORDER.to_vec();
+    // Append any categories not in CATEGORY_ORDER (forward-compat).
+    for v in &verbs {
+        if !ordered_cats.contains(&v.category.as_str()) {
+            ordered_cats.push(&v.category);
+        }
+    }
+
+    for cat in ordered_cats {
+        let cat_verbs: Vec<&WinetricksVerb> = verbs
+            .iter()
+            .filter(|v| v.category == cat)
+            .collect();
+        if cat_verbs.is_empty() {
+            continue;
+        }
+
+        let group = adw::PreferencesGroup::builder()
+            .title(category_display_name(cat))
+            .build();
+
+        let mut group_rows: Vec<(adw::ActionRow, String)> = Vec::new();
+
+        for wv in cat_verbs {
+            let row = adw::ActionRow::builder()
+                .title(&wv.verb)
+                .subtitle(&escape_markup(&wv.description))
+                .activatable(true)
+                .build();
+
+            let check = gtk4::CheckButton::builder()
+                .valign(gtk4::Align::Center)
+                .build();
+            row.add_suffix(&check);
+            row.set_activatable_widget(Some(&check));
+
+            // Checkbox toggled → update selected list + footer label.
+            let selected_clone = Rc::clone(&selected);
+            let footer_clone = footer_label.clone();
+            let verb_name = wv.verb.clone();
+            check.connect_toggled(move |b| {
+                let mut sel = selected_clone.borrow_mut();
+                if b.is_active() {
+                    if !sel.contains(&verb_name) {
+                        sel.push(verb_name.clone());
+                    }
+                } else {
+                    sel.retain(|v| v != &verb_name);
+                }
+                footer_clone.set_text(if sel.is_empty() {
+                    "none".to_string()
+                } else {
+                    format!("{} verb(s) selected", sel.len())
+                }.as_str());
+            });
+
+            group.add(&row);
+            group_rows.push((row, wv.verb.clone()));
+        }
+
+        verb_box.append(&group);
+        groups.push((group, group_rows));
+    }
+
+    // ── Search filtering ───────────────────────────────────────────────────
+    let groups_for_search = groups.clone();
+    search_entry.connect_search_changed(move |entry| {
+        let query = entry.text().to_lowercase();
+        for (group, rows) in &groups_for_search {
+            let mut any_visible = false;
+            for (row, verb) in rows {
+                let visible = if query.is_empty() {
+                    true
+                } else {
+                    verb.to_lowercase().contains(&query)
+                        || row
+                            .subtitle()
+                            .map(|s| s.to_lowercase().contains(&query))
+                            .unwrap_or(false)
+                };
+                row.set_visible(visible);
+                if visible {
+                    any_visible = true;
+                }
+            }
+            group.set_visible(query.is_empty() || any_visible);
+        }
+    });
+
+    // ── Button actions ─────────────────────────────────────────────────────
+    let dialog_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| dialog_cancel.destroy());
+
+    let prefix_owned = prefix_path.to_string();
+    let proton_owned = proton_path.to_string();
+    let overlay_clone = overlay.clone();
+    let dialog_run = dialog.clone();
+    run_btn.connect_clicked(move |_| {
+        let sel = selected.borrow();
+        let verbs_str = sel.join(" ");
+        if verbs_str.is_empty() {
+            overlay_clone
+                .add_toast(adw::Toast::new("Please select at least one verb to install."));
+            return;
+        }
+        let verb_count = sel.len();
+        drop(sel);
+        dialog_run.destroy();
+        launch_winetricks(&prefix_owned, &proton_owned, &verbs_str, verb_count, &overlay_clone);
+    });
+
+    dialog.present();
+}
+
+/// Launches `umu-run winetricks <verbs…>` for the given Wine prefix and Proton build.
+/// Shows a persistent "Installing…" toast while the process runs, then a
+/// completion/error toast once it exits.
+fn launch_winetricks(
+    prefix_path: &str,
+    proton_path: &str,
+    verbs: &str,
+    verb_count: usize,
+    overlay: &adw::ToastOverlay,
+) {
+    let umu = get_umu_run_path();
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
-    // Set WINEPREFIX if provided
     if !prefix_path.is_empty() {
         launcher.setenv("WINEPREFIX", prefix_path, true);
     }
 
-    // Try to launch winetricks
-    let cmd_args = vec![winetricks_cmd];
+    if !proton_path.is_empty() {
+        launcher.setenv("PROTONPATH", proton_path, true);
+    }
+
+    let mut cmd_args = vec![umu, "winetricks".to_string()];
+    cmd_args.extend(verbs.split_whitespace().map(|s| s.to_string()));
+
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
     match launcher.spawn(&os_args) {
-        Ok(_) => {
-            overlay.add_toast(adw::Toast::new("Launching winetricks..."));
+        Ok(subprocess) => {
+            let progress_toast = adw::Toast::builder()
+                .title(&format!("Installing {} verb(s)…", verb_count))
+                .timeout(0)
+                .build();
+            overlay.add_toast(progress_toast.clone());
+            let overlay_clone = overlay.clone();
+            let subprocess_done = subprocess.clone();
+            subprocess.wait_async(None::<&gio::Cancellable>, move |_| {
+                progress_toast.dismiss();
+                let msg = if subprocess_done.is_successful() {
+                    format!("{} verb(s) installed successfully.", verb_count)
+                } else {
+                    "Winetricks installation encountered errors.".to_string()
+                };
+                overlay_clone.add_toast(adw::Toast::new(&msg));
+            });
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(
-                "Failed to launch winetricks: {}. Make sure winetricks is installed.",
+                "Failed to launch winetricks: {}",
                 e
             )));
         }

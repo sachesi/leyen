@@ -32,6 +32,7 @@ struct Game {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 struct GlobalSettings {
     default_prefix_path: String,
     default_proton: String,
@@ -183,6 +184,96 @@ fn check_or_install_umu() {
                 }
             }
         }
+    });
+}
+
+static WINETRICKS_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn get_winetricks_path() -> Option<String> {
+    if std::process::Command::new("which")
+        .arg("winetricks")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Some("winetricks".to_string());
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
+    if std::path::Path::new(&local_path).exists() {
+        return Some(local_path);
+    }
+
+    None
+}
+
+fn download_winetricks_to(path: &str) -> bool {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    let url = "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks";
+    let ok = std::process::Command::new("curl")
+        .args(["-L", "--fail", "-o", path, url])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if ok {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(path, perms);
+            }
+        }
+    }
+
+    ok
+}
+
+fn ensure_winetricks_available(overlay: Option<&adw::ToastOverlay>) -> Option<String> {
+    if let Some(path) = get_winetricks_path() {
+        return Some(path);
+    }
+
+    if let Some(overlay) = overlay {
+        overlay.add_toast(adw::Toast::new("Downloading winetricks..."));
+    }
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let local_path = format!("{}/.local/share/leyen/umu-launcher/winetricks", home);
+
+    if download_winetricks_to(&local_path) {
+        if let Some(overlay) = overlay {
+            overlay.add_toast(adw::Toast::new("Winetricks downloaded."));
+        }
+        Some(local_path)
+    } else {
+        if let Some(overlay) = overlay {
+            overlay.add_toast(adw::Toast::new(
+                "Failed to download winetricks. Please install it manually.",
+            ));
+        }
+        None
+    }
+}
+
+fn check_or_install_winetricks() {
+    if get_winetricks_path().is_some() {
+        return;
+    }
+
+    if WINETRICKS_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    std::thread::spawn(|| {
+        let _ = ensure_winetricks_available(None);
     });
 }
 
@@ -355,6 +446,7 @@ fn detect_proton_versions() -> GlobalSettings {
 
 fn main() -> glib::ExitCode {
     check_or_install_umu();
+    check_or_install_winetricks();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -1463,6 +1555,9 @@ fn show_delete_confirmation(
 // --- WINETRICKS INTEGRATION ---
 
 fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
+    let Some(winetricks_cmd) = ensure_winetricks_available(Some(overlay)) else {
+        return;
+    };
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
     // Set WINEPREFIX if provided
@@ -1471,7 +1566,7 @@ fn launch_winetricks(prefix_path: &str, overlay: &adw::ToastOverlay) {
     }
 
     // Try to launch winetricks
-    let cmd_args = vec!["winetricks"];
+    let cmd_args = vec![winetricks_cmd];
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
     match launcher.spawn(&os_args) {

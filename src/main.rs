@@ -6,8 +6,10 @@ use libadwaita as adw;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const APP_ID: &str = "com.github.leyen";
 
@@ -126,13 +128,21 @@ static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
 
 /// `true` while the background download thread is actively running.
 /// The UI polls this to show/hide the download status banner.
-static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static UMU_DOWNLOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Directory where the umu-launcher zipapp is extracted.
 fn get_umu_core_dir() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     format!("{}/.local/share/leyen/core/umu-launcher", home)
+}
+
+/// Directory where umu-run stores the Steam Linux Runtime (steamrt3).
+/// Deleting this directory forces umu-run to re-download a clean runtime on
+/// the next launch — useful when pressure-vessel-wrap fails due to a
+/// corrupted or incomplete sniper_platform installation.
+fn get_umu_runtime_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/umu/steamrt3", home)
 }
 
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
@@ -577,8 +587,7 @@ fn build_ui(app: &adw::Application) {
             }
             banner_clone.set_revealed(false);
             if is_umu_run_available() {
-                overlay_clone
-                    .add_toast(adw::Toast::new("umu-launcher downloaded. Ready to play!"));
+                overlay_clone.add_toast(adw::Toast::new("umu-launcher downloaded. Ready to play!"));
             } else {
                 overlay_clone.add_toast(adw::Toast::new(
                     "Failed to download umu-launcher. Check your internet connection.",
@@ -591,8 +600,9 @@ fn build_ui(app: &adw::Application) {
     /* --- EVENT HANDLERS --- */
 
     let window_clone = window.clone();
+    let overlay_for_settings = toast_overlay.clone();
     settings_btn.connect_clicked(move |_| {
-        show_global_settings(&window_clone);
+        show_global_settings(&window_clone, &overlay_for_settings);
     });
 
     let window_clone_2 = window.clone();
@@ -894,7 +904,7 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
 // --- GLOBAL SETTINGS DIALOG ---
 
-fn show_global_settings(parent: &adw::ApplicationWindow) {
+fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
     let settings = load_settings();
 
     let pref_window = adw::PreferencesWindow::builder()
@@ -992,6 +1002,67 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     page.add(&paths_group);
     page.add(&tools_group);
+
+    // ── Maintenance ────────────────────────────────────────────────────────
+    let maintenance_group = adw::PreferencesGroup::builder()
+        .title("Maintenance")
+        .description("Use these actions to fix runtime issues (e.g. Winetricks failing to launch).")
+        .build();
+
+    let reset_btn = gtk4::Button::builder()
+        .label("Reset umu Runtime")
+        .css_classes(["destructive-action"])
+        .halign(gtk4::Align::Start)
+        .build();
+
+    let pref_window_for_reset = pref_window.clone();
+    let overlay_for_reset = overlay.clone();
+    reset_btn.connect_clicked(move |_| {
+        let confirm = gtk4::AlertDialog::builder()
+            .message("Reset umu Runtime?")
+            .detail(
+                "This deletes the Steam Linux Runtime (steamrt3) directory. \
+umu-launcher will re-download a clean copy the next time Winetricks is run.\n\n\
+Use this to fix \"pressure-vessel-wrap\" errors during Winetricks installs.",
+            )
+            .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let overlay_clone = overlay_for_reset.clone();
+        confirm.choose(
+            Some(&pref_window_for_reset),
+            gio::Cancellable::NONE,
+            move |result| {
+                if let Ok(1) = result {
+                    let runtime_dir = get_umu_runtime_dir();
+                    match fs::remove_dir_all(&runtime_dir) {
+                        Ok(_) => {
+                            overlay_clone.add_toast(adw::Toast::new(
+                                "umu runtime reset. Re-run Winetricks to download a fresh copy.",
+                            ));
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            overlay_clone.add_toast(adw::Toast::new(
+                                "umu runtime directory not found — nothing to reset.",
+                            ));
+                        }
+                        Err(e) => {
+                            overlay_clone.add_toast(adw::Toast::new(&format!(
+                                "Failed to reset umu runtime: {}",
+                                e
+                            )));
+                        }
+                    }
+                }
+            },
+        );
+    });
+
+    maintenance_group.add(&reset_btn);
+    page.add(&maintenance_group);
+
     pref_window.add(&page);
 
     // Save settings when window is closed
@@ -1461,7 +1532,12 @@ fn show_edit_game_dialog(
     let overlay_clone_wt = overlay.clone();
     let dialog_parent = parent.clone();
     winetricks_btn.connect_clicked(move |_| {
-        show_winetricks_dialog(&dialog_parent, &game_prefix, &game_proton, &overlay_clone_wt);
+        show_winetricks_dialog(
+            &dialog_parent,
+            &game_prefix,
+            &game_proton,
+            &overlay_clone_wt,
+        );
     });
 
     let winetricks_group = adw::PreferencesGroup::builder().title("Tools").build();
@@ -1608,10 +1684,112 @@ fn show_delete_confirmation(
 
 const WINETRICKS_VERBS_URL: &str =
     "https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt";
+const WINETRICKS_PROGRESS_PULSE_INTERVAL_MS: u64 = 120;
 
 fn get_winetricks_verbs_path() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     format!("{}/.local/share/leyen/core/winetricks/all.txt", home)
+}
+
+fn resolve_winetricks_prefix_path(prefix_path: &str) -> String {
+    if !prefix_path.is_empty() {
+        return prefix_path.to_string();
+    }
+    let from_settings = load_settings().default_prefix_path;
+    if !from_settings.is_empty() {
+        from_settings
+    } else {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        format!("{}/.local/share/leyen/prefixes/default", home)
+    }
+}
+
+fn get_prefix_winetricks_info_dir(prefix_path: &str) -> PathBuf {
+    PathBuf::from(prefix_path).join(".leyen/winetricks")
+}
+
+fn now_unix_timestamp() -> String {
+    match SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+    {
+        Ok(ts) => ts.to_string(),
+        Err(e) => {
+            eprintln!("Failed to compute unix timestamp for winetricks log: {}", e);
+            "unknown-ts".to_string()
+        }
+    }
+}
+
+fn write_winetricks_log(prefix_path: &str, message: &str) {
+    let info_dir = get_prefix_winetricks_info_dir(prefix_path);
+    if let Err(e) = fs::create_dir_all(&info_dir) {
+        eprintln!(
+            "Failed to create winetricks log dir '{}': {}",
+            info_dir.display(),
+            e
+        );
+        return;
+    }
+    let log_path = info_dir.join("install.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+        if let Err(e) = std::io::Write::write_all(
+            &mut file,
+            format!("[{}] {}\n", now_unix_timestamp(), message).as_bytes(),
+        ) {
+            eprintln!(
+                "Failed to write winetricks log entry '{}': {}",
+                log_path.display(),
+                e
+            );
+        }
+    } else {
+        eprintln!("Failed to open winetricks log '{}'", log_path.display());
+    }
+}
+
+fn read_installed_winetricks_components(prefix_path: &str) -> std::collections::HashSet<String> {
+    let components_path =
+        get_prefix_winetricks_info_dir(prefix_path).join("installed_components.txt");
+    fs::read_to_string(&components_path)
+        .ok()
+        .map(|content| {
+            content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn write_installed_winetricks_components(prefix_path: &str, verbs: &[String]) {
+    let info_dir = get_prefix_winetricks_info_dir(prefix_path);
+    if let Err(e) = fs::create_dir_all(&info_dir) {
+        eprintln!(
+            "Failed to create winetricks info dir '{}': {}",
+            info_dir.display(),
+            e
+        );
+        return;
+    }
+    // Merge with whatever is already on disk (reuses the shared reader).
+    let mut all_components: std::collections::BTreeSet<String> =
+        read_installed_winetricks_components(prefix_path)
+            .into_iter()
+            .collect();
+    for verb in verbs {
+        all_components.insert(verb.clone());
+    }
+    let components_path = info_dir.join("installed_components.txt");
+    let data = all_components.into_iter().collect::<Vec<_>>().join("\n");
+    if let Err(e) = fs::write(&components_path, format!("{}\n", data)) {
+        eprintln!(
+            "Failed to write installed winetricks components '{}': {}",
+            components_path.display(),
+            e
+        );
+    }
 }
 
 /// Downloads the winetricks verb list in the background if it is not yet cached.
@@ -1646,10 +1824,7 @@ fn parse_winetricks_verbs(content: &str) -> Vec<WinetricksVerb> {
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("=====") {
-            current_cat = trimmed
-                .trim_matches('=')
-                .trim()
-                .to_string();
+            current_cat = trimmed.trim_matches('=').trim().to_string();
         } else if !trimmed.is_empty() && !current_cat.is_empty() && current_cat != "prefix" {
             // Verb lines: verb followed by whitespace then description.
             // Some lines use a single space, others use many — split on first space.
@@ -1736,6 +1911,11 @@ fn show_winetricks_dialog(
         return;
     }
 
+    // Resolve prefix now so we can load the installed-components list for
+    // this prefix and display it in the dialog.
+    let resolved_prefix = resolve_winetricks_prefix_path(prefix_path);
+    let installed = read_installed_winetricks_components(&resolved_prefix);
+
     // ── Dialog window ──────────────────────────────────────────────────────
     let dialog = adw::Window::builder()
         .transient_for(parent)
@@ -1745,8 +1925,16 @@ fn show_winetricks_dialog(
         .destroy_with_parent(true)
         .build();
 
+    let installed_count = installed.len();
+    let subtitle = if installed_count == 0 {
+        "Install Windows components".to_string()
+    } else if installed_count == 1 {
+        "1 component already installed".to_string()
+    } else {
+        format!("{} components already installed", installed_count)
+    };
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Winetricks", "Install Windows components"))
+        .title_widget(&adw::WindowTitle::new("Winetricks", &subtitle))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
@@ -1760,6 +1948,11 @@ fn show_winetricks_dialog(
     header.pack_start(&cancel_btn);
     header.pack_end(&run_btn);
 
+    let progress_bar = gtk4::ProgressBar::builder()
+        .visible(false)
+        .hexpand(true)
+        .build();
+
     // ── Search entry (pinned above the scroll) ─────────────────────────────
     let search_entry = gtk4::SearchEntry::builder()
         .placeholder_text("Search verbs…")
@@ -1770,10 +1963,7 @@ fn show_winetricks_dialog(
         .build();
 
     // ── Scrollable content: one PreferencesGroup per category ─────────────
-    let clamp = adw::Clamp::builder()
-        .margin_top(4)
-        .margin_bottom(8)
-        .build();
+    let clamp = adw::Clamp::builder().margin_top(4).margin_bottom(8).build();
 
     let verb_box = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
@@ -1817,15 +2007,21 @@ fn show_winetricks_dialog(
     footer_box.append(&footer_label);
 
     // ── Outer layout ───────────────────────────────────────────────────────
+    let content_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+    content_box.append(&search_entry);
+    content_box.append(&scroll);
+
+    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    content_box.append(&sep);
+    content_box.append(&footer_box);
+
     let outer = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .build();
-    outer.append(&search_entry);
-    outer.append(&scroll);
-
-    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
-    outer.append(&sep);
-    outer.append(&footer_box);
+    outer.append(&progress_bar);
+    outer.append(&content_box);
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
@@ -1849,10 +2045,7 @@ fn show_winetricks_dialog(
     }
 
     for cat in ordered_cats {
-        let cat_verbs: Vec<&WinetricksVerb> = verbs
-            .iter()
-            .filter(|v| v.category == cat)
-            .collect();
+        let cat_verbs: Vec<&WinetricksVerb> = verbs.iter().filter(|v| v.category == cat).collect();
         if cat_verbs.is_empty() {
             continue;
         }
@@ -1869,6 +2062,16 @@ fn show_winetricks_dialog(
                 .subtitle(&escape_markup(&wv.description))
                 .activatable(true)
                 .build();
+
+            // If this verb is already installed in the prefix, add a badge.
+            if installed.contains(&wv.verb) {
+                let badge = gtk4::Label::builder()
+                    .label("✓ Installed")
+                    .css_classes(["success", "caption"])
+                    .valign(gtk4::Align::Center)
+                    .build();
+                row.add_suffix(&badge);
+            }
 
             let check = gtk4::CheckButton::builder()
                 .valign(gtk4::Align::Center)
@@ -1889,11 +2092,14 @@ fn show_winetricks_dialog(
                 } else {
                     sel.retain(|v| v != &verb_name);
                 }
-                footer_clone.set_text(if sel.is_empty() {
-                    "none".to_string()
-                } else {
-                    format!("{} verb(s) selected", sel.len())
-                }.as_str());
+                footer_clone.set_text(
+                    if sel.is_empty() {
+                        "none".to_string()
+                    } else {
+                        format!("{} verb(s) selected", sel.len())
+                    }
+                    .as_str(),
+                );
             });
 
             group.add(&row);
@@ -1936,19 +2142,77 @@ fn show_winetricks_dialog(
     let prefix_owned = prefix_path.to_string();
     let proton_owned = proton_path.to_string();
     let overlay_clone = overlay.clone();
+    let run_btn_run = run_btn.clone();
+    let cancel_btn_run = cancel_btn.clone();
+    let content_box_run = content_box.clone();
+    let progress_bar_run = progress_bar.clone();
+    let progress_pulse_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    let progress_pulse_source_run = progress_pulse_source.clone();
+    let progress_pulse_source_finish = progress_pulse_source.clone();
     let dialog_run = dialog.clone();
     run_btn.connect_clicked(move |_| {
         let sel = selected.borrow();
-        let verbs_str = sel.join(" ");
-        if verbs_str.is_empty() {
-            overlay_clone
-                .add_toast(adw::Toast::new("Please select at least one verb to install."));
+        if sel.is_empty() {
+            overlay_clone.add_toast(adw::Toast::new(
+                "Please select at least one verb to install.",
+            ));
             return;
         }
-        let verb_count = sel.len();
+        let selected_verbs: Vec<String> = sel.iter().cloned().collect();
+        let verbs_str = selected_verbs.join(" ");
+        let verb_count = selected_verbs.len();
         drop(sel);
-        dialog_run.destroy();
-        launch_winetricks(&prefix_owned, &proton_owned, &verbs_str, verb_count, &overlay_clone);
+
+        content_box_run.set_sensitive(false);
+        run_btn_run.set_sensitive(false);
+        cancel_btn_run.set_sensitive(false);
+        progress_bar_run.set_visible(true);
+        progress_bar_run.pulse();
+        if let Some(source_id) = progress_pulse_source_run.borrow_mut().take() {
+            source_id.remove();
+        }
+        let progress_bar_anim = progress_bar_run.clone();
+        let source_id = glib::timeout_add_local(
+            std::time::Duration::from_millis(WINETRICKS_PROGRESS_PULSE_INTERVAL_MS),
+            move || {
+                if progress_bar_anim.is_visible() {
+                    progress_bar_anim.pulse();
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            },
+        );
+        *progress_pulse_source_run.borrow_mut() = Some(source_id);
+        dialog_run.set_deletable(false);
+
+        let content_box_finish = content_box_run.clone();
+        let run_btn_finish = run_btn_run.clone();
+        let cancel_btn_finish = cancel_btn_run.clone();
+        let progress_bar_finish = progress_bar_run.clone();
+        let progress_pulse_source_finish_local = progress_pulse_source_finish.clone();
+        let dialog_finish = dialog_run.clone();
+        launch_winetricks(
+            &prefix_owned,
+            &proton_owned,
+            &verbs_str,
+            verb_count,
+            &overlay_clone,
+            &selected_verbs,
+            move |success| {
+                if let Some(source_id) = progress_pulse_source_finish_local.borrow_mut().take() {
+                    source_id.remove();
+                }
+                content_box_finish.set_sensitive(true);
+                run_btn_finish.set_sensitive(true);
+                cancel_btn_finish.set_sensitive(true);
+                progress_bar_finish.set_visible(false);
+                dialog_finish.set_deletable(true);
+                if success {
+                    dialog_finish.destroy();
+                }
+            },
+        );
     });
 
     dialog.present();
@@ -1963,12 +2227,18 @@ fn launch_winetricks(
     verbs: &str,
     verb_count: usize,
     overlay: &adw::ToastOverlay,
+    selected_verbs: &[String],
+    on_finish: impl FnOnce(bool) + 'static,
 ) {
     let umu = get_umu_run_path();
+    // Do not pipe stdout/stderr — winetricks/wine output can contain non-UTF-8
+    // bytes and an unread pipe buffer would deadlock the subprocess.  Inherit
+    // the parent's file descriptors so output flows naturally to the terminal.
     let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
-    if !prefix_path.is_empty() {
-        launcher.setenv("WINEPREFIX", prefix_path, true);
+    let resolved_prefix_path = resolve_winetricks_prefix_path(prefix_path);
+    if !resolved_prefix_path.is_empty() {
+        launcher.setenv("WINEPREFIX", &resolved_prefix_path, true);
     }
 
     if !proton_path.is_empty() {
@@ -1988,15 +2258,37 @@ fn launch_winetricks(
                 .build();
             overlay.add_toast(progress_toast.clone());
             let overlay_clone = overlay.clone();
-            let subprocess_done = subprocess.clone();
-            subprocess.wait_async(None::<&gio::Cancellable>, move |_| {
+            let prefix_for_log = resolved_prefix_path.clone();
+            let verbs_for_log = selected_verbs.to_vec();
+            write_winetricks_log(
+                &prefix_for_log,
+                &format!("Starting winetricks install: {}", verbs_for_log.join(" ")),
+            );
+            // wait_check_async fires the callback with Ok(()) when the process
+            // exits with code 0, Err otherwise — no output buffering needed.
+            subprocess.wait_check_async(None::<&gio::Cancellable>, move |result| {
+                let finished_ok = result.is_ok();
+                if finished_ok {
+                    write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
+                }
+                write_winetricks_log(
+                    &prefix_for_log,
+                    &format!(
+                        "Finished winetricks install [{}]: {}",
+                        if finished_ok { "success" } else { "error" },
+                        verbs_for_log.join(" ")
+                    ),
+                );
                 progress_toast.dismiss();
-                let msg = if subprocess_done.is_successful() {
+                let msg = if finished_ok {
                     format!("{} verb(s) installed successfully.", verb_count)
                 } else {
-                    "Winetricks installation encountered errors.".to_string()
+                    "Winetricks failed. If you see a pressure-vessel error, use \
+Settings → Reset umu Runtime, then try again."
+                        .to_string()
                 };
                 overlay_clone.add_toast(adw::Toast::new(&msg));
+                on_finish(finished_ok);
             });
         }
         Err(e) => {
@@ -2004,6 +2296,11 @@ fn launch_winetricks(
                 "Failed to launch winetricks: {}",
                 e
             )));
+            write_winetricks_log(
+                &resolved_prefix_path,
+                &format!("Failed to launch winetricks: {}", e),
+            );
+            on_finish(false);
         }
     }
 }

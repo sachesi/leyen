@@ -4,8 +4,10 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 const APP_ID: &str = "com.github.leyen";
 
@@ -448,6 +450,7 @@ fn detect_proton_versions() -> GlobalSettings {
 
 fn main() -> glib::ExitCode {
     check_or_install_umu();
+    ensure_winetricks_verbs_cached();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -1600,29 +1603,97 @@ fn show_delete_confirmation(
     });
 }
 
+// --- WINETRICKS VERB LIST CACHE ---
+
+const WINETRICKS_VERBS_URL: &str =
+    "https://raw.githubusercontent.com/Winetricks/winetricks/master/files/verbs/all.txt";
+
+fn get_winetricks_verbs_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/leyen/core/winetricks/all.txt", home)
+}
+
+/// Downloads the winetricks verb list in the background if it is not yet cached.
+fn ensure_winetricks_verbs_cached() {
+    let cache_path = get_winetricks_verbs_path();
+    if std::path::Path::new(&cache_path).exists() {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Some(parent) = std::path::Path::new(&cache_path).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = std::process::Command::new("curl")
+            .args(["-sL", "--fail", "-o", &cache_path, WINETRICKS_VERBS_URL])
+            .status();
+    });
+}
+
+#[derive(Clone)]
+struct WinetricksVerb {
+    category: String,
+    verb: String,
+    description: String,
+}
+
+/// Parses the `all.txt` format:
+///   `===== category =====`
+///   `verb_name    Description text [optional tags]`
+fn parse_winetricks_verbs(content: &str) -> Vec<WinetricksVerb> {
+    let mut result = Vec::new();
+    let mut current_cat = String::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("=====") {
+            current_cat = trimmed
+                .trim_matches('=')
+                .trim()
+                .to_string();
+        } else if !trimmed.is_empty() && !current_cat.is_empty() && current_cat != "prefix" {
+            // Verb lines: verb followed by whitespace then description.
+            // Some lines use a single space, others use many — split on first space.
+            let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
+            if parts.len() == 2 {
+                let verb = parts[0].trim().to_string();
+                let description = parts[1].trim().to_string();
+                if !verb.is_empty() {
+                    result.push(WinetricksVerb {
+                        category: current_cat.clone(),
+                        verb,
+                        description,
+                    });
+                }
+            }
+        }
+    }
+    result
+}
+
+fn load_winetricks_verbs() -> Vec<WinetricksVerb> {
+    match fs::read_to_string(get_winetricks_verbs_path()) {
+        Ok(content) => parse_winetricks_verbs(&content),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn category_display_name(cat: &str) -> &str {
+    match cat {
+        "dlls" => "DLLs",
+        "fonts" => "Fonts",
+        "apps" => "Applications",
+        "benchmarks" => "Benchmarks",
+        "settings" => "Settings",
+        _ => cat,
+    }
+}
+
+// Display order for categories.
+const CATEGORY_ORDER: &[&str] = &["dlls", "fonts", "apps", "settings", "benchmarks"];
+
 // --- WINETRICKS INTEGRATION ---
 
-/// Common winetricks verbs shown as quick-select chips in the dialog.
-const COMMON_VERBS: &[(&str, &str)] = &[
-    ("corefonts", "Core Fonts"),
-    ("vcrun2022", "VC++ 2022"),
-    ("vcrun2019", "VC++ 2019"),
-    ("vcrun2017", "VC++ 2017"),
-    ("vcrun2015", "VC++ 2015"),
-    ("dotnet48", ".NET 4.8"),
-    ("dotnet40", ".NET 4.0"),
-    ("dotnet35", ".NET 3.5"),
-    ("dxvk", "DXVK"),
-    ("d3dx9", "DirectX 9"),
-    ("d3dx11_43", "DirectX 11"),
-    ("xna40", "XNA 4.0"),
-    ("physx", "PhysX"),
-    ("mfc42", "MFC 4.2"),
-    ("vb6run", "VB6 Runtime"),
-];
-
-/// Opens a small modal where the user can type winetricks verbs and pick from
-/// common presets, then invokes `umu-run winetricks <verbs…>`.
+/// Opens a verb-browser dialog: search bar + grouped, checkable verb list, then
+/// calls `launch_winetricks` with the user's selection.
 fn show_winetricks_dialog(
     parent: &adw::ApplicationWindow,
     prefix_path: &str,
@@ -1642,116 +1713,226 @@ fn show_winetricks_dialog(
         return;
     }
 
+    // Load verbs from disk cache.
+    let verbs = load_winetricks_verbs();
+    if verbs.is_empty() {
+        // Cache not ready yet — trigger download and ask user to retry.
+        ensure_winetricks_verbs_cached();
+        overlay.add_toast(adw::Toast::new(
+            "Downloading verb list… Please re-open Winetricks in a moment.",
+        ));
+        return;
+    }
+
+    // ── Dialog window ──────────────────────────────────────────────────────
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(420)
-        .default_height(480)
+        .default_width(480)
+        .default_height(600)
         .destroy_with_parent(true)
         .build();
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Winetricks", ""))
+        .title_widget(&adw::WindowTitle::new("Winetricks", "Install Windows components"))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
 
     let cancel_btn = gtk4::Button::builder().label("Cancel").build();
     let run_btn = gtk4::Button::builder()
-        .label("Run")
+        .label("Install")
         .css_classes(["suggested-action"])
         .build();
 
     header.pack_start(&cancel_btn);
     header.pack_end(&run_btn);
 
-    let toolbar_view = adw::ToolbarView::builder().build();
-    toolbar_view.add_top_bar(&header);
-
-    let content = gtk4::Box::builder()
-        .orientation(gtk4::Orientation::Vertical)
-        .spacing(16)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(16)
-        .margin_end(16)
+    // ── Search entry (pinned above the scroll) ─────────────────────────────
+    let search_entry = gtk4::SearchEntry::builder()
+        .placeholder_text("Search verbs…")
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
         .build();
 
-    // Verb entry row
-    let verbs_group = adw::PreferencesGroup::builder()
-        .title("Verbs to install")
-        .description("Space-separated list of winetricks verbs, e.g. vcrun2022 corefonts")
-        .build();
-    let verbs_entry = adw::EntryRow::builder()
-        .title("Verbs")
-        .build();
-    verbs_group.add(&verbs_entry);
-    content.append(&verbs_group);
-
-    // Common verbs as a flow of toggle buttons
-    let presets_group = adw::PreferencesGroup::builder()
-        .title("Common presets")
-        .description("Click to add/remove from the verbs list above")
-        .build();
-
-    let flow = gtk4::FlowBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .homogeneous(false)
-        .column_spacing(6)
-        .row_spacing(6)
+    // ── Scrollable content: one PreferencesGroup per category ─────────────
+    let clamp = adw::Clamp::builder()
         .margin_top(4)
-        .margin_bottom(4)
+        .margin_bottom(8)
         .build();
 
-    for (verb, label) in COMMON_VERBS {
-        let btn = gtk4::ToggleButton::builder()
-            .label(*label)
-            .tooltip_text(*verb)
-            .build();
-        let verb_str = verb.to_string();
-        let entry_clone = verbs_entry.clone();
-        btn.connect_toggled(move |b| {
-            let current = entry_clone.text().to_string();
-            let mut verbs: Vec<&str> = current.split_whitespace().collect();
-            if b.is_active() {
-                if !verbs.contains(&verb_str.as_str()) {
-                    verbs.push(&verb_str);
-                }
-            } else {
-                verbs.retain(|v| *v != verb_str.as_str());
-            }
-            entry_clone.set_text(&verbs.join(" "));
-        });
-        flow.append(&btn);
-    }
+    let verb_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
 
-    presets_group.add(&flow);
-    content.append(&presets_group);
+    clamp.set_child(Some(&verb_box));
 
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
-        .child(&content)
+        .child(&clamp)
         .build();
 
-    toolbar_view.set_content(Some(&scroll));
+    // ── Selected-verbs footer ──────────────────────────────────────────────
+    let footer_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(6)
+        .margin_top(6)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    let footer_caption = gtk4::Label::builder()
+        .label("Selected:")
+        .css_classes(["dim-label"])
+        .build();
+
+    let footer_label = gtk4::Label::builder()
+        .label("none")
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .hexpand(true)
+        .build();
+
+    footer_box.append(&footer_caption);
+    footer_box.append(&footer_label);
+
+    // ── Outer layout ───────────────────────────────────────────────────────
+    let outer = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+    outer.append(&search_entry);
+    outer.append(&scroll);
+
+    let sep = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+    outer.append(&sep);
+    outer.append(&footer_box);
+
+    let toolbar_view = adw::ToolbarView::builder().build();
+    toolbar_view.add_top_bar(&header);
+    toolbar_view.set_content(Some(&outer));
     dialog.set_content(Some(&toolbar_view));
 
+    // ── Build grouped rows ─────────────────────────────────────────────────
+    // selected: shared mutable set of chosen verb names
+    let selected: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+
+    // groups: (group_widget, Vec<(row, verb_name)>) — used for search filtering
+    let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, String)>)> = Vec::new();
+
+    // Collect verbs grouped and ordered by CATEGORY_ORDER.
+    let mut ordered_cats: Vec<&str> = CATEGORY_ORDER.to_vec();
+    // Append any categories not in CATEGORY_ORDER (forward-compat).
+    for v in &verbs {
+        if !ordered_cats.contains(&v.category.as_str()) {
+            ordered_cats.push(&v.category);
+        }
+    }
+
+    for cat in ordered_cats {
+        let cat_verbs: Vec<&WinetricksVerb> = verbs
+            .iter()
+            .filter(|v| v.category == cat)
+            .collect();
+        if cat_verbs.is_empty() {
+            continue;
+        }
+
+        let group = adw::PreferencesGroup::builder()
+            .title(category_display_name(cat))
+            .build();
+
+        let mut group_rows: Vec<(adw::ActionRow, String)> = Vec::new();
+
+        for wv in cat_verbs {
+            let row = adw::ActionRow::builder()
+                .title(&wv.verb)
+                .subtitle(&wv.description)
+                .activatable(true)
+                .build();
+
+            let check = gtk4::CheckButton::builder()
+                .valign(gtk4::Align::Center)
+                .build();
+            row.add_suffix(&check);
+            row.set_activatable_widget(Some(&check));
+
+            // Checkbox toggled → update selected list + footer label.
+            let selected_clone = Rc::clone(&selected);
+            let footer_clone = footer_label.clone();
+            let verb_name = wv.verb.clone();
+            check.connect_toggled(move |b| {
+                let mut sel = selected_clone.borrow_mut();
+                if b.is_active() {
+                    if !sel.contains(&verb_name) {
+                        sel.push(verb_name.clone());
+                    }
+                } else {
+                    sel.retain(|v| v != &verb_name);
+                }
+                footer_clone.set_text(if sel.is_empty() {
+                    "none".to_string()
+                } else {
+                    sel.join("  ")
+                }.as_str());
+            });
+
+            group.add(&row);
+            group_rows.push((row, wv.verb.clone()));
+        }
+
+        verb_box.append(&group);
+        groups.push((group, group_rows));
+    }
+
+    // ── Search filtering ───────────────────────────────────────────────────
+    let groups_for_search = groups.clone();
+    search_entry.connect_search_changed(move |entry| {
+        let query = entry.text().to_lowercase();
+        for (group, rows) in &groups_for_search {
+            let mut any_visible = false;
+            for (row, verb) in rows {
+                let visible = if query.is_empty() {
+                    true
+                } else {
+                    verb.to_lowercase().contains(&query)
+                        || row
+                            .subtitle()
+                            .map(|s| s.to_lowercase().contains(&query))
+                            .unwrap_or(false)
+                };
+                row.set_visible(visible);
+                if visible {
+                    any_visible = true;
+                }
+            }
+            group.set_visible(query.is_empty() || any_visible);
+        }
+    });
+
+    // ── Button actions ─────────────────────────────────────────────────────
     let dialog_cancel = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_cancel.destroy());
 
-    let prefix_path = prefix_path.to_string();
+    let prefix_owned = prefix_path.to_string();
     let overlay_clone = overlay.clone();
     let dialog_run = dialog.clone();
     run_btn.connect_clicked(move |_| {
-        let verbs = verbs_entry.text().to_string();
-        let verbs = verbs.trim().to_string();
-        if verbs.is_empty() {
-            overlay_clone.add_toast(adw::Toast::new("Please enter at least one winetricks verb."));
+        let verbs_str = selected.borrow().join(" ");
+        if verbs_str.is_empty() {
+            overlay_clone
+                .add_toast(adw::Toast::new("Please select at least one verb to install."));
             return;
         }
         dialog_run.destroy();
-        launch_winetricks(&prefix_path, &verbs, &overlay_clone);
+        launch_winetricks(&prefix_owned, &verbs_str, &overlay_clone);
     });
 
     dialog.present();
@@ -1766,7 +1947,6 @@ fn launch_winetricks(prefix_path: &str, verbs: &str, overlay: &adw::ToastOverlay
         launcher.setenv("WINEPREFIX", prefix_path, true);
     }
 
-    // Build args: umu-run winetricks <verb1> <verb2> ...
     let mut cmd_args = vec![umu, "winetricks".to_string()];
     cmd_args.extend(verbs.split_whitespace().map(|s| s.to_string()));
 
@@ -1774,10 +1954,7 @@ fn launch_winetricks(prefix_path: &str, verbs: &str, overlay: &adw::ToastOverlay
 
     match launcher.spawn(&os_args) {
         Ok(_) => {
-            overlay.add_toast(adw::Toast::new(&format!(
-                "Running winetricks {}…",
-                verbs
-            )));
+            overlay.add_toast(adw::Toast::new(&format!("Running winetricks {}…", verbs)));
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(

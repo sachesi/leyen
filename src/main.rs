@@ -2168,7 +2168,6 @@ fn launch_winetricks(
                 None::<String>,
                 None::<&gio::Cancellable>,
                 move |result| {
-                    let mut finished_ok = false;
                     match result {
                         Ok((stdout, stderr)) => {
                             if let Some(out) = stdout {
@@ -2187,13 +2186,6 @@ fn launch_winetricks(
                                     );
                                 }
                             }
-                            if subprocess_for_status.is_successful() {
-                                finished_ok = true;
-                                write_installed_winetricks_components(
-                                    &prefix_for_log,
-                                    &verbs_for_log,
-                                );
-                            }
                         }
                         Err(e) => {
                             write_winetricks_log(
@@ -2202,6 +2194,12 @@ fn launch_winetricks(
                             );
                         }
                     }
+                    let finished_ok = if subprocess_for_status.is_successful() {
+                        write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
+                        true
+                    } else {
+                        false
+                    };
 
                     write_winetricks_log(
                         &prefix_for_log,

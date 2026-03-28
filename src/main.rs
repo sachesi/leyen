@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-const APP_ID: &str = "com.github.umu_launcher_gui";
+const APP_ID: &str = "com.github.leyen";
 
 // --- DATA STRUCTURES ---
 
@@ -32,11 +32,16 @@ struct GlobalSettings {
     available_proton_versions: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct GamesConfig {
+    games: Vec<Game>,
+}
+
 // --- FILE IO ---
 
 fn get_config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let config_dir = PathBuf::from(format!("{}/.config/umu_gui", home));
+    let config_dir = PathBuf::from(format!("{}/.config/leyen", home));
     if !config_dir.exists() {
         let _ = fs::create_dir_all(&config_dir);
     }
@@ -44,17 +49,19 @@ fn get_config_dir() -> PathBuf {
 }
 
 fn get_config_path() -> PathBuf {
-    get_config_dir().join("games.json")
+    get_config_dir().join("games.toml")
 }
 
 fn get_settings_path() -> PathBuf {
-    get_config_dir().join("settings.json")
+    get_config_dir().join("settings.toml")
 }
 
 fn load_games() -> Vec<Game> {
     let path = get_config_path();
     if let Ok(data) = fs::read_to_string(path) {
-        serde_json::from_str(&data).unwrap_or_else(|_| Vec::new())
+        toml::from_str::<GamesConfig>(&data)
+            .map(|config| config.games)
+            .unwrap_or_else(|_| Vec::new())
     } else {
         Vec::new()
     }
@@ -62,7 +69,10 @@ fn load_games() -> Vec<Game> {
 
 fn save_games(games: &[Game]) {
     let path = get_config_path();
-    if let Ok(data) = serde_json::to_string_pretty(games) {
+    let config = GamesConfig {
+        games: games.to_vec(),
+    };
+    if let Ok(data) = toml::to_string_pretty(&config) {
         let _ = fs::write(path, data);
     }
 }
@@ -70,7 +80,7 @@ fn save_games(games: &[Game]) {
 fn load_settings() -> GlobalSettings {
     let path = get_settings_path();
     if let Ok(data) = fs::read_to_string(path) {
-        serde_json::from_str(&data).unwrap_or_else(|_| {
+        toml::from_str(&data).unwrap_or_else(|_| {
             let settings = detect_proton_versions();
             save_settings(&settings);
             settings
@@ -84,7 +94,7 @@ fn load_settings() -> GlobalSettings {
 
 fn save_settings(settings: &GlobalSettings) {
     let path = get_settings_path();
-    if let Ok(data) = serde_json::to_string_pretty(settings) {
+    if let Ok(data) = toml::to_string_pretty(settings) {
         let _ = fs::write(path, data);
     }
 }
@@ -94,6 +104,23 @@ fn detect_proton_versions() -> GlobalSettings {
 
     // Check common Proton installation locations
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+
+    // Check local leyen Proton directory first
+    let leyen_proton = PathBuf::from(format!("{}/.local/share/leyen/proton", home));
+    if leyen_proton.exists() {
+        if let Ok(entries) = fs::read_dir(&leyen_proton) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        versions.push(name.to_string());
+                    }
+                }
+            }
+        }
+    } else {
+        // Create the directory if it doesn't exist
+        let _ = fs::create_dir_all(&leyen_proton);
+    }
 
     // Steam's compatibility tools
     let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
@@ -187,7 +214,7 @@ fn build_ui(app: &adw::Application) {
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title("umu-launcher")
+        .title("Leyen")
         .default_width(700)
         .default_height(600)
         .content(&toolbar_view)

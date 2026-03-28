@@ -136,6 +136,15 @@ fn get_umu_core_dir() -> String {
     format!("{}/.local/share/leyen/core/umu-launcher", home)
 }
 
+/// Directory where umu-run stores the Steam Linux Runtime (steamrt3).
+/// Deleting this directory forces umu-run to re-download a clean runtime on
+/// the next launch — useful when pressure-vessel-wrap fails due to a
+/// corrupted or incomplete sniper_platform installation.
+fn get_umu_runtime_dir() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    format!("{}/.local/share/umu/steamrt3", home)
+}
+
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
 fn get_local_umu_run_path() -> String {
     format!("{}/umu/umu-run", get_umu_core_dir())
@@ -591,8 +600,9 @@ fn build_ui(app: &adw::Application) {
     /* --- EVENT HANDLERS --- */
 
     let window_clone = window.clone();
+    let overlay_for_settings = toast_overlay.clone();
     settings_btn.connect_clicked(move |_| {
-        show_global_settings(&window_clone);
+        show_global_settings(&window_clone, &overlay_for_settings);
     });
 
     let window_clone_2 = window.clone();
@@ -894,7 +904,7 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
 // --- GLOBAL SETTINGS DIALOG ---
 
-fn show_global_settings(parent: &adw::ApplicationWindow) {
+fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
     let settings = load_settings();
 
     let pref_window = adw::PreferencesWindow::builder()
@@ -992,6 +1002,67 @@ fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     page.add(&paths_group);
     page.add(&tools_group);
+
+    // ── Maintenance ────────────────────────────────────────────────────────
+    let maintenance_group = adw::PreferencesGroup::builder()
+        .title("Maintenance")
+        .description("Use these actions to fix runtime issues (e.g. Winetricks failing to launch).")
+        .build();
+
+    let reset_btn = gtk4::Button::builder()
+        .label("Reset umu Runtime")
+        .css_classes(["destructive-action"])
+        .halign(gtk4::Align::Start)
+        .build();
+
+    let pref_window_for_reset = pref_window.clone();
+    let overlay_for_reset = overlay.clone();
+    reset_btn.connect_clicked(move |_| {
+        let confirm = gtk4::AlertDialog::builder()
+            .message("Reset umu Runtime?")
+            .detail(
+                "This deletes the Steam Linux Runtime (steamrt3) directory. \
+umu-launcher will re-download a clean copy the next time Winetricks is run.\n\n\
+Use this to fix \"pressure-vessel-wrap\" errors during Winetricks installs.",
+            )
+            .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
+            .cancel_button(0)
+            .default_button(0)
+            .build();
+
+        let overlay_clone = overlay_for_reset.clone();
+        confirm.choose(
+            Some(&pref_window_for_reset),
+            gio::Cancellable::NONE,
+            move |result| {
+                if let Ok(1) = result {
+                    let runtime_dir = get_umu_runtime_dir();
+                    match fs::remove_dir_all(&runtime_dir) {
+                        Ok(_) => {
+                            overlay_clone.add_toast(adw::Toast::new(
+                                "umu runtime reset. Re-run Winetricks to download a fresh copy.",
+                            ));
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            overlay_clone.add_toast(adw::Toast::new(
+                                "umu runtime directory not found — nothing to reset.",
+                            ));
+                        }
+                        Err(e) => {
+                            overlay_clone.add_toast(adw::Toast::new(&format!(
+                                "Failed to reset umu runtime: {}",
+                                e
+                            )));
+                        }
+                    }
+                }
+            },
+        );
+    });
+
+    maintenance_group.add(&reset_btn);
+    page.add(&maintenance_group);
+
     pref_window.add(&page);
 
     // Save settings when window is closed
@@ -1857,8 +1928,10 @@ fn show_winetricks_dialog(
     let installed_count = installed.len();
     let subtitle = if installed_count == 0 {
         "Install Windows components".to_string()
+    } else if installed_count == 1 {
+        "1 component already installed".to_string()
     } else {
-        format!("{} component(s) already installed", installed_count)
+        format!("{} components already installed", installed_count)
     };
     let header = adw::HeaderBar::builder()
         .title_widget(&adw::WindowTitle::new("Winetricks", &subtitle))
@@ -2210,7 +2283,9 @@ fn launch_winetricks(
                 let msg = if finished_ok {
                     format!("{} verb(s) installed successfully.", verb_count)
                 } else {
-                    "Winetricks installation encountered errors.".to_string()
+                    "Winetricks failed. If you see a pressure-vessel error, use \
+Settings → Reset umu Runtime, then try again."
+                        .to_string()
                 };
                 overlay_clone.add_toast(adw::Toast::new(&msg));
                 on_finish(finished_ok);

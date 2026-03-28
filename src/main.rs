@@ -928,7 +928,7 @@ fn show_add_game_dialog(
 
     path_row.add_suffix(&browse_btn);
 
-    let game_group = adw::PreferencesGroup::builder().title("Executable").build();
+    let game_group = adw::PreferencesGroup::builder().title("Game").build();
     game_group.add(&title_row);
     game_group.add(&path_row);
 
@@ -1176,7 +1176,7 @@ fn show_edit_game_dialog(
 
     path_row.add_suffix(&browse_btn);
 
-    let game_group = adw::PreferencesGroup::builder().title("Executable").build();
+    let game_group = adw::PreferencesGroup::builder().title("Game").build();
     game_group.add(&title_row);
     game_group.add(&path_row);
 

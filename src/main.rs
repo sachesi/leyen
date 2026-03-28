@@ -1677,6 +1677,21 @@ fn write_winetricks_log(prefix_path: &str, message: &str) {
     }
 }
 
+fn read_installed_winetricks_components(prefix_path: &str) -> std::collections::HashSet<String> {
+    let components_path =
+        get_prefix_winetricks_info_dir(prefix_path).join("installed_components.txt");
+    fs::read_to_string(&components_path)
+        .ok()
+        .map(|content| {
+            content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn write_installed_winetricks_components(prefix_path: &str, verbs: &[String]) {
     let info_dir = get_prefix_winetricks_info_dir(prefix_path);
     if let Err(e) = fs::create_dir_all(&info_dir) {
@@ -1687,21 +1702,15 @@ fn write_installed_winetricks_components(prefix_path: &str, verbs: &[String]) {
         );
         return;
     }
-    let components_path = info_dir.join("installed_components.txt");
+    // Merge with whatever is already on disk (reuses the shared reader).
     let mut all_components: std::collections::BTreeSet<String> =
-        fs::read_to_string(&components_path)
-            .ok()
-            .map(|content| {
-                content
-                    .lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(|line| line.trim().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
+        read_installed_winetricks_components(prefix_path)
+            .into_iter()
+            .collect();
     for verb in verbs {
         all_components.insert(verb.clone());
     }
+    let components_path = info_dir.join("installed_components.txt");
     let data = all_components.into_iter().collect::<Vec<_>>().join("\n");
     if let Err(e) = fs::write(&components_path, format!("{}\n", data)) {
         eprintln!(
@@ -1831,6 +1840,11 @@ fn show_winetricks_dialog(
         return;
     }
 
+    // Resolve prefix now so we can load the installed-components list for
+    // this prefix and display it in the dialog.
+    let resolved_prefix = resolve_winetricks_prefix_path(prefix_path);
+    let installed = read_installed_winetricks_components(&resolved_prefix);
+
     // ── Dialog window ──────────────────────────────────────────────────────
     let dialog = adw::Window::builder()
         .transient_for(parent)
@@ -1840,11 +1854,14 @@ fn show_winetricks_dialog(
         .destroy_with_parent(true)
         .build();
 
+    let installed_count = installed.len();
+    let subtitle = if installed_count == 0 {
+        "Install Windows components".to_string()
+    } else {
+        format!("{} component(s) already installed", installed_count)
+    };
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new(
-            "Winetricks",
-            "Install Windows components",
-        ))
+        .title_widget(&adw::WindowTitle::new("Winetricks", &subtitle))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
@@ -1972,6 +1989,16 @@ fn show_winetricks_dialog(
                 .subtitle(&escape_markup(&wv.description))
                 .activatable(true)
                 .build();
+
+            // If this verb is already installed in the prefix, add a badge.
+            if installed.contains(&wv.verb) {
+                let badge = gtk4::Label::builder()
+                    .label("✓ Installed")
+                    .css_classes(["success", "caption"])
+                    .valign(gtk4::Align::Center)
+                    .build();
+                row.add_suffix(&badge);
+            }
 
             let check = gtk4::CheckButton::builder()
                 .valign(gtk4::Align::Center)
@@ -2131,9 +2158,10 @@ fn launch_winetricks(
     on_finish: impl FnOnce(bool) + 'static,
 ) {
     let umu = get_umu_run_path();
-    let launcher = gio::SubprocessLauncher::new(
-        gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE,
-    );
+    // Do not pipe stdout/stderr — winetricks/wine output can contain non-UTF-8
+    // bytes and an unread pipe buffer would deadlock the subprocess.  Inherit
+    // the parent's file descriptors so output flows naturally to the terminal.
+    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::NONE);
 
     let resolved_prefix_path = resolve_winetricks_prefix_path(prefix_path);
     if !resolved_prefix_path.is_empty() {
@@ -2159,64 +2187,34 @@ fn launch_winetricks(
             let overlay_clone = overlay.clone();
             let prefix_for_log = resolved_prefix_path.clone();
             let verbs_for_log = selected_verbs.to_vec();
-            let subprocess_for_status = subprocess.clone();
             write_winetricks_log(
                 &prefix_for_log,
                 &format!("Starting winetricks install: {}", verbs_for_log.join(" ")),
             );
-            subprocess.communicate_utf8_async(
-                None::<String>,
-                None::<&gio::Cancellable>,
-                move |result| {
-                    match result {
-                        Ok((stdout, stderr)) => {
-                            if let Some(out) = stdout {
-                                if !out.trim().is_empty() {
-                                    write_winetricks_log(
-                                        &prefix_for_log,
-                                        &format!("stdout:\n{}", out.trim()),
-                                    );
-                                }
-                            }
-                            if let Some(err) = stderr {
-                                if !err.trim().is_empty() {
-                                    write_winetricks_log(
-                                        &prefix_for_log,
-                                        &format!("stderr:\n{}", err.trim()),
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            write_winetricks_log(
-                                &prefix_for_log,
-                                &format!("Failed to read winetricks output: {}", e),
-                            );
-                        }
-                    }
-                    let finished_ok = subprocess_for_status.is_successful();
-                    if finished_ok {
-                        write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
-                    }
-
-                    write_winetricks_log(
-                        &prefix_for_log,
-                        &format!(
-                            "Finished winetricks install [{}]: {}",
-                            if finished_ok { "success" } else { "error" },
-                            verbs_for_log.join(" ")
-                        ),
-                    );
-                    progress_toast.dismiss();
-                    let msg = if finished_ok {
-                        format!("{} verb(s) installed successfully.", verb_count)
-                    } else {
-                        "Winetricks installation encountered errors.".to_string()
-                    };
-                    overlay_clone.add_toast(adw::Toast::new(&msg));
-                    on_finish(finished_ok);
-                },
-            );
+            // wait_check_async fires the callback with Ok(()) when the process
+            // exits with code 0, Err otherwise — no output buffering needed.
+            subprocess.wait_check_async(None::<&gio::Cancellable>, move |result| {
+                let finished_ok = result.is_ok();
+                if finished_ok {
+                    write_installed_winetricks_components(&prefix_for_log, &verbs_for_log);
+                }
+                write_winetricks_log(
+                    &prefix_for_log,
+                    &format!(
+                        "Finished winetricks install [{}]: {}",
+                        if finished_ok { "success" } else { "error" },
+                        verbs_for_log.join(" ")
+                    ),
+                );
+                progress_toast.dismiss();
+                let msg = if finished_ok {
+                    format!("{} verb(s) installed successfully.", verb_count)
+                } else {
+                    "Winetricks installation encountered errors.".to_string()
+                };
+                overlay_clone.add_toast(adw::Toast::new(&msg));
+                on_finish(finished_ok);
+            });
         }
         Err(e) => {
             overlay.add_toast(adw::Toast::new(&format!(

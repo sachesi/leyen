@@ -1824,21 +1824,15 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
         category: "DirectX",
     },
     DepCatalogEntry {
+        id: "d3dcompiler43",
+        name: "D3D Compiler 43",
+        description: "D3D shader compiler DLL (version 43) — required by some older Direct3D applications and tools",
+        category: "DirectX",
+    },
+    DepCatalogEntry {
         id: "d3dcompiler47",
         name: "D3D Compiler 47",
-        description: "D3D shader compiler DLL required by DXVK and many modern Direct3D applications",
-        category: "DirectX",
-    },
-    DepCatalogEntry {
-        id: "dxvk",
-        name: "DXVK 2.4",
-        description: "Vulkan-based Direct3D 9/10/11 implementation — improves performance for DX9-DX11 games. Note: Proton bundles DXVK automatically",
-        category: "DirectX",
-    },
-    DepCatalogEntry {
-        id: "vkd3d",
-        name: "VKD3D-Proton 2.12",
-        description: "Vulkan-based Direct3D 12 implementation — enables DX12 games on Linux. Note: Proton bundles VKD3D-Proton automatically",
+        description: "D3D shader compiler DLL (version 47) — required by many modern Direct3D applications",
         category: "DirectX",
     },
     // ── Media ─────────────────────────────────────────────────────────────────
@@ -1880,9 +1874,8 @@ fn get_dep_steps(id: &str) -> Vec<DepStep> {
         "dotnet35" => dotnet35_steps(),
         "xna40" => xna40_steps(),
         "directx" => directx_steps(),
+        "d3dcompiler43" => d3dcompiler43_steps(),
         "d3dcompiler47" => d3dcompiler47_steps(),
-        "dxvk" => dxvk_steps(),
-        "vkd3d" => vkd3d_steps(),
         "xact" => xact_steps(),
         "wmp11" => wmp11_steps(),
         "mono" => mono_steps(),
@@ -2246,99 +2239,22 @@ fn directx_steps() -> Vec<DepStep> {
     ]
 }
 
+fn d3dcompiler43_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Installing D3D Compiler 43 via winetricks…",
+        action: DepStepAction::RunWinetricks {
+            verb: "d3dcompiler_43",
+        },
+    }]
+}
+
 fn d3dcompiler47_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Installing D3D Compiler 47 via winetricks…",
-            action: DepStepAction::RunWinetricks {
-                verb: "d3dcompiler_47",
-            },
+    vec![DepStep {
+        description: "Installing D3D Compiler 47 via winetricks…",
+        action: DepStepAction::RunWinetricks {
+            verb: "d3dcompiler_47",
         },
-    ]
-}
-
-fn dxvk_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading DXVK 2.4…",
-            action: DepStepAction::DownloadFile {
-                url: "https://github.com/doitsujin/dxvk/releases/download/v2.4/dxvk-2.4.tar.gz",
-                file_name: "dxvk-2.4.tar.gz",
-            },
-        },
-        DepStep {
-            description: "Extracting DXVK archive…",
-            action: DepStepAction::ExtractArchive {
-                archive_name: "dxvk-2.4.tar.gz",
-                dest_subdir: "dxvk",
-            },
-        },
-        DepStep {
-            description: "Installing DXVK DLLs (64-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "dxvk/x64",
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                wine_dir: "system32",
-            },
-        },
-        DepStep {
-            description: "Installing DXVK DLLs (32-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "dxvk/x32",
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                wine_dir: "syswow64",
-            },
-        },
-        DepStep {
-            description: "Configuring DXVK DLL overrides…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                override_type: "native",
-            },
-        },
-    ]
-}
-
-fn vkd3d_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading VKD3D-Proton 2.12…",
-            action: DepStepAction::DownloadFile {
-                url: "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v2.12/vkd3d-proton-2.12.tar.zst",
-                file_name: "vkd3d-proton-2.12.tar.zst",
-            },
-        },
-        DepStep {
-            description: "Extracting VKD3D-Proton archive…",
-            action: DepStepAction::ExtractArchive {
-                archive_name: "vkd3d-proton-2.12.tar.zst",
-                dest_subdir: "vkd3d",
-            },
-        },
-        DepStep {
-            description: "Installing VKD3D-Proton DLLs (64-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "vkd3d/x64",
-                dlls: "d3d12,d3d12core",
-                wine_dir: "system32",
-            },
-        },
-        DepStep {
-            description: "Installing VKD3D-Proton DLLs (32-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "vkd3d/x86",
-                dlls: "d3d12,d3d12core",
-                wine_dir: "syswow64",
-            },
-        },
-        DepStep {
-            description: "Configuring VKD3D DLL overrides…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "d3d12,d3d12core",
-                override_type: "native",
-            },
-        },
-    ]
+    }]
 }
 
 fn xact_steps() -> Vec<DepStep> {
@@ -2363,8 +2279,6 @@ fn wmp11_steps() -> Vec<DepStep> {
 
 fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
     match id {
-        "dxvk" => dxvk_uninstall_steps(),
-        "vkd3d" => vkd3d_uninstall_steps(),
         "vcredist2022" => vcredist2022_uninstall_steps(),
         "vcredist2013" => vcredist2013_uninstall_steps(),
         "vcredist2010" => vcredist2010_uninstall_steps(),
@@ -2372,55 +2286,57 @@ fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
         "dotnet48" | "dotnet40" | "dotnet35" => dotnet_uninstall_steps(),
         "mono" => mono_uninstall_steps(),
         "directx" => directx_uninstall_steps(),
+        "d3dcompiler43" => d3dcompiler43_uninstall_steps(),
+        "d3dcompiler47" => d3dcompiler47_uninstall_steps(),
         _ => Vec::new(),
     }
 }
 
-fn dxvk_uninstall_steps() -> Vec<DepStep> {
+fn d3dcompiler43_uninstall_steps() -> Vec<DepStep> {
     vec![
         DepStep {
-            description: "Removing DXVK DLLs (64-bit)…",
+            description: "Removing D3D Compiler 43 DLL (64-bit)…",
             action: DepStepAction::RemoveDllsFromPrefix {
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                dlls: "d3dcompiler_43",
                 wine_dir: "system32",
             },
         },
         DepStep {
-            description: "Removing DXVK DLLs (32-bit)…",
+            description: "Removing D3D Compiler 43 DLL (32-bit)…",
             action: DepStepAction::RemoveDllsFromPrefix {
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                dlls: "d3dcompiler_43",
                 wine_dir: "syswow64",
             },
         },
         DepStep {
-            description: "Removing DXVK DLL overrides…",
+            description: "Removing D3D Compiler 43 DLL override…",
             action: DepStepAction::RemoveDllOverrides {
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
+                dlls: "d3dcompiler_43",
             },
         },
     ]
 }
 
-fn vkd3d_uninstall_steps() -> Vec<DepStep> {
+fn d3dcompiler47_uninstall_steps() -> Vec<DepStep> {
     vec![
         DepStep {
-            description: "Removing VKD3D-Proton DLLs (64-bit)…",
+            description: "Removing D3D Compiler 47 DLL (64-bit)…",
             action: DepStepAction::RemoveDllsFromPrefix {
-                dlls: "d3d12,d3d12core",
+                dlls: "d3dcompiler_47",
                 wine_dir: "system32",
             },
         },
         DepStep {
-            description: "Removing VKD3D-Proton DLLs (32-bit)…",
+            description: "Removing D3D Compiler 47 DLL (32-bit)…",
             action: DepStepAction::RemoveDllsFromPrefix {
-                dlls: "d3d12,d3d12core",
+                dlls: "d3dcompiler_47",
                 wine_dir: "syswow64",
             },
         },
         DepStep {
-            description: "Removing VKD3D-Proton DLL overrides…",
+            description: "Removing D3D Compiler 47 DLL override…",
             action: DepStepAction::RemoveDllOverrides {
-                dlls: "d3d12,d3d12core",
+                dlls: "d3dcompiler_47",
             },
         },
     ]

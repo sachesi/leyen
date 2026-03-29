@@ -1847,6 +1847,14 @@ enum DepInstallMsg {
     Failed(String),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ComponentReceipt {
+    component_id: String,
+    created_at: u64,
+    files_added: Vec<String>,
+    dll_overrides: Vec<String>,
+}
+
 // ── Built-in catalog ─────────────────────────────────────────────────────────
 
 const DEP_CATALOG: &[DepCatalogEntry] = &[
@@ -2475,6 +2483,123 @@ fn get_prefix_deps_file(prefix_path: &str) -> PathBuf {
     PathBuf::from(prefix_path).join(".leyen/deps/installed.txt")
 }
 
+fn get_component_receipts_dir(prefix_path: &str) -> PathBuf {
+    PathBuf::from(prefix_path).join(".leyen/components")
+}
+
+fn get_component_receipt_file(prefix_path: &str, dep_id: &str) -> PathBuf {
+    get_component_receipts_dir(prefix_path).join(format!("{}.json", dep_id))
+}
+
+fn component_receipt_exists(prefix_path: &str, dep_id: &str) -> bool {
+    get_component_receipt_file(prefix_path, dep_id).exists()
+}
+
+fn write_component_receipt(
+    prefix_path: &str,
+    dep_id: &str,
+    files_added: &[String],
+    dll_overrides: &[String],
+) -> Result<(), String> {
+    let receipts_dir = get_component_receipts_dir(prefix_path);
+    fs::create_dir_all(&receipts_dir)
+        .map_err(|e| format!("Failed to create component receipt directory: {}", e))?;
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let receipt = ComponentReceipt {
+        component_id: dep_id.to_string(),
+        created_at,
+        files_added: files_added.to_vec(),
+        dll_overrides: dll_overrides.to_vec(),
+    };
+    let json = serde_json::to_string_pretty(&receipt)
+        .map_err(|e| format!("Failed to serialize component receipt: {}", e))?;
+    fs::write(get_component_receipt_file(prefix_path, dep_id), json)
+        .map_err(|e| format!("Failed to write component receipt: {}", e))?;
+    Ok(())
+}
+
+fn read_component_receipt(prefix_path: &str, dep_id: &str) -> Option<ComponentReceipt> {
+    let path = get_component_receipt_file(prefix_path, dep_id);
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|data| serde_json::from_str::<ComponentReceipt>(&data).ok())
+}
+
+fn remove_component_receipt(prefix_path: &str, dep_id: &str) {
+    let path = get_component_receipt_file(prefix_path, dep_id);
+    if let Err(e) = fs::remove_file(path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            leyen_log(
+                "WARN ",
+                &format!("Could not remove component receipt for '{}': {}", dep_id, e),
+            );
+        }
+    }
+}
+
+fn remove_files_from_component_receipt(prefix_path: &str, dep_id: &str) -> Result<(), String> {
+    let Some(receipt) = read_component_receipt(prefix_path, dep_id) else {
+        return Ok(());
+    };
+    let prefix_root = PathBuf::from(prefix_path);
+    for file in receipt.files_added {
+        let path = PathBuf::from(&file);
+        if !path.starts_with(&prefix_root) {
+            leyen_log(
+                "WARN ",
+                &format!(
+                    "Skipping receipt file outside prefix for '{}': {}",
+                    dep_id, file
+                ),
+            );
+            continue;
+        }
+        if let Err(e) = fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!(
+                    "Failed to remove receipt-tracked file '{}': {}",
+                    file, e
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_component_receipt_data(dep_id: &str, prefix_path: &str) -> (Vec<String>, Vec<String>) {
+    let mut files_added: Vec<String> = Vec::new();
+    let mut dll_overrides: Vec<String> = Vec::new();
+    for step in get_dep_steps(dep_id) {
+        match step.action {
+            DepStepAction::CopyDllsToPrefix {
+                src_subdir: _,
+                dlls,
+                wine_dir,
+            } => {
+                let base = format!("{}/drive_c/windows/{}", prefix_path, wine_dir);
+                for dll in dlls.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                    files_added.push(format!("{}/{}.dll", base, dll));
+                }
+            }
+            DepStepAction::OverrideDlls {
+                dlls,
+                override_type: _,
+            } => {
+                for dll in dlls.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                    if !dll_overrides.iter().any(|d| d == dll) {
+                        dll_overrides.push(dll.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (files_added, dll_overrides)
+}
+
 fn read_installed_deps(prefix_path: &str) -> std::collections::HashSet<String> {
     let path = get_prefix_deps_file(prefix_path);
     fs::read_to_string(&path)
@@ -2886,6 +3011,14 @@ fn install_dep_async(
                 return;
             }
         }
+        let (files_added, dll_overrides) = collect_component_receipt_data(&dep_id_t, &prefix_t);
+        if let Err(e) = write_component_receipt(&prefix_t, &dep_id_t, &files_added, &dll_overrides)
+        {
+            leyen_log(
+                "WARN ",
+                &format!("[dep:{}] failed to write component receipt: {}", dep_id_t, e),
+            );
+        }
         leyen_log("INFO ", &format!("[dep:{}] install complete", dep_id_t));
         queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
     });
@@ -2915,10 +3048,6 @@ fn uninstall_dep_async(
     }
 
     let steps = get_dep_uninstall_steps(dep_id);
-    if steps.is_empty() {
-        on_finish(true, None);
-        return;
-    }
 
     let total = steps.len();
     let dep_id_t = dep_id.to_string();
@@ -2954,19 +3083,33 @@ fn uninstall_dep_async(
     });
 
     std::thread::spawn(move || {
-        leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
-        for (i, step) in steps.iter().enumerate() {
-            leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
-            queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
-                step: i + 1,
-                total,
-                description: step.description.to_string(),
-            });
-            if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
-                leyen_log("ERROR", &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e));
+        let has_receipt = component_receipt_exists(&prefix_t, &dep_id_t);
+        if total > 0 {
+            leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
+            for (i, step) in steps.iter().enumerate() {
+                leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
+                queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
+                    step: i + 1,
+                    total,
+                    description: step.description.to_string(),
+                });
+                if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                    leyen_log("ERROR", &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e));
+                    queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
+                    return;
+                }
+            }
+        }
+        if has_receipt {
+            if let Err(e) = remove_files_from_component_receipt(&prefix_t, &dep_id_t) {
+                leyen_log(
+                    "ERROR",
+                    &format!("[dep:{}] receipt cleanup failed: {}", dep_id_t, e),
+                );
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }
+            remove_component_receipt(&prefix_t, &dep_id_t);
         }
         leyen_log("INFO ", &format!("[dep:{}] uninstall complete", dep_id_t));
         queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
@@ -3326,7 +3469,8 @@ fn show_dependencies_dialog(
 
                 remove_btn.connect_clicked(move |_| {
                     let has_uninstall_steps = !get_dep_uninstall_steps(dep_id).is_empty();
-                    let detail = if has_uninstall_steps {
+                    let has_receipt = component_receipt_exists(&prefix2, dep_id);
+                    let detail = if has_uninstall_steps || has_receipt {
                         "This will remove installed files and DLL overrides from the Wine prefix. \
                          This action cannot be undone."
                     } else {
@@ -3360,7 +3504,7 @@ fn show_dependencies_dialog(
                         gio::Cancellable::NONE,
                         move |result| {
                             if let Ok(1) = result {
-                                if has_uninstall_steps {
+                                if has_uninstall_steps || has_receipt {
                                     reinstall_btn3.set_visible(false);
                                     remove_btn3.set_visible(false);
                                     spinner3.set_visible(true);

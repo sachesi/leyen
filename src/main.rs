@@ -1842,25 +1842,6 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
         description: "Microsoft Cross-Platform Audio Creation Tool runtime — required by many older DirectX games for audio",
         category: "Media",
     },
-    DepCatalogEntry {
-        id: "wmp11",
-        name: "Windows Media Player 11",
-        description: "Windows Media Player 11 codecs and runtime — required by games and apps that use Windows media APIs",
-        category: "Media",
-    },
-    // ── Wine Components ───────────────────────────────────────────────────────
-    DepCatalogEntry {
-        id: "mono",
-        name: "Wine Mono",
-        description: "Wine's built-in .NET Framework replacement — lighter alternative to installing MS .NET",
-        category: "Wine Components",
-    },
-    DepCatalogEntry {
-        id: "gecko",
-        name: "Wine Gecko",
-        description: "Wine's Internet Explorer engine — needed for applications that embed a browser",
-        category: "Wine Components",
-    },
 ];
 
 fn get_dep_steps(id: &str) -> Vec<DepStep> {
@@ -1877,9 +1858,6 @@ fn get_dep_steps(id: &str) -> Vec<DepStep> {
         "d3dcompiler43" => d3dcompiler43_steps(),
         "d3dcompiler47" => d3dcompiler47_steps(),
         "xact" => xact_steps(),
-        "wmp11" => wmp11_steps(),
-        "mono" => mono_steps(),
-        "gecko" => gecko_steps(),
         _ => Vec::new(),
     }
 }
@@ -1948,65 +1926,6 @@ fn dotnet48_steps() -> Vec<DepStep> {
             action: DepStepAction::OverrideDlls {
                 dlls: "mscoree",
                 override_type: "native",
-            },
-        },
-    ]
-}
-
-fn mono_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading Wine Mono…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi",
-                file_name: "wine-mono-10.3.0-x86.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Mono…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-mono-10.3.0-x86.msi",
-                args: "/qn",
-            },
-        },
-        DepStep {
-            description: "Configuring mscoree DLL override…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "mscoree",
-                override_type: "native,builtin",
-            },
-        },
-    ]
-}
-
-fn gecko_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading Wine Gecko (x86)…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86.msi",
-                file_name: "wine-gecko-x86.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Gecko (x86)…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-gecko-x86.msi",
-                args: "/qn",
-            },
-        },
-        DepStep {
-            description: "Downloading Wine Gecko (x64)…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86_64.msi",
-                file_name: "wine-gecko-x64.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Gecko (x64)…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-gecko-x64.msi",
-                args: "/qn",
             },
         },
     ]
@@ -2266,15 +2185,6 @@ fn xact_steps() -> Vec<DepStep> {
     ]
 }
 
-fn wmp11_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Installing Windows Media Player 11 via winetricks…",
-            action: DepStepAction::RunWinetricks { verb: "wmp11" },
-        },
-    ]
-}
-
 // ── Uninstall step functions ──────────────────────────────────────────────────
 
 fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
@@ -2284,7 +2194,6 @@ fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
         "vcredist2010" => vcredist2010_uninstall_steps(),
         "vcredist2008" => vcredist2008_uninstall_steps(),
         "dotnet48" | "dotnet40" | "dotnet35" => dotnet_uninstall_steps(),
-        "mono" => mono_uninstall_steps(),
         "directx" => directx_uninstall_steps(),
         "d3dcompiler43" => d3dcompiler43_uninstall_steps(),
         "d3dcompiler47" => d3dcompiler47_uninstall_steps(),
@@ -2385,13 +2294,6 @@ fn dotnet_uninstall_steps() -> Vec<DepStep> {
     }]
 }
 
-fn mono_uninstall_steps() -> Vec<DepStep> {
-    vec![DepStep {
-        description: "Removing Wine Mono DLL overrides…",
-        action: DepStepAction::RemoveDllOverrides { dlls: "mscoree" },
-    }]
-}
-
 fn directx_uninstall_steps() -> Vec<DepStep> {
     vec![DepStep {
         description: "Removing DirectX DLL overrides…",
@@ -2488,6 +2390,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             for pair in extra_env.split_whitespace() {
                 if let Some(eq) = pair.find('=') {
                     cmd.env(&pair[..eq], &pair[eq + 1..]);
@@ -2516,6 +2419,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             let mut run_args = vec![
                 "msiexec.exe".to_string(),
                 "/i".to_string(),
@@ -2565,6 +2469,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             cmd.args(["regedit.exe", "/S", &reg_path]);
             let status = cmd
                 .status()
@@ -2584,6 +2489,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             cmd.args(["regsvr32.exe", "/s", dll]);
             let status = cmd
                 .status()
@@ -2644,6 +2550,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             cmd.args(["winetricks", "-q", verb]);
             let status = cmd
                 .status()
@@ -2692,6 +2599,7 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
             cmd.args(["regedit.exe", "/S", &reg_path]);
             let status = cmd
                 .status()
@@ -2706,6 +2614,9 @@ fn execute_dep_step(
 }
 
 // ── Async orchestrator ────────────────────────────────────────────────────────
+
+/// How often the GTK main loop polls the background-thread message queue.
+const DEP_ASYNC_POLL_MS: u64 = 50;
 
 fn install_dep_async(
     dep_id: &str,
@@ -2751,7 +2662,7 @@ fn install_dep_async(
     let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
     let on_progress = std::rc::Rc::new(on_progress);
 
-    glib::idle_add_local(move || {
+    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
         let mut q = queue.lock().unwrap();
         while let Some(msg) = q.pop_front() {
             match msg {
@@ -2828,7 +2739,7 @@ fn uninstall_dep_async(
     let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
     let on_progress = std::rc::Rc::new(on_progress);
 
-    glib::idle_add_local(move || {
+    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
         let mut q = queue.lock().unwrap();
         while let Some(msg) = q.pop_front() {
             match msg {
@@ -2885,6 +2796,14 @@ fn dep_category_order(cat: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+fn installed_subtitle(n: usize) -> String {
+    match n {
+        0 => "No components installed".to_string(),
+        1 => "1 component installed".to_string(),
+        n => format!("{} components installed", n),
+    }
+}
+
 fn show_dependencies_dialog(
     parent: &adw::ApplicationWindow,
     prefix_path: &str,
@@ -2914,14 +2833,12 @@ fn show_dependencies_dialog(
         .destroy_with_parent(true)
         .build();
 
-    let subtitle = match installed_count {
-        0 => "No components installed".to_string(),
-        1 => "1 component installed".to_string(),
-        n => format!("{} components installed", n),
-    };
+    let subtitle = installed_subtitle(installed_count);
+
+    let title_widget = adw::WindowTitle::new("Manage Dependencies", &subtitle);
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Manage Dependencies", &subtitle))
+        .title_widget(&title_widget)
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
@@ -3033,15 +2950,14 @@ fn show_dependencies_dialog(
                 .visible(is_installed)
                 .build();
 
-            if is_installed {
-                let badge = gtk4::Label::builder()
-                    .label("✓ Installed")
-                    .css_classes(["success", "caption"])
-                    .valign(gtk4::Align::Center)
-                    .build();
-                row.add_suffix(&badge);
-            }
+            let badge = gtk4::Label::builder()
+                .label("✓ Installed")
+                .css_classes(["success", "caption"])
+                .valign(gtk4::Align::Center)
+                .visible(is_installed)
+                .build();
 
+            row.add_suffix(&badge);
             row.add_suffix(&spinner);
             row.add_suffix(&progress_label);
             row.add_suffix(&install_btn);
@@ -3056,6 +2972,8 @@ fn show_dependencies_dialog(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
@@ -3073,6 +2991,8 @@ fn show_dependencies_dialog(
                     let spinner3 = spinner2.clone();
                     let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
 
@@ -3088,9 +3008,12 @@ fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         if success {
                             add_installed_dep(&prefix3, dep_id);
+                            badge3.set_visible(true);
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
+                            let n = read_installed_deps(&prefix3).len();
+                            title3.set_subtitle(&installed_subtitle(n));
                             overlay3.add_toast(adw::Toast::new(&format!(
                                 "'{}' installed successfully.",
                                 dep_id
@@ -3121,6 +3044,8 @@ fn show_dependencies_dialog(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
@@ -3139,6 +3064,8 @@ fn show_dependencies_dialog(
                     let spinner3 = spinner2.clone();
                     let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
 
@@ -3154,9 +3081,12 @@ fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         if success {
                             add_installed_dep(&prefix3, dep_id);
+                            badge3.set_visible(true);
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
+                            let n = read_installed_deps(&prefix3).len();
+                            title3.set_subtitle(&installed_subtitle(n));
                             overlay3.add_toast(adw::Toast::new(&format!(
                                 "'{}' reinstalled successfully.",
                                 dep_id
@@ -3189,6 +3119,8 @@ fn show_dependencies_dialog(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
@@ -3219,6 +3151,8 @@ fn show_dependencies_dialog(
                     let spinner3 = spinner2.clone();
                     let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let proton3 = proton2.clone();
                     let overlay3 = overlay2.clone();
@@ -3242,6 +3176,8 @@ fn show_dependencies_dialog(
                                     let spinner4 = spinner3.clone();
                                     let progress_label4 = progress_label3.clone();
                                     let row4 = row3.clone();
+                                    let badge4 = badge3.clone();
+                                    let title4 = title3.clone();
                                     let prefix4 = prefix3.clone();
                                     let overlay4 = overlay3.clone();
 
@@ -3259,9 +3195,12 @@ fn show_dependencies_dialog(
                                             row4.set_sensitive(true);
                                             if success {
                                                 remove_installed_dep(&prefix4, dep_id);
+                                                badge4.set_visible(false);
                                                 install_btn4.set_visible(true);
                                                 reinstall_btn4.set_visible(false);
                                                 remove_btn4.set_visible(false);
+                                                let n = read_installed_deps(&prefix4).len();
+                                                title4.set_subtitle(&installed_subtitle(n));
                                                 overlay4.add_toast(adw::Toast::new(
                                                     &format!(
                                                         "'{}' uninstalled successfully.",
@@ -3289,9 +3228,12 @@ fn show_dependencies_dialog(
                                 } else {
                                     remove_installed_dep(&prefix3, dep_id);
                                     row3.set_sensitive(true);
+                                    badge3.set_visible(false);
                                     install_btn3.set_visible(true);
                                     reinstall_btn3.set_visible(false);
                                     remove_btn3.set_visible(false);
+                                    let n = read_installed_deps(&prefix3).len();
+                                    title3.set_subtitle(&installed_subtitle(n));
                                     overlay3.add_toast(adw::Toast::new(&format!(
                                         "'{}' removed from tracking.",
                                         dep_id

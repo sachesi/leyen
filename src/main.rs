@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fs;
 use std::fs::OpenOptions;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -2544,10 +2544,21 @@ fn remove_files_from_component_receipt(prefix_path: &str, dep_id: &str) -> Resul
     let Some(receipt) = read_component_receipt(prefix_path, dep_id) else {
         return Ok(());
     };
-    let prefix_root = PathBuf::from(prefix_path);
+    let Some(prefix_root) = normalize_path_for_comparison(Path::new(prefix_path)) else {
+        return Err("Invalid prefix path for component receipt cleanup".to_string());
+    };
     for file in receipt.files_added {
-        let path = PathBuf::from(&file);
-        if !path.starts_with(&prefix_root) {
+        let Some(normalized_path) = normalize_path_for_comparison(Path::new(&file)) else {
+            leyen_log(
+                "WARN ",
+                &format!(
+                    "Skipping invalid receipt path for '{}': {}",
+                    dep_id, file
+                ),
+            );
+            continue;
+        };
+        if !normalized_path.starts_with(&prefix_root) {
             leyen_log(
                 "WARN ",
                 &format!(
@@ -2557,11 +2568,12 @@ fn remove_files_from_component_receipt(prefix_path: &str, dep_id: &str) -> Resul
             );
             continue;
         }
-        if let Err(e) = fs::remove_file(&path) {
+        if let Err(e) = fs::remove_file(&normalized_path) {
             if e.kind() != std::io::ErrorKind::NotFound {
                 return Err(format!(
                     "Failed to remove receipt-tracked file '{}': {}",
-                    file, e
+                    normalized_path.display(),
+                    e
                 ));
             }
         }
@@ -2569,9 +2581,25 @@ fn remove_files_from_component_receipt(prefix_path: &str, dep_id: &str) -> Resul
     Ok(())
 }
 
+fn normalize_path_for_comparison(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    Some(normalized)
+}
+
 fn collect_component_receipt_data(dep_id: &str, prefix_path: &str) -> (Vec<String>, Vec<String>) {
-    let mut files_added: Vec<String> = Vec::new();
-    let mut dll_overrides: Vec<String> = Vec::new();
+    let mut files_added = Vec::new();
+    let mut dll_overrides = std::collections::HashSet::new();
     for step in get_dep_steps(dep_id) {
         match step.action {
             DepStepAction::CopyDllsToPrefix {
@@ -2589,15 +2617,15 @@ fn collect_component_receipt_data(dep_id: &str, prefix_path: &str) -> (Vec<Strin
                 override_type: _,
             } => {
                 for dll in dlls.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                    if !dll_overrides.iter().any(|d| d == dll) {
-                        dll_overrides.push(dll.to_string());
-                    }
+                    dll_overrides.insert(dll.to_string());
                 }
             }
             _ => {}
         }
     }
-    (files_added, dll_overrides)
+    let mut sorted_dll_overrides: Vec<String> = dll_overrides.into_iter().collect();
+    sorted_dll_overrides.sort();
+    (files_added, sorted_dll_overrides)
 }
 
 fn read_installed_deps(prefix_path: &str) -> std::collections::HashSet<String> {
@@ -3011,8 +3039,14 @@ fn install_dep_async(
                 return;
             }
         }
-        let (files_added, dll_overrides) = collect_component_receipt_data(&dep_id_t, &prefix_t);
-        if let Err(e) = write_component_receipt(&prefix_t, &dep_id_t, &files_added, &dll_overrides)
+        let (tracked_file_paths, dll_overrides) =
+            collect_component_receipt_data(&dep_id_t, &prefix_t);
+        if let Err(e) = write_component_receipt(
+            &prefix_t,
+            &dep_id_t,
+            &tracked_file_paths,
+            &dll_overrides,
+        )
         {
             leyen_log(
                 "WARN ",
@@ -3049,7 +3083,7 @@ fn uninstall_dep_async(
 
     let steps = get_dep_uninstall_steps(dep_id);
 
-    let total = steps.len();
+    let uninstall_steps_count = steps.len();
     let dep_id_t = dep_id.to_string();
     let prefix_t = prefix_path.to_string();
     let proton_t = proton_path.to_string();
@@ -3084,13 +3118,13 @@ fn uninstall_dep_async(
 
     std::thread::spawn(move || {
         let has_receipt = component_receipt_exists(&prefix_t, &dep_id_t);
-        if total > 0 {
-            leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
+        if uninstall_steps_count > 0 {
+            leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, uninstall_steps_count));
             for (i, step) in steps.iter().enumerate() {
-                leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
+                leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, uninstall_steps_count, step.description));
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                     step: i + 1,
-                    total,
+                    total: uninstall_steps_count,
                     description: step.description.to_string(),
                 });
                 if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {

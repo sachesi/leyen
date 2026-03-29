@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -46,11 +47,47 @@ struct GlobalSettings {
     global_wow64: bool,
     global_ntsync: bool,
     available_proton_versions: Vec<String>,
+    // Logging toggles
+    log_errors: bool,
+    log_warnings: bool,
+    log_operations: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct GamesConfig {
     games: Vec<Game>,
+}
+
+// --- LOGGING ---
+
+/// Atomic flags mirroring GlobalSettings.log_* so background threads can log
+/// without reading the settings file on every message.
+static LOG_ERRORS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+static LOG_WARNINGS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static LOG_OPERATIONS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn apply_log_settings(s: &GlobalSettings) {
+    use std::sync::atomic::Ordering::Relaxed;
+    LOG_ERRORS.store(s.log_errors, Relaxed);
+    LOG_WARNINGS.store(s.log_warnings, Relaxed);
+    LOG_OPERATIONS.store(s.log_operations, Relaxed);
+}
+
+/// Print a formatted leyen log line to stderr.
+/// Level: "ERROR" | "WARN " | "INFO "
+fn leyen_log(level: &str, message: &str) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let enabled = match level {
+        "ERROR" => LOG_ERRORS.load(Relaxed),
+        "WARN " => LOG_WARNINGS.load(Relaxed),
+        _       => LOG_OPERATIONS.load(Relaxed),
+    };
+    if enabled {
+        eprintln!("[LEYEN] [{level}] {message}");
+    }
 }
 
 // --- FILE IO ---
@@ -110,11 +147,13 @@ fn load_settings() -> GlobalSettings {
     if settings.available_proton_versions.len() <= 1 {
         check_or_install_protonge();
     }
+    apply_log_settings(&settings);
     save_settings(&settings);
     settings
 }
 
 fn save_settings(settings: &GlobalSettings) {
+    apply_log_settings(settings);
     let path = get_settings_path();
     if let Ok(data) = toml::to_string_pretty(settings) {
         let _ = fs::write(path, data);
@@ -453,6 +492,9 @@ fn detect_proton_versions() -> GlobalSettings {
         global_wow64: false,
         global_ntsync: false,
         available_proton_versions: versions,
+        log_errors: true,
+        log_warnings: false,
+        log_operations: false,
     }
 }
 
@@ -891,11 +933,20 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
+    leyen_log("INFO ", &format!(
+        "Launching '{}' | exe: {} | prefix: {} | proton: {}",
+        game.title,
+        game.exe_path,
+        game.prefix_path,
+        game.proton,
+    ));
+
     match launcher.spawn(&os_args) {
         Ok(_) => {
             overlay.add_toast(adw::Toast::new(&format!("Launching {}...", game.title)));
         }
         Err(e) => {
+            leyen_log("ERROR", &format!("Failed to launch '{}': {}", game.title, e));
             overlay.add_toast(adw::Toast::new(&format!("Failed to launch: {}", e)));
         }
     }
@@ -999,8 +1050,37 @@ fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOve
     tools_group.add(&wow64_row);
     tools_group.add(&ntsync_row);
 
+    // ── Logging ────────────────────────────────────────────────────────────
+    let logging_group = adw::PreferencesGroup::builder()
+        .title("Logging")
+        .description("Select which messages are printed to the terminal.")
+        .build();
+
+    let log_errors_row = adw::SwitchRow::builder()
+        .title("Errors")
+        .subtitle("Show error messages from leyen and launched processes")
+        .active(settings.log_errors)
+        .build();
+
+    let log_warnings_row = adw::SwitchRow::builder()
+        .title("Warnings")
+        .subtitle("Show warning messages")
+        .active(settings.log_warnings)
+        .build();
+
+    let log_operations_row = adw::SwitchRow::builder()
+        .title("Operations")
+        .subtitle("Show game launch and component installation activity")
+        .active(settings.log_operations)
+        .build();
+
+    logging_group.add(&log_errors_row);
+    logging_group.add(&log_warnings_row);
+    logging_group.add(&log_operations_row);
+
     page.add(&paths_group);
     page.add(&tools_group);
+    page.add(&logging_group);
 
     // ── Maintenance ────────────────────────────────────────────────────────
     let maintenance_group = adw::PreferencesGroup::builder()
@@ -1079,6 +1159,9 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             global_wow64: wow64_row.is_active(),
             global_ntsync: ntsync_row.is_active(),
             available_proton_versions: available_versions.clone(),
+            log_errors: log_errors_row.is_active(),
+            log_warnings: log_warnings_row.is_active(),
+            log_operations: log_operations_row.is_active(),
         };
         save_settings(&updated_settings);
         glib::Propagation::Proceed
@@ -1735,6 +1818,15 @@ enum DepStepAction {
     RunWinetricks {
         verb: &'static str,
     },
+    /// Remove DLLs from a Wine prefix system directory (reverses CopyDllsToPrefix).
+    RemoveDllsFromPrefix {
+        dlls: &'static str,
+        wine_dir: &'static str,
+    },
+    /// Delete DLL override entries from the Wine registry (reverses OverrideDlls).
+    RemoveDllOverrides {
+        dlls: &'static str,
+    },
 }
 
 #[derive(Clone)]
@@ -1815,21 +1907,15 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
         category: "DirectX",
     },
     DepCatalogEntry {
+        id: "d3dcompiler43",
+        name: "D3D Compiler 43",
+        description: "D3D shader compiler DLL (version 43) — required by some older Direct3D applications and tools",
+        category: "DirectX",
+    },
+    DepCatalogEntry {
         id: "d3dcompiler47",
         name: "D3D Compiler 47",
-        description: "D3D shader compiler DLL required by DXVK and many modern Direct3D applications",
-        category: "DirectX",
-    },
-    DepCatalogEntry {
-        id: "dxvk",
-        name: "DXVK 2.4",
-        description: "Vulkan-based Direct3D 9/10/11 implementation — improves performance for DX9-DX11 games. Note: Proton bundles DXVK automatically",
-        category: "DirectX",
-    },
-    DepCatalogEntry {
-        id: "vkd3d",
-        name: "VKD3D-Proton 2.12",
-        description: "Vulkan-based Direct3D 12 implementation — enables DX12 games on Linux. Note: Proton bundles VKD3D-Proton automatically",
+        description: "D3D shader compiler DLL (version 47) — required by many modern Direct3D applications",
         category: "DirectX",
     },
     // ── Media ─────────────────────────────────────────────────────────────────
@@ -1838,25 +1924,6 @@ const DEP_CATALOG: &[DepCatalogEntry] = &[
         name: "XACT Audio",
         description: "Microsoft Cross-Platform Audio Creation Tool runtime — required by many older DirectX games for audio",
         category: "Media",
-    },
-    DepCatalogEntry {
-        id: "wmp11",
-        name: "Windows Media Player 11",
-        description: "Windows Media Player 11 codecs and runtime — required by games and apps that use Windows media APIs",
-        category: "Media",
-    },
-    // ── Wine Components ───────────────────────────────────────────────────────
-    DepCatalogEntry {
-        id: "mono",
-        name: "Wine Mono",
-        description: "Wine's built-in .NET Framework replacement — lighter alternative to installing MS .NET",
-        category: "Wine Components",
-    },
-    DepCatalogEntry {
-        id: "gecko",
-        name: "Wine Gecko",
-        description: "Wine's Internet Explorer engine — needed for applications that embed a browser",
-        category: "Wine Components",
     },
 ];
 
@@ -1871,13 +1938,9 @@ fn get_dep_steps(id: &str) -> Vec<DepStep> {
         "dotnet35" => dotnet35_steps(),
         "xna40" => xna40_steps(),
         "directx" => directx_steps(),
+        "d3dcompiler43" => d3dcompiler43_steps(),
         "d3dcompiler47" => d3dcompiler47_steps(),
-        "dxvk" => dxvk_steps(),
-        "vkd3d" => vkd3d_steps(),
         "xact" => xact_steps(),
-        "wmp11" => wmp11_steps(),
-        "mono" => mono_steps(),
-        "gecko" => gecko_steps(),
         _ => Vec::new(),
     }
 }
@@ -1946,65 +2009,6 @@ fn dotnet48_steps() -> Vec<DepStep> {
             action: DepStepAction::OverrideDlls {
                 dlls: "mscoree",
                 override_type: "native",
-            },
-        },
-    ]
-}
-
-fn mono_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading Wine Mono…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-mono/10.3.0/wine-mono-10.3.0-x86.msi",
-                file_name: "wine-mono-10.3.0-x86.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Mono…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-mono-10.3.0-x86.msi",
-                args: "/qn",
-            },
-        },
-        DepStep {
-            description: "Configuring mscoree DLL override…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "mscoree",
-                override_type: "native,builtin",
-            },
-        },
-    ]
-}
-
-fn gecko_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading Wine Gecko (x86)…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86.msi",
-                file_name: "wine-gecko-x86.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Gecko (x86)…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-gecko-x86.msi",
-                args: "/qn",
-            },
-        },
-        DepStep {
-            description: "Downloading Wine Gecko (x64)…",
-            action: DepStepAction::DownloadFile {
-                url: "https://dl.winehq.org/wine/wine-gecko/2.47.4/wine-gecko-2.47.4-x86_64.msi",
-                file_name: "wine-gecko-x64.msi",
-            },
-        },
-        DepStep {
-            description: "Installing Wine Gecko (x64)…",
-            action: DepStepAction::RunMsi {
-                file_name: "wine-gecko-x64.msi",
-                args: "/qn",
             },
         },
     ]
@@ -2237,99 +2241,22 @@ fn directx_steps() -> Vec<DepStep> {
     ]
 }
 
+fn d3dcompiler43_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Installing D3D Compiler 43 via winetricks…",
+        action: DepStepAction::RunWinetricks {
+            verb: "d3dcompiler_43",
+        },
+    }]
+}
+
 fn d3dcompiler47_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Installing D3D Compiler 47 via winetricks…",
-            action: DepStepAction::RunWinetricks {
-                verb: "d3dcompiler_47",
-            },
+    vec![DepStep {
+        description: "Installing D3D Compiler 47 via winetricks…",
+        action: DepStepAction::RunWinetricks {
+            verb: "d3dcompiler_47",
         },
-    ]
-}
-
-fn dxvk_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading DXVK 2.4…",
-            action: DepStepAction::DownloadFile {
-                url: "https://github.com/doitsujin/dxvk/releases/download/v2.4/dxvk-2.4.tar.gz",
-                file_name: "dxvk-2.4.tar.gz",
-            },
-        },
-        DepStep {
-            description: "Extracting DXVK archive…",
-            action: DepStepAction::ExtractArchive {
-                archive_name: "dxvk-2.4.tar.gz",
-                dest_subdir: "dxvk",
-            },
-        },
-        DepStep {
-            description: "Installing DXVK DLLs (64-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "dxvk/x64",
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                wine_dir: "system32",
-            },
-        },
-        DepStep {
-            description: "Installing DXVK DLLs (32-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "dxvk/x32",
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                wine_dir: "syswow64",
-            },
-        },
-        DepStep {
-            description: "Configuring DXVK DLL overrides…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "d3d9,d3d10core,d3d11,dxgi",
-                override_type: "native",
-            },
-        },
-    ]
-}
-
-fn vkd3d_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Downloading VKD3D-Proton 2.12…",
-            action: DepStepAction::DownloadFile {
-                url: "https://github.com/HansKristian-Work/vkd3d-proton/releases/download/v2.12/vkd3d-proton-2.12.tar.zst",
-                file_name: "vkd3d-proton-2.12.tar.zst",
-            },
-        },
-        DepStep {
-            description: "Extracting VKD3D-Proton archive…",
-            action: DepStepAction::ExtractArchive {
-                archive_name: "vkd3d-proton-2.12.tar.zst",
-                dest_subdir: "vkd3d",
-            },
-        },
-        DepStep {
-            description: "Installing VKD3D-Proton DLLs (64-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "vkd3d/x64",
-                dlls: "d3d12,d3d12core",
-                wine_dir: "system32",
-            },
-        },
-        DepStep {
-            description: "Installing VKD3D-Proton DLLs (32-bit)…",
-            action: DepStepAction::CopyDllsToPrefix {
-                src_subdir: "vkd3d/x86",
-                dlls: "d3d12,d3d12core",
-                wine_dir: "syswow64",
-            },
-        },
-        DepStep {
-            description: "Configuring VKD3D DLL overrides…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "d3d12,d3d12core",
-                override_type: "native",
-            },
-        },
-    ]
+    }]
 }
 
 fn xact_steps() -> Vec<DepStep> {
@@ -2341,11 +2268,198 @@ fn xact_steps() -> Vec<DepStep> {
     ]
 }
 
-fn wmp11_steps() -> Vec<DepStep> {
+// ── Uninstall step functions ──────────────────────────────────────────────────
+
+fn get_dep_uninstall_steps(id: &str) -> Vec<DepStep> {
+    match id {
+        "vcredist2022" => vcredist2022_uninstall_steps(),
+        "vcredist2013" => vcredist2013_uninstall_steps(),
+        "vcredist2010" => vcredist2010_uninstall_steps(),
+        "vcredist2008" => vcredist2008_uninstall_steps(),
+        "dotnet48" | "dotnet40" | "dotnet35" => dotnet_uninstall_steps(),
+        "directx" => directx_uninstall_steps(),
+        "d3dcompiler43" => d3dcompiler43_uninstall_steps(),
+        "d3dcompiler47" => d3dcompiler47_uninstall_steps(),
+        _ => Vec::new(),
+    }
+}
+
+fn d3dcompiler43_uninstall_steps() -> Vec<DepStep> {
     vec![
         DepStep {
-            description: "Installing Windows Media Player 11 via winetricks…",
-            action: DepStepAction::RunWinetricks { verb: "wmp11" },
+            description: "Removing D3D Compiler 43 DLL (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3dcompiler_43",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing D3D Compiler 43 DLL (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3dcompiler_43",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing D3D Compiler 43 DLL override…",
+            action: DepStepAction::RemoveDllOverrides {
+                dlls: "d3dcompiler_43",
+            },
+        },
+    ]
+}
+
+fn d3dcompiler47_uninstall_steps() -> Vec<DepStep> {
+    vec![
+        DepStep {
+            description: "Removing D3D Compiler 47 DLL (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3dcompiler_47",
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing D3D Compiler 47 DLL (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: "d3dcompiler_47",
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing D3D Compiler 47 DLL override…",
+            action: DepStepAction::RemoveDllOverrides {
+                dlls: "d3dcompiler_47",
+            },
+        },
+    ]
+}
+
+fn vcredist2022_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2022 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "vcruntime140,vcruntime140_1,msvcp140,msvcp140_1,msvcp140_2,concrt140,atl140,vcomp140",
+        },
+    }]
+}
+
+fn vcredist2013_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2013 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr120,msvcp120,vccorlib120",
+        },
+    }]
+}
+
+fn vcredist2010_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2010 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr100,msvcp100",
+        },
+    }]
+}
+
+fn vcredist2008_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing Visual C++ 2008 DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides {
+            dlls: "msvcr90,msvcp90",
+        },
+    }]
+}
+
+fn dotnet_uninstall_steps() -> Vec<DepStep> {
+    vec![DepStep {
+        description: "Removing .NET Framework DLL overrides…",
+        action: DepStepAction::RemoveDllOverrides { dlls: "mscoree" },
+    }]
+}
+
+fn directx_uninstall_steps() -> Vec<DepStep> {
+    // All DLL names installed by d3dx9 / d3dx10 / d3dx11_43 winetricks verbs.
+    // Applied to both system32 (64-bit) and syswow64 (32-bit).
+    const D3DX9_DLLS: &str =
+        "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
+         d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
+         d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43";
+
+    // d3dcompiler DLLs placed by the DirectX End-User Runtime (33-46).
+    const D3DCOMP_DLLS: &str =
+        "d3dcompiler_33,d3dcompiler_34,d3dcompiler_35,d3dcompiler_36,\
+         d3dcompiler_37,d3dcompiler_38,d3dcompiler_39,d3dcompiler_40,\
+         d3dcompiler_41,d3dcompiler_42,d3dcompiler_43,d3dcompiler_46";
+
+    const D3DX10_DLLS: &str =
+        "d3dx10,d3dx10_33,d3dx10_34,d3dx10_35,d3dx10_36,d3dx10_37,\
+         d3dx10_38,d3dx10_39,d3dx10_40,d3dx10_41,d3dx10_42,d3dx10_43";
+
+    const D3DX11_DLLS: &str = "d3dx11_43";
+
+    vec![
+        // ── Remove DLL files from system32 (64-bit) ─────────────────────
+        DepStep {
+            description: "Removing d3dx9 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX9_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing d3dcompiler DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DCOMP_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx10 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX10_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx11 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX11_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        // ── Remove DLL files from syswow64 (32-bit) ─────────────────────
+        DepStep {
+            description: "Removing d3dx9 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX9_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dcompiler DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DCOMP_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx10 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX10_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx11 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX11_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        // ── Remove DLL overrides from registry ──────────────────────────
+        DepStep {
+            description: "Removing DirectX DLL overrides…",
+            action: DepStepAction::RemoveDllOverrides { dlls: D3DX9_DLLS },
         },
     ]
 }
@@ -2435,6 +2549,8 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             for pair in extra_env.split_whitespace() {
                 if let Some(eq) = pair.find('=') {
                     cmd.env(&pair[..eq], &pair[eq + 1..]);
@@ -2445,6 +2561,10 @@ fn execute_dep_step(
                 run_args.push(arg.to_string());
             }
             cmd.args(&run_args);
+            // Redirect subprocess output; Wine's verbose output is handled by leyen_log.
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to launch {}: {}", file_name, e))?;
@@ -2463,6 +2583,8 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             let mut run_args = vec![
                 "msiexec.exe".to_string(),
                 "/i".to_string(),
@@ -2472,6 +2594,9 @@ fn execute_dep_step(
                 run_args.push(arg.to_string());
             }
             cmd.args(&run_args);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run msiexec for {}: {}", file_name, e))?;
@@ -2512,7 +2637,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regedit.exe", "/S", &reg_path]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run regedit: {}", e))?;
@@ -2531,7 +2661,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regsvr32.exe", "/s", dll]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run regsvr32: {}", e))?;
@@ -2591,7 +2726,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["winetricks", "-q", verb]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run winetricks {}: {}", verb, e))?;
@@ -2600,10 +2740,71 @@ fn execute_dep_step(
             }
             Ok(())
         }
+
+        DepStepAction::RemoveDllsFromPrefix { dlls, wine_dir } => {
+            let dst_dir = format!("{}/drive_c/windows/{}", prefix_path, wine_dir);
+            for dll in dlls.split(',') {
+                let dll = dll.trim();
+                let path = format!("{}/{}.dll", dst_dir, dll);
+                if let Err(e) = fs::remove_file(&path) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        leyen_log("WARN ", &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e));
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        DepStepAction::RemoveDllOverrides { dlls } => {
+            let reg_lines: Vec<String> = dlls
+                .split(',')
+                .map(|d| format!("\"{}\"=-", d.trim()))
+                .collect();
+            let reg_content = format!(
+                "Windows Registry Editor Version 5.00\r\n\r\n\
+                 [HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\r\n\
+                 {}\r\n",
+                reg_lines.join("\r\n")
+            );
+            let safe_name = dlls
+                .split(',')
+                .next()
+                .unwrap_or("dll")
+                .trim()
+                .replace(['-', '.'], "_");
+            let reg_path = format!("{}/remove_override_{}.reg", cache_dir, safe_name);
+            fs::write(&reg_path, reg_content)
+                .map_err(|e| format!("Failed to write .reg file: {}", e))?;
+
+            let umu = get_umu_run_path();
+            let mut cmd = std::process::Command::new(&umu);
+            cmd.env("WINEPREFIX", prefix_path);
+            if !proton_path.is_empty() {
+                cmd.env("PROTONPATH", proton_path);
+            }
+            cmd.env("GAMEID", "leyen-dep-install");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
+            cmd.args(["regedit.exe", "/S", &reg_path]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to run regedit: {}", e))?;
+            let _ = fs::remove_file(&reg_path);
+            if !status.success() {
+                return Err(format!("DLL override removal failed for: {}", dlls));
+            }
+            Ok(())
+        }
     }
 }
 
 // ── Async orchestrator ────────────────────────────────────────────────────────
+
+/// How often the GTK main loop polls the background-thread message queue.
+const DEP_ASYNC_POLL_MS: u64 = 50;
 
 fn install_dep_async(
     dep_id: &str,
@@ -2637,6 +2838,7 @@ fn install_dep_async(
     }
 
     let total = steps.len();
+    let dep_id_t = dep_id.to_string();
     let prefix_t = prefix_path.to_string();
     let proton_t = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
@@ -2649,7 +2851,7 @@ fn install_dep_async(
     let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
     let on_progress = std::rc::Rc::new(on_progress);
 
-    glib::idle_add_local(move || {
+    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
         let mut q = queue.lock().unwrap();
         while let Some(msg) = q.pop_front() {
             match msg {
@@ -2670,17 +2872,103 @@ fn install_dep_async(
     });
 
     std::thread::spawn(move || {
+        leyen_log("INFO ", &format!("[dep:{}] starting install ({} steps)", dep_id_t, total));
         for (i, step) in steps.iter().enumerate() {
+            leyen_log("INFO ", &format!("[dep:{}] step {}/{}: {}", dep_id_t, i + 1, total, step.description));
             queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                 step: i + 1,
                 total,
                 description: step.description.to_string(),
             });
             if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                leyen_log("ERROR", &format!("[dep:{}] step {} failed: {}", dep_id_t, i + 1, e));
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }
         }
+        leyen_log("INFO ", &format!("[dep:{}] install complete", dep_id_t));
+        queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
+    });
+}
+
+fn uninstall_dep_async(
+    dep_id: &str,
+    prefix_path: &str,
+    proton_path: &str,
+    overlay: &adw::ToastOverlay,
+    on_progress: impl Fn(usize, usize, String) + 'static,
+    on_finish: impl FnOnce(bool, Option<String>) + 'static,
+) {
+    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        on_finish(false, Some("umu-launcher not ready".to_string()));
+        return;
+    }
+    if !is_umu_run_available() {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        on_finish(false, Some("umu-launcher not available".to_string()));
+        return;
+    }
+
+    let steps = get_dep_uninstall_steps(dep_id);
+    if steps.is_empty() {
+        on_finish(true, None);
+        return;
+    }
+
+    let total = steps.len();
+    let dep_id_t = dep_id.to_string();
+    let prefix_t = prefix_path.to_string();
+    let proton_t = proton_path.to_string();
+    let cache_dir = get_deps_cache_dir();
+
+    let queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<DepInstallMsg>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let queue_bg = queue.clone();
+
+    let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
+    let on_progress = std::rc::Rc::new(on_progress);
+
+    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
+        let mut q = queue.lock().unwrap();
+        while let Some(msg) = q.pop_front() {
+            match msg {
+                DepInstallMsg::Progress { step, total, description } => {
+                    on_progress(step, total, description);
+                }
+                DepInstallMsg::Done => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(true, None); }
+                    return glib::ControlFlow::Break;
+                }
+                DepInstallMsg::Failed(err) => {
+                    if let Some(f) = on_finish.borrow_mut().take() { f(false, Some(err)); }
+                    return glib::ControlFlow::Break;
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    std::thread::spawn(move || {
+        leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
+        for (i, step) in steps.iter().enumerate() {
+            leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
+            queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
+                step: i + 1,
+                total,
+                description: step.description.to_string(),
+            });
+            if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                leyen_log("ERROR", &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e));
+                queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
+                return;
+            }
+        }
+        leyen_log("INFO ", &format!("[dep:{}] uninstall complete", dep_id_t));
         queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
     });
 }
@@ -2704,6 +2992,14 @@ fn dep_category_order(cat: &str) -> usize {
         .iter()
         .position(|&c| c == cat)
         .unwrap_or(usize::MAX)
+}
+
+fn installed_subtitle(n: usize) -> String {
+    match n {
+        0 => "No components installed".to_string(),
+        1 => "1 component installed".to_string(),
+        n => format!("{} components installed", n),
+    }
 }
 
 fn show_dependencies_dialog(
@@ -2735,14 +3031,12 @@ fn show_dependencies_dialog(
         .destroy_with_parent(true)
         .build();
 
-    let subtitle = match installed_count {
-        0 => "No components installed".to_string(),
-        1 => "1 component installed".to_string(),
-        n => format!("{} components installed", n),
-    };
+    let subtitle = installed_subtitle(installed_count);
+
+    let title_widget = adw::WindowTitle::new("Manage Dependencies", &subtitle);
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Manage Dependencies", &subtitle))
+        .title_widget(&title_widget)
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
@@ -2854,15 +3148,14 @@ fn show_dependencies_dialog(
                 .visible(is_installed)
                 .build();
 
-            if is_installed {
-                let badge = gtk4::Label::builder()
-                    .label("✓ Installed")
-                    .css_classes(["success", "caption"])
-                    .valign(gtk4::Align::Center)
-                    .build();
-                row.add_suffix(&badge);
-            }
+            let badge = gtk4::Label::builder()
+                .label("✓ Installed")
+                .css_classes(["success", "caption"])
+                .valign(gtk4::Align::Center)
+                .visible(is_installed)
+                .build();
 
+            row.add_suffix(&badge);
             row.add_suffix(&spinner);
             row.add_suffix(&progress_label);
             row.add_suffix(&install_btn);
@@ -2877,6 +3170,8 @@ fn show_dependencies_dialog(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
@@ -2894,6 +3189,8 @@ fn show_dependencies_dialog(
                     let spinner3 = spinner2.clone();
                     let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
 
@@ -2909,9 +3206,12 @@ fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         if success {
                             add_installed_dep(&prefix3, dep_id);
+                            badge3.set_visible(true);
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
+                            let n = read_installed_deps(&prefix3).len();
+                            title3.set_subtitle(&installed_subtitle(n));
                             overlay3.add_toast(adw::Toast::new(&format!(
                                 "'{}' installed successfully.",
                                 dep_id
@@ -2942,6 +3242,8 @@ fn show_dependencies_dialog(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
@@ -2960,6 +3262,8 @@ fn show_dependencies_dialog(
                     let spinner3 = spinner2.clone();
                     let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
 
@@ -2975,9 +3279,12 @@ fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         if success {
                             add_installed_dep(&prefix3, dep_id);
+                            badge3.set_visible(true);
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
+                            let n = read_installed_deps(&prefix3).len();
+                            title3.set_subtitle(&installed_subtitle(n));
                             overlay3.add_toast(adw::Toast::new(&format!(
                                 "'{}' reinstalled successfully.",
                                 dep_id
@@ -3007,19 +3314,30 @@ fn show_dependencies_dialog(
                 let install_btn2 = install_btn.clone();
                 let reinstall_btn2 = reinstall_btn.clone();
                 let remove_btn2 = remove_btn.clone();
+                let spinner2 = spinner.clone();
+                let progress_label2 = progress_label.clone();
                 let row2 = row.clone();
+                let badge2 = badge.clone();
+                let title2 = title_widget.clone();
                 let prefix2 = resolved_prefix.clone();
+                let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
                 let dialog2 = dialog.clone();
 
                 remove_btn.connect_clicked(move |_| {
+                    let has_uninstall_steps = !get_dep_uninstall_steps(dep_id).is_empty();
+                    let detail = if has_uninstall_steps {
+                        "This will remove installed files and DLL overrides from the Wine prefix. \
+                         This action cannot be undone."
+                    } else {
+                        "This removes the dependency from leyen's tracking. \
+                         Installed files may remain in the Wine prefix — use \
+                         Wine's Add/Remove Programs for a full uninstall."
+                    };
+
                     let confirm = gtk4::AlertDialog::builder()
                         .message(&format!("Remove '{}'?", dep_id))
-                        .detail(
-                            "This removes the dependency from leyen's tracking. \
-                             Installed files may remain in the Wine prefix — use \
-                             Wine's Add/Remove Programs for a full uninstall.",
-                        )
+                        .detail(detail)
                         .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
                         .cancel_button(0)
                         .default_button(0)
@@ -3028,8 +3346,13 @@ fn show_dependencies_dialog(
                     let install_btn3 = install_btn2.clone();
                     let reinstall_btn3 = reinstall_btn2.clone();
                     let remove_btn3 = remove_btn2.clone();
+                    let spinner3 = spinner2.clone();
+                    let progress_label3 = progress_label2.clone();
                     let row3 = row2.clone();
+                    let badge3 = badge2.clone();
+                    let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
+                    let proton3 = proton2.clone();
                     let overlay3 = overlay2.clone();
 
                     confirm.choose(
@@ -3037,15 +3360,83 @@ fn show_dependencies_dialog(
                         gio::Cancellable::NONE,
                         move |result| {
                             if let Ok(1) = result {
-                                remove_installed_dep(&prefix3, dep_id);
-                                row3.set_sensitive(true);
-                                install_btn3.set_visible(true);
-                                reinstall_btn3.set_visible(false);
-                                remove_btn3.set_visible(false);
-                                overlay3.add_toast(adw::Toast::new(&format!(
-                                    "'{}' removed from tracking.",
-                                    dep_id
-                                )));
+                                if has_uninstall_steps {
+                                    reinstall_btn3.set_visible(false);
+                                    remove_btn3.set_visible(false);
+                                    spinner3.set_visible(true);
+                                    spinner3.start();
+                                    progress_label3.set_visible(true);
+                                    row3.set_sensitive(false);
+
+                                    let install_btn4 = install_btn3.clone();
+                                    let reinstall_btn4 = reinstall_btn3.clone();
+                                    let remove_btn4 = remove_btn3.clone();
+                                    let spinner4 = spinner3.clone();
+                                    let progress_label4 = progress_label3.clone();
+                                    let row4 = row3.clone();
+                                    let badge4 = badge3.clone();
+                                    let title4 = title3.clone();
+                                    let prefix4 = prefix3.clone();
+                                    let overlay4 = overlay3.clone();
+
+                                    let progress_label_p = progress_label3.clone();
+                                    let on_progress =
+                                        move |_step: usize, _total: usize, desc: String| {
+                                            progress_label_p.set_label(&desc);
+                                        };
+
+                                    let on_finish =
+                                        move |success: bool, err: Option<String>| {
+                                            spinner4.stop();
+                                            spinner4.set_visible(false);
+                                            progress_label4.set_visible(false);
+                                            row4.set_sensitive(true);
+                                            if success {
+                                                remove_installed_dep(&prefix4, dep_id);
+                                                badge4.set_visible(false);
+                                                install_btn4.set_visible(true);
+                                                reinstall_btn4.set_visible(false);
+                                                remove_btn4.set_visible(false);
+                                                let n = read_installed_deps(&prefix4).len();
+                                                title4.set_subtitle(&installed_subtitle(n));
+                                                overlay4.add_toast(adw::Toast::new(
+                                                    &format!(
+                                                        "'{}' uninstalled successfully.",
+                                                        dep_id
+                                                    ),
+                                                ));
+                                            } else {
+                                                reinstall_btn4.set_visible(true);
+                                                remove_btn4.set_visible(true);
+                                                let msg = err.unwrap_or_else(|| {
+                                                    "Uninstall failed.".to_string()
+                                                });
+                                                overlay4.add_toast(adw::Toast::new(&msg));
+                                            }
+                                        };
+
+                                    uninstall_dep_async(
+                                        dep_id,
+                                        &prefix3,
+                                        &proton3,
+                                        &overlay3,
+                                        on_progress,
+                                        on_finish,
+                                    );
+                                } else {
+                                    remove_installed_dep(&prefix3, dep_id);
+                                    row3.set_sensitive(true);
+                                    badge3.set_visible(false);
+                                    install_btn3.set_visible(true);
+                                    reinstall_btn3.set_visible(false);
+                                    remove_btn3.set_visible(false);
+                                    let n = read_installed_deps(&prefix3).len();
+                                    title3.set_subtitle(&installed_subtitle(n));
+                                    overlay3.add_toast(adw::Toast::new(&format!(
+                                        "'{}' removed from tracking.",
+                                        dep_id
+                                    )));
+                                }
                             }
                         },
                     );

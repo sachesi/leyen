@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -46,11 +47,47 @@ struct GlobalSettings {
     global_wow64: bool,
     global_ntsync: bool,
     available_proton_versions: Vec<String>,
+    // Logging toggles
+    log_errors: bool,
+    log_warnings: bool,
+    log_operations: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct GamesConfig {
     games: Vec<Game>,
+}
+
+// --- LOGGING ---
+
+/// Atomic flags mirroring GlobalSettings.log_* so background threads can log
+/// without reading the settings file on every message.
+static LOG_ERRORS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+static LOG_WARNINGS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static LOG_OPERATIONS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn apply_log_settings(s: &GlobalSettings) {
+    use std::sync::atomic::Ordering::Relaxed;
+    LOG_ERRORS.store(s.log_errors, Relaxed);
+    LOG_WARNINGS.store(s.log_warnings, Relaxed);
+    LOG_OPERATIONS.store(s.log_operations, Relaxed);
+}
+
+/// Print a formatted leyen log line to stderr.
+/// Level: "ERROR" | "WARN " | "INFO "
+fn leyen_log(level: &str, message: &str) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let enabled = match level {
+        "ERROR" => LOG_ERRORS.load(Relaxed),
+        "WARN " => LOG_WARNINGS.load(Relaxed),
+        _       => LOG_OPERATIONS.load(Relaxed),
+    };
+    if enabled {
+        eprintln!("[LEYEN] [{level}] {message}");
+    }
 }
 
 // --- FILE IO ---
@@ -110,11 +147,13 @@ fn load_settings() -> GlobalSettings {
     if settings.available_proton_versions.len() <= 1 {
         check_or_install_protonge();
     }
+    apply_log_settings(&settings);
     save_settings(&settings);
     settings
 }
 
 fn save_settings(settings: &GlobalSettings) {
+    apply_log_settings(settings);
     let path = get_settings_path();
     if let Ok(data) = toml::to_string_pretty(settings) {
         let _ = fs::write(path, data);
@@ -453,6 +492,9 @@ fn detect_proton_versions() -> GlobalSettings {
         global_wow64: false,
         global_ntsync: false,
         available_proton_versions: versions,
+        log_errors: true,
+        log_warnings: false,
+        log_operations: false,
     }
 }
 
@@ -891,11 +933,20 @@ fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
+    leyen_log("INFO ", &format!(
+        "Launching '{}' | exe: {} | prefix: {} | proton: {}",
+        game.title,
+        game.exe_path,
+        game.prefix_path,
+        game.proton,
+    ));
+
     match launcher.spawn(&os_args) {
         Ok(_) => {
             overlay.add_toast(adw::Toast::new(&format!("Launching {}...", game.title)));
         }
         Err(e) => {
+            leyen_log("ERROR", &format!("Failed to launch '{}': {}", game.title, e));
             overlay.add_toast(adw::Toast::new(&format!("Failed to launch: {}", e)));
         }
     }
@@ -999,8 +1050,37 @@ fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOve
     tools_group.add(&wow64_row);
     tools_group.add(&ntsync_row);
 
+    // ── Logging ────────────────────────────────────────────────────────────
+    let logging_group = adw::PreferencesGroup::builder()
+        .title("Logging")
+        .description("Select which messages are printed to the terminal.")
+        .build();
+
+    let log_errors_row = adw::SwitchRow::builder()
+        .title("Errors")
+        .subtitle("Show error messages from leyen and launched processes")
+        .active(settings.log_errors)
+        .build();
+
+    let log_warnings_row = adw::SwitchRow::builder()
+        .title("Warnings")
+        .subtitle("Show warning messages")
+        .active(settings.log_warnings)
+        .build();
+
+    let log_operations_row = adw::SwitchRow::builder()
+        .title("Operations")
+        .subtitle("Show game launch and component installation activity")
+        .active(settings.log_operations)
+        .build();
+
+    logging_group.add(&log_errors_row);
+    logging_group.add(&log_warnings_row);
+    logging_group.add(&log_operations_row);
+
     page.add(&paths_group);
     page.add(&tools_group);
+    page.add(&logging_group);
 
     // ── Maintenance ────────────────────────────────────────────────────────
     let maintenance_group = adw::PreferencesGroup::builder()
@@ -1079,6 +1159,9 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             global_wow64: wow64_row.is_active(),
             global_ntsync: ntsync_row.is_active(),
             available_proton_versions: available_versions.clone(),
+            log_errors: log_errors_row.is_active(),
+            log_warnings: log_warnings_row.is_active(),
+            log_operations: log_operations_row.is_active(),
         };
         save_settings(&updated_settings);
         glib::Propagation::Proceed
@@ -2295,14 +2378,90 @@ fn dotnet_uninstall_steps() -> Vec<DepStep> {
 }
 
 fn directx_uninstall_steps() -> Vec<DepStep> {
-    vec![DepStep {
-        description: "Removing DirectX DLL overrides…",
-        action: DepStepAction::RemoveDllOverrides {
-            dlls: "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
-                   d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
-                   d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43",
+    // All DLL names installed by d3dx9 / d3dx10 / d3dx11_43 winetricks verbs.
+    // Applied to both system32 (64-bit) and syswow64 (32-bit).
+    const D3DX9_DLLS: &str =
+        "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
+         d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
+         d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43";
+
+    // d3dcompiler DLLs placed by the DirectX End-User Runtime (33-46).
+    const D3DCOMP_DLLS: &str =
+        "d3dcompiler_33,d3dcompiler_34,d3dcompiler_35,d3dcompiler_36,\
+         d3dcompiler_37,d3dcompiler_38,d3dcompiler_39,d3dcompiler_40,\
+         d3dcompiler_41,d3dcompiler_42,d3dcompiler_43,d3dcompiler_46";
+
+    const D3DX10_DLLS: &str =
+        "d3dx10,d3dx10_33,d3dx10_34,d3dx10_35,d3dx10_36,d3dx10_37,\
+         d3dx10_38,d3dx10_39,d3dx10_40,d3dx10_41,d3dx10_42,d3dx10_43";
+
+    const D3DX11_DLLS: &str = "d3dx11_43";
+
+    vec![
+        // ── Remove DLL files from system32 (64-bit) ─────────────────────
+        DepStep {
+            description: "Removing d3dx9 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX9_DLLS,
+                wine_dir: "system32",
+            },
         },
-    }]
+        DepStep {
+            description: "Removing d3dcompiler DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DCOMP_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx10 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX10_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx11 DLL files (64-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX11_DLLS,
+                wine_dir: "system32",
+            },
+        },
+        // ── Remove DLL files from syswow64 (32-bit) ─────────────────────
+        DepStep {
+            description: "Removing d3dx9 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX9_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dcompiler DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DCOMP_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx10 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX10_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        DepStep {
+            description: "Removing d3dx11 DLL files (32-bit)…",
+            action: DepStepAction::RemoveDllsFromPrefix {
+                dlls: D3DX11_DLLS,
+                wine_dir: "syswow64",
+            },
+        },
+        // ── Remove DLL overrides from registry ──────────────────────────
+        DepStep {
+            description: "Removing DirectX DLL overrides…",
+            action: DepStepAction::RemoveDllOverrides { dlls: D3DX9_DLLS },
+        },
+    ]
 }
 
 // ── Cache & tracking helpers ──────────────────────────────────────────────────
@@ -2390,7 +2549,8 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             for pair in extra_env.split_whitespace() {
                 if let Some(eq) = pair.find('=') {
                     cmd.env(&pair[..eq], &pair[eq + 1..]);
@@ -2401,6 +2561,10 @@ fn execute_dep_step(
                 run_args.push(arg.to_string());
             }
             cmd.args(&run_args);
+            // Redirect subprocess output; Wine's verbose output is handled by leyen_log.
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to launch {}: {}", file_name, e))?;
@@ -2419,7 +2583,8 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             let mut run_args = vec![
                 "msiexec.exe".to_string(),
                 "/i".to_string(),
@@ -2429,6 +2594,9 @@ fn execute_dep_step(
                 run_args.push(arg.to_string());
             }
             cmd.args(&run_args);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run msiexec for {}: {}", file_name, e))?;
@@ -2469,8 +2637,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regedit.exe", "/S", &reg_path]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run regedit: {}", e))?;
@@ -2489,8 +2661,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regsvr32.exe", "/s", dll]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run regsvr32: {}", e))?;
@@ -2550,8 +2726,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["winetricks", "-q", verb]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run winetricks {}: {}", verb, e))?;
@@ -2566,7 +2746,11 @@ fn execute_dep_step(
             for dll in dlls.split(',') {
                 let dll = dll.trim();
                 let path = format!("{}/{}.dll", dst_dir, dll);
-                let _ = fs::remove_file(&path);
+                if let Err(e) = fs::remove_file(&path) {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        leyen_log("WARN ", &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e));
+                    }
+                }
             }
             Ok(())
         }
@@ -2599,8 +2783,12 @@ fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b");
+            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regedit.exe", "/S", &reg_path]);
+            if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
             let status = cmd
                 .status()
                 .map_err(|e| format!("Failed to run regedit: {}", e))?;
@@ -2650,6 +2838,7 @@ fn install_dep_async(
     }
 
     let total = steps.len();
+    let dep_id_t = dep_id.to_string();
     let prefix_t = prefix_path.to_string();
     let proton_t = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
@@ -2683,17 +2872,21 @@ fn install_dep_async(
     });
 
     std::thread::spawn(move || {
+        leyen_log("INFO ", &format!("[dep:{}] starting install ({} steps)", dep_id_t, total));
         for (i, step) in steps.iter().enumerate() {
+            leyen_log("INFO ", &format!("[dep:{}] step {}/{}: {}", dep_id_t, i + 1, total, step.description));
             queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                 step: i + 1,
                 total,
                 description: step.description.to_string(),
             });
             if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                leyen_log("ERROR", &format!("[dep:{}] step {} failed: {}", dep_id_t, i + 1, e));
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }
         }
+        leyen_log("INFO ", &format!("[dep:{}] install complete", dep_id_t));
         queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
     });
 }
@@ -2728,6 +2921,7 @@ fn uninstall_dep_async(
     }
 
     let total = steps.len();
+    let dep_id_t = dep_id.to_string();
     let prefix_t = prefix_path.to_string();
     let proton_t = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
@@ -2760,17 +2954,21 @@ fn uninstall_dep_async(
     });
 
     std::thread::spawn(move || {
+        leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
         for (i, step) in steps.iter().enumerate() {
+            leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
             queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                 step: i + 1,
                 total,
                 description: step.description.to_string(),
             });
             if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
+                leyen_log("ERROR", &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e));
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }
         }
+        leyen_log("INFO ", &format!("[dep:{}] uninstall complete", dep_id_t));
         queue_bg.lock().unwrap().push_back(DepInstallMsg::Done);
     });
 }

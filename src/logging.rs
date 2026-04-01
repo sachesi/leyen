@@ -27,6 +27,13 @@ pub fn get_log_buffer() -> Vec<String> {
     LOG_BUFFER.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Clear every captured log line from the in-memory buffer.
+pub fn clear_log_buffer() {
+    if let Ok(mut buf) = LOG_BUFFER.lock() {
+        buf.clear();
+    }
+}
+
 /// Print a formatted leyen log line to stderr **and** append it to the
 /// in-memory buffer so the log window can display it.
 /// Level: "ERROR" | "WARN " | "INFO "

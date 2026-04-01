@@ -79,7 +79,7 @@ pub fn show_log_window(parent: &adw::ApplicationWindow) {
 
             // Auto-scroll to bottom
             let adj = scroll_clone.vadjustment();
-            adj.set_value(adj.upper());
+            adj.set_value(adj.upper() - adj.page_size());
         }
 
         glib::ControlFlow::Continue

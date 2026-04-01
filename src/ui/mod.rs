@@ -12,7 +12,7 @@ use gtk4::glib;
 use crate::config::load_games;
 use crate::launch::launch_game;
 use crate::models::Game;
-use crate::umu::{is_umu_run_available, UMU_DOWNLOADING};
+use crate::umu::{UMU_DOWNLOADING, is_umu_run_available};
 
 use self::game_dialogs::{show_add_game_dialog, show_delete_confirmation, show_edit_game_dialog};
 use self::log_window::show_log_window;
@@ -119,8 +119,9 @@ pub fn build_ui(app: &adw::Application) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Leyen")
-        .default_width(700)
+        .default_width(500)
         .default_height(600)
+        .resizable(false)
         .content(&toolbar_view)
         .build();
 

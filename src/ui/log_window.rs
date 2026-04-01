@@ -3,7 +3,7 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::glib;
 
-use crate::logging::get_log_buffer;
+use crate::logging::{clear_log_buffer, get_log_buffer};
 
 /// Show (or re-present) the always-on-top, read-only log viewer window.
 ///
@@ -19,6 +19,11 @@ pub fn show_log_window(parent: &adw::ApplicationWindow) {
         .build();
 
     let header = adw::HeaderBar::builder().build();
+    let clear_button = gtk4::Button::builder()
+        .icon_name("edit-clear-all-symbolic")
+        .tooltip_text("Clear logs")
+        .build();
+    header.pack_end(&clear_button);
 
     let text_view = gtk4::TextView::builder()
         .editable(false)
@@ -40,6 +45,13 @@ pub fn show_log_window(parent: &adw::ApplicationWindow) {
     }
     // Track how many lines we have already rendered
     let rendered_count = std::cell::Cell::new(existing.len());
+    let rendered_count_for_clear = rendered_count.clone();
+    let buffer_for_clear = buffer.clone();
+    clear_button.connect_clicked(move |_| {
+        clear_log_buffer();
+        buffer_for_clear.set_text("");
+        rendered_count_for_clear.set(0);
+    });
 
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Automatic)

@@ -1,10 +1,12 @@
 pub mod deps_dialog;
 pub mod game_dialogs;
+pub mod log_window;
 pub mod settings;
 
 use libadwaita as adw;
 
 use adw::prelude::*;
+use gtk4::gio;
 use gtk4::glib;
 
 use crate::config::load_games;
@@ -13,6 +15,7 @@ use crate::models::Game;
 use crate::umu::{is_umu_run_available, UMU_DOWNLOADING};
 
 use self::game_dialogs::{show_add_game_dialog, show_delete_confirmation, show_edit_game_dialog};
+use self::log_window::show_log_window;
 use self::settings::show_global_settings;
 
 pub fn build_ui(app: &adw::Application) {
@@ -37,13 +40,19 @@ pub fn build_ui(app: &adw::Application) {
         .tooltip_text("Add Game")
         .build();
 
-    let settings_btn = gtk4::Button::builder()
-        .icon_name("emblem-system-symbolic")
-        .tooltip_text("Preferences")
+    // ── Hamburger menu (replaces the old gear-icon preferences button) ──
+    let menu_model = gio::Menu::new();
+    menu_model.append(Some("Preferences"), Some("win.show-preferences"));
+    menu_model.append(Some("Logs"), Some("win.show-logs"));
+
+    let menu_btn = gtk4::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .menu_model(&menu_model)
+        .tooltip_text("Main Menu")
         .build();
 
     header.pack_start(&add_btn);
-    header.pack_end(&settings_btn);
+    header.pack_end(&menu_btn);
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
@@ -148,11 +157,24 @@ pub fn build_ui(app: &adw::Application) {
 
     /* --- EVENT HANDLERS --- */
 
+    /* --- MENU ACTIONS --- */
+
+    // "Preferences" action
+    let prefs_action = gio::SimpleAction::new("show-preferences", None);
     let window_clone = window.clone();
     let overlay_for_settings = toast_overlay.clone();
-    settings_btn.connect_clicked(move |_| {
+    prefs_action.connect_activate(move |_, _| {
         show_global_settings(&window_clone, &overlay_for_settings);
     });
+    window.add_action(&prefs_action);
+
+    // "Logs" action
+    let logs_action = gio::SimpleAction::new("show-logs", None);
+    let window_clone_logs = window.clone();
+    logs_action.connect_activate(move |_, _| {
+        show_log_window(&window_clone_logs);
+    });
+    window.add_action(&logs_action);
 
     let window_clone_2 = window.clone();
     let list_box_clone = game_list_box.clone();

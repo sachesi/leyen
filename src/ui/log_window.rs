@@ -20,10 +20,10 @@ pub fn show_log_window(parent: &adw::ApplicationWindow) {
 
     let header = adw::HeaderBar::builder().build();
     let clear_button = gtk4::Button::builder()
-        .icon_name("edit-clear-symbolic")
+        .icon_name("edit-clear-all-symbolic")
         .tooltip_text("Clear logs")
         .build();
-    header.pack_start(&clear_button);
+    header.pack_end(&clear_button);
 
     let text_view = gtk4::TextView::builder()
         .editable(false)

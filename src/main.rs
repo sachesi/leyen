@@ -7,6 +7,7 @@ mod deps;
 mod launch;
 mod logging;
 mod models;
+mod paths;
 mod proton;
 mod ui;
 mod umu;

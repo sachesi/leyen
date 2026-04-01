@@ -1,20 +1,22 @@
 mod catalog;
 mod engine;
 
-pub use catalog::{
-    DEP_CATALOG, DEP_CATEGORY_ORDER, DepCatalogEntry, get_dep_uninstall_steps,
-};
+pub use catalog::{DEP_CATALOG, DEP_CATEGORY_ORDER, DepCatalogEntry, get_dep_uninstall_steps};
 pub use engine::{install_dep_async, uninstall_dep_async};
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::paths::local_share_leyen_dir;
+
 // ── Cache & tracking helpers ──────────────────────────────────────────────────
 
 pub fn get_deps_cache_dir() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/.local/share/leyen/deps/cache", home)
+    local_share_leyen_dir()
+        .join("deps/cache")
+        .to_string_lossy()
+        .to_string()
 }
 
 pub fn get_prefix_deps_file(prefix_path: &str) -> PathBuf {

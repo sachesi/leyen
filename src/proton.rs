@@ -1,5 +1,7 @@
 use std::fs;
 
+use crate::paths::{local_share_leyen_dir, steam_root_dir};
+
 static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -18,15 +20,14 @@ pub fn resolve_proton_path(proton: &str) -> Option<String> {
     }
 
     // Backward-compat: resolve a bare directory name to its full path
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let candidates = [
-        format!("{}/.local/share/leyen/proton/{}", home, proton),
-        format!("{}/.steam/steam/compatibilitytools.d/{}", home, proton),
-        format!("{}/.steam/steam/steamapps/common/{}", home, proton),
+        local_share_leyen_dir().join(format!("proton/{}", proton)),
+        steam_root_dir().join(format!("compatibilitytools.d/{}", proton)),
+        steam_root_dir().join(format!("steamapps/common/{}", proton)),
     ];
     for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return Some(path.clone());
+        if path.exists() {
+            return Some(path.to_string_lossy().to_string());
         }
     }
 
@@ -41,8 +42,7 @@ pub fn check_or_install_protonge() {
         return;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let proton_dir = format!("{}/.local/share/leyen/proton", home);
+    let proton_dir = local_share_leyen_dir().join("proton");
 
     std::thread::spawn(move || {
         let _ = fs::create_dir_all(&proton_dir);
@@ -77,21 +77,32 @@ pub fn check_or_install_protonge() {
         }
 
         let tarball = format!("{}.tar.gz", tag);
-        let tarball_path = format!("{}/{}", proton_dir, tarball);
+        let tarball_path = proton_dir.join(&tarball);
         let download_url = format!(
             "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/{}/{}",
             tag, tarball
         );
 
         let ok = std::process::Command::new("curl")
-            .args(["-L", "--fail", "-o", &tarball_path, &download_url])
+            .args([
+                "-L",
+                "--fail",
+                "-o",
+                &tarball_path.to_string_lossy(),
+                &download_url,
+            ])
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
 
         if ok {
             let _ = std::process::Command::new("tar")
-                .args(["-xzf", &tarball_path, "-C", &proton_dir])
+                .args([
+                    "-xzf",
+                    &tarball_path.to_string_lossy(),
+                    "-C",
+                    &proton_dir.to_string_lossy(),
+                ])
                 .status();
             let _ = fs::remove_file(&tarball_path);
         }

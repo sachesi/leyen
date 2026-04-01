@@ -4,10 +4,8 @@ use crate::models::GlobalSettings;
 
 /// Atomic flags mirroring GlobalSettings.log_* so background threads can log
 /// without reading the settings file on every message.
-pub static LOG_ERRORS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true);
-pub static LOG_WARNINGS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static LOG_ERRORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub static LOG_WARNINGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static LOG_OPERATIONS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -49,7 +47,7 @@ pub fn leyen_log(level: &str, message: &str) {
     let enabled = match level {
         "ERROR" => LOG_ERRORS.load(Relaxed),
         "WARN " => LOG_WARNINGS.load(Relaxed),
-        _       => LOG_OPERATIONS.load(Relaxed),
+        _ => LOG_OPERATIONS.load(Relaxed),
     };
     if enabled {
         eprintln!("{line}");

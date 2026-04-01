@@ -447,9 +447,7 @@ pub fn show_edit_game_dialog(
     advanced_group.add(&wow64_row_game);
     advanced_group.add(&ntsync_row_game);
 
-    let deps_btn = gtk4::Button::builder()
-        .label("Manage Dependencies")
-        .build();
+    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
 
     let game_prefix = game.prefix_path.clone();
     let game_proton = resolve_proton_path(&game.proton).unwrap_or_default();

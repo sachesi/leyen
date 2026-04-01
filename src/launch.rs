@@ -6,7 +6,7 @@ use crate::config::load_settings;
 use crate::logging::leyen_log;
 use crate::models::Game;
 use crate::proton::resolve_proton_path;
-use crate::umu::{get_umu_run_path, is_umu_run_available, UMU_DOWNLOADING};
+use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 pub fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
     // Block launch while umu-launcher is being downloaded.
@@ -134,20 +134,23 @@ pub fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
 
     let os_args: Vec<&std::ffi::OsStr> = cmd_args.iter().map(std::ffi::OsStr::new).collect();
 
-    leyen_log("INFO ", &format!(
-        "Launching '{}' | exe: {} | prefix: {} | proton: {}",
-        game.title,
-        game.exe_path,
-        game.prefix_path,
-        game.proton,
-    ));
+    leyen_log(
+        "INFO ",
+        &format!(
+            "Launching '{}' | exe: {} | prefix: {} | proton: {}",
+            game.title, game.exe_path, game.prefix_path, game.proton,
+        ),
+    );
 
     match launcher.spawn(&os_args) {
         Ok(_) => {
             overlay.add_toast(adw::Toast::new(&format!("Launching {}...", game.title)));
         }
         Err(e) => {
-            leyen_log("ERROR", &format!("Failed to launch '{}': {}", game.title, e));
+            leyen_log(
+                "ERROR",
+                &format!("Failed to launch '{}': {}", game.title, e),
+            );
             overlay.add_toast(adw::Toast::new(&format!("Failed to launch: {}", e)));
         }
     }

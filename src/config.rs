@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use crate::logging::apply_log_settings;
 use crate::models::{Game, GamesConfig, GlobalSettings};
+use crate::paths::{config_dir, local_share_leyen_dir, steam_root_dir};
 use crate::proton::check_or_install_protonge;
 
 pub fn get_config_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let config_dir = PathBuf::from(format!("{}/.config/leyen", home));
+    let config_dir = config_dir();
     if !config_dir.exists() {
         let _ = fs::create_dir_all(&config_dir);
     }
@@ -76,10 +76,8 @@ pub fn save_settings(settings: &GlobalSettings) {
 pub fn detect_proton_versions() -> GlobalSettings {
     let mut versions = vec!["Default".to_string()];
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-
     // Check local leyen Proton directory first
-    let leyen_proton = PathBuf::from(format!("{}/.local/share/leyen/proton", home));
+    let leyen_proton = local_share_leyen_dir().join("proton");
     if leyen_proton.exists() {
         if let Ok(entries) = fs::read_dir(&leyen_proton) {
             for entry in entries.flatten() {
@@ -93,7 +91,7 @@ pub fn detect_proton_versions() -> GlobalSettings {
     }
 
     // Steam's compatibility tools
-    let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
+    let steam_compat = steam_root_dir().join("compatibilitytools.d");
     if steam_compat.exists() {
         if let Ok(entries) = fs::read_dir(steam_compat) {
             for entry in entries.flatten() {
@@ -105,7 +103,7 @@ pub fn detect_proton_versions() -> GlobalSettings {
     }
 
     // Check for system-installed Proton
-    let steam_root = PathBuf::from(format!("{}/.steam/steam/steamapps/common", home));
+    let steam_root = steam_root_dir().join("steamapps/common");
     if steam_root.exists() {
         if let Ok(entries) = fs::read_dir(steam_root) {
             for entry in entries.flatten() {
@@ -120,14 +118,14 @@ pub fn detect_proton_versions() -> GlobalSettings {
         }
     }
 
-    let default_prefix_path = format!("{}/.local/share/leyen/prefixes/default", home);
-    let default_prefix_dir = PathBuf::from(&default_prefix_path);
+    let default_prefix_path = local_share_leyen_dir().join("prefixes/default");
+    let default_prefix_dir = default_prefix_path.clone();
     if !default_prefix_dir.exists() {
         let _ = fs::create_dir_all(&default_prefix_dir);
     }
 
     GlobalSettings {
-        default_prefix_path,
+        default_prefix_path: default_prefix_path.to_string_lossy().to_string(),
         default_proton: "Default".to_string(),
         global_mangohud: false,
         global_gamemode: false,

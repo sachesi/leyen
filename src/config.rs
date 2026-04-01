@@ -60,7 +60,7 @@ pub fn load_settings() -> GlobalSettings {
     if settings.available_proton_versions.len() <= 1 {
         check_or_install_protonge();
     }
-    apply_log_settings(&settings);
+    // save_settings calls apply_log_settings internally
     save_settings(&settings);
     settings
 }

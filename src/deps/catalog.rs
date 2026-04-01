@@ -90,7 +90,7 @@ pub const DEP_CATALOG: &[DepCatalogEntry] = &[
     },
 ];
 
-pub const DEP_CATEGORY_ORDER: &[&str] = &["Runtime", "DirectX", "Media", "Wine Components"];
+pub const DEP_CATEGORY_ORDER: &[&str] = &["Runtime", "DirectX", "Media"];
 
 pub fn get_dep_steps(id: &str) -> Vec<DepStep> {
     match id {

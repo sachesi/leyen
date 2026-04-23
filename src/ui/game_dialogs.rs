@@ -62,6 +62,9 @@ fn build_cover_row(
     let picture_clone = picture.clone();
     let path_label_clone = path_label.clone();
     browse_btn.connect_clicked(move |_| {
+        let picture_for_open = picture_clone.clone();
+        let label_for_open = path_label_clone.clone();
+
         let image_filter = gtk4::FileFilter::new();
         image_filter.set_name(Some("Image files"));
         image_filter.add_mime_type("image/png");
@@ -79,8 +82,8 @@ fn build_cover_row(
             if let Ok(file) = result {
                 if let Some(path) = file.path() {
                     let path_str = path.to_string_lossy().to_string();
-                    picture_clone.set_filename(Some(&path_str));
-                    path_label_clone.set_label(&path_str);
+                    picture_for_open.set_filename(Some(&path_str));
+                    label_for_open.set_label(&path_str);
                 }
             }
         });

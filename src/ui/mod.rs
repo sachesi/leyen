@@ -545,13 +545,18 @@ fn build_list_row(
         .margin_end(10)
         .build();
 
-    let thumb = if let Some(path) = &game.cover_path {
-        gtk4::Picture::for_filename(path)
+    let thumb: gtk4::Widget = if let Some(path) = &game.cover_path {
+        let picture = gtk4::Picture::for_filename(path);
+        picture.set_size_request(48, 48);
+        picture.set_content_fit(gtk4::ContentFit::Cover);
+        picture.upcast()
     } else {
-        gtk4::Picture::for_icon_name("image-missing-symbolic")
+        gtk4::Image::builder()
+            .icon_name("image-missing-symbolic")
+            .pixel_size(32)
+            .build()
+            .upcast()
     };
-    thumb.set_size_request(48, 48);
-    thumb.set_content_fit(gtk4::ContentFit::Cover);
 
     let labels = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)

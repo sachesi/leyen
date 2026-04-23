@@ -51,8 +51,6 @@ fn build_cover_row(
 
     if let Some(path) = initial_path {
         picture.set_filename(Some(path));
-    } else {
-        picture.set_icon_name(Some("image-x-generic-symbolic"));
     }
 
     let browse_btn = gtk4::Button::builder().label("Browse…").build();

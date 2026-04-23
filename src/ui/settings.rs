@@ -216,6 +216,7 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             log_errors: log_errors_row.is_active(),
             log_warnings: log_warnings_row.is_active(),
             log_operations: log_operations_row.is_active(),
+            view_mode: settings.view_mode.clone(),
         };
         save_settings(&updated_settings);
         gtk4::glib::Propagation::Proceed

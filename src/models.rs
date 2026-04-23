@@ -18,6 +18,15 @@ pub struct Game {
     pub game_ntsync: bool,
     #[serde(default)]
     pub game_id: String,
+    #[serde(default)]
+    pub cover_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Grid,
+    List,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -34,6 +43,7 @@ pub struct GlobalSettings {
     pub log_errors: bool,
     pub log_warnings: bool,
     pub log_operations: bool,
+    pub view_mode: ViewMode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

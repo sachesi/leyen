@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::logging::apply_log_settings;
-use crate::models::{Game, GamesConfig, GlobalSettings};
+use crate::models::{Game, GamesConfig, GlobalSettings, ViewMode};
 use crate::proton::check_or_install_protonge;
 
 pub fn get_config_dir() -> PathBuf {
@@ -138,5 +138,6 @@ pub fn detect_proton_versions() -> GlobalSettings {
         log_errors: true,
         log_warnings: false,
         log_operations: false,
+        view_mode: ViewMode::Grid,
     }
 }

@@ -5,19 +5,100 @@ use gtk4::gio;
 use std::path::PathBuf;
 
 use crate::config::{load_games, load_settings, save_games};
-use crate::models::Game;
+use crate::models::{Game, ViewMode};
 use crate::proton::resolve_proton_path;
 
 use super::deps_dialog::show_dependencies_dialog;
-use super::populate_game_list;
+use super::populate_game_views;
 
-// --- ADD GAME DIALOG ---
+fn refresh_ui(
+    flow_box: &gtk4::FlowBox,
+    list_box: &gtk4::ListBox,
+    stack: &gtk4::Stack,
+    search_entry: &gtk4::SearchEntry,
+    overlay: &adw::ToastOverlay,
+    parent: &adw::ApplicationWindow,
+    view_mode: &ViewMode,
+) {
+    let games = load_games();
+    populate_game_views(
+        flow_box,
+        list_box,
+        stack,
+        &games,
+        &search_entry.text(),
+        overlay,
+        parent,
+        view_mode,
+    );
+}
+
+fn build_cover_row(
+    parent: &adw::ApplicationWindow,
+    initial_path: Option<&str>,
+) -> (adw::ActionRow, gtk4::Picture, gtk4::Label) {
+    let row = adw::ActionRow::builder().title("Cover Art").build();
+    let picture = gtk4::Picture::new();
+    picture.set_size_request(160, 90);
+    picture.set_content_fit(gtk4::ContentFit::Cover);
+
+    let path_label = gtk4::Label::builder()
+        .label(initial_path.unwrap_or("No cover selected"))
+        .xalign(0.0)
+        .ellipsize(gtk4::pango::EllipsizeMode::Middle)
+        .css_classes(["dim-label"])
+        .build();
+
+    if let Some(path) = initial_path {
+        picture.set_filename(Some(path));
+    } else {
+        picture.set_icon_name(Some("image-x-generic-symbolic"));
+    }
+
+    let browse_btn = gtk4::Button::builder().label("Browse…").build();
+    row.add_prefix(&picture);
+    row.add_suffix(&browse_btn);
+    row.set_subtitle(path_label.label().as_str());
+
+    let parent_clone = parent.clone();
+    let picture_clone = picture.clone();
+    let path_label_clone = path_label.clone();
+    browse_btn.connect_clicked(move |_| {
+        let image_filter = gtk4::FileFilter::new();
+        image_filter.set_name(Some("Image files"));
+        image_filter.add_mime_type("image/png");
+        image_filter.add_mime_type("image/jpeg");
+        image_filter.add_mime_type("image/webp");
+
+        let filters: gio::ListStore = gio::ListStore::new::<gtk4::FileFilter>();
+        filters.append(&image_filter);
+
+        let dialog = gtk4::FileDialog::builder()
+            .title("Select Cover Art")
+            .build();
+        dialog.set_filters(Some(&filters));
+        dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result {
+                if let Some(path) = file.path() {
+                    let path_str = path.to_string_lossy().to_string();
+                    picture_clone.set_filename(Some(&path_str));
+                    path_label_clone.set_label(&path_str);
+                }
+            }
+        });
+    });
+
+    (row, picture, path_label)
+}
 
 pub fn show_add_game_dialog(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::Box,
-    empty_state: &gtk4::Box,
+    flow_box: &gtk4::FlowBox,
+    list_box: &gtk4::ListBox,
+    stack: &gtk4::Stack,
+    search_entry: &gtk4::SearchEntry,
     overlay: &adw::ToastOverlay,
+    view_mode: &ViewMode,
 ) {
     let settings = load_settings();
 
@@ -25,7 +106,7 @@ pub fn show_add_game_dialog(
         .transient_for(parent)
         .modal(true)
         .default_width(450)
-        .default_height(600)
+        .default_height(640)
         .destroy_with_parent(true)
         .build();
 
@@ -53,22 +134,18 @@ pub fn show_add_game_dialog(
         .build();
     let page = adw::PreferencesPage::builder().build();
 
-    // Input Fields
     let title_row = adw::EntryRow::builder().title("Title").build();
     let path_row = adw::EntryRow::builder().title("Executable").build();
-
-    let browse_btn = gtk4::Button::builder()
-        .label("Browse...")
-        .valign(gtk4::Align::Center)
-        .build();
-
+    let browse_btn = gtk4::Button::builder().label("Browse...").build();
     path_row.add_suffix(&browse_btn);
 
     let game_group = adw::PreferencesGroup::builder().title("Game").build();
     game_group.add(&title_row);
     game_group.add(&path_row);
 
-    // File chooser for executable
+    let (cover_row, _cover_picture, cover_path_label) = build_cover_row(parent, None);
+    game_group.add(&cover_row);
+
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
@@ -90,10 +167,7 @@ pub fn show_add_game_dialog(
         .text(&settings.default_prefix_path)
         .build();
 
-    let prefix_browse_btn = gtk4::Button::builder()
-        .label("Browse...")
-        .valign(gtk4::Align::Center)
-        .build();
+    let prefix_browse_btn = gtk4::Button::builder().label("Browse...").build();
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let prefix_row_clone = prefix_row.clone();
@@ -118,7 +192,6 @@ pub fn show_add_game_dialog(
 
     let game_id_row = adw::EntryRow::builder().title("Game ID").build();
 
-    // Build Proton dropdown – display basenames, store full paths via index
     let proton_display_names_add: Vec<String> = settings
         .available_proton_versions
         .iter()
@@ -158,18 +231,9 @@ pub fn show_add_game_dialog(
         .title("Force GameMode")
         .active(settings.global_gamemode)
         .build();
-    let wayland_row_game = adw::SwitchRow::builder()
-        .title("Wayland")
-        .active(false)
-        .build();
-    let wow64_row_game = adw::SwitchRow::builder()
-        .title("WoW64")
-        .active(false)
-        .build();
-    let ntsync_row_game = adw::SwitchRow::builder()
-        .title("NTSync")
-        .active(false)
-        .build();
+    let wayland_row_game = adw::SwitchRow::builder().title("Wayland").build();
+    let wow64_row_game = adw::SwitchRow::builder().title("WoW64").build();
+    let ntsync_row_game = adw::SwitchRow::builder().title("NTSync").build();
     let advanced_group = adw::PreferencesGroup::builder().title("Overrides").build();
     advanced_group.add(&args_row);
     advanced_group.add(&mangohud_row);
@@ -194,12 +258,14 @@ pub fn show_add_game_dialog(
     let dialog_clone = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
 
-    // --- SAVE NEW GAME LOGIC ---
     let dialog_clone_2 = dialog.clone();
+    let flow_box_clone = flow_box.clone();
     let list_box_clone = list_box.clone();
-    let empty_state_clone = empty_state.clone();
+    let stack_clone = stack.clone();
+    let search_clone = search_entry.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
+    let view_mode = view_mode.clone();
 
     add_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
@@ -209,6 +275,13 @@ pub fn show_add_game_dialog(
             overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
             return;
         }
+
+        let cover_value = cover_path_label.label().to_string();
+        let cover_path = if cover_value == "No cover selected" {
+            None
+        } else {
+            Some(cover_value)
+        };
 
         let new_game = Game {
             id: uuid::Uuid::new_v4().to_string(),
@@ -227,20 +300,20 @@ pub fn show_add_game_dialog(
             game_wow64: wow64_row_game.is_active(),
             game_ntsync: ntsync_row_game.is_active(),
             game_id: game_id_row.text().to_string(),
+            cover_path,
         };
 
-        // Load existing games, add new one, save back to disk
         let mut games = load_games();
         games.push(new_game);
         save_games(&games);
-
-        // Refresh UI
-        populate_game_list(
+        refresh_ui(
+            &flow_box_clone,
             &list_box_clone,
-            &empty_state_clone,
-            &games,
+            &stack_clone,
+            &search_clone,
             &overlay_clone,
             &parent_clone,
+            &view_mode,
         );
 
         overlay_clone.add_toast(adw::Toast::new("Game added successfully"));
@@ -250,13 +323,15 @@ pub fn show_add_game_dialog(
     dialog.present();
 }
 
-// --- EDIT GAME DIALOG ---
-
+#[allow(clippy::too_many_arguments)]
 pub fn show_edit_game_dialog(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::Box,
-    empty_state: &gtk4::Box,
+    flow_box: &gtk4::FlowBox,
+    list_box: &gtk4::ListBox,
+    stack: &gtk4::Stack,
+    search_entry: &gtk4::SearchEntry,
     overlay: &adw::ToastOverlay,
+    view_mode: &ViewMode,
     game: &Game,
 ) {
     let settings = load_settings();
@@ -266,7 +341,7 @@ pub fn show_edit_game_dialog(
         .transient_for(parent)
         .modal(true)
         .default_width(450)
-        .default_height(600)
+        .default_height(640)
         .destroy_with_parent(true)
         .build();
 
@@ -294,29 +369,25 @@ pub fn show_edit_game_dialog(
         .build();
     let page = adw::PreferencesPage::builder().build();
 
-    // Input Fields - pre-populated with existing game data
     let title_row = adw::EntryRow::builder()
         .title("Title")
         .text(&game.title)
         .build();
-
     let path_row = adw::EntryRow::builder()
         .title("Executable")
         .text(&game.exe_path)
         .build();
 
-    let browse_btn = gtk4::Button::builder()
-        .label("Browse...")
-        .valign(gtk4::Align::Center)
-        .build();
-
+    let browse_btn = gtk4::Button::builder().label("Browse...").build();
     path_row.add_suffix(&browse_btn);
 
     let game_group = adw::PreferencesGroup::builder().title("Game").build();
     game_group.add(&title_row);
     game_group.add(&path_row);
+    let (cover_row, _cover_picture, cover_path_label) =
+        build_cover_row(parent, game.cover_path.as_deref());
+    game_group.add(&cover_row);
 
-    // File chooser for executable
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
@@ -338,10 +409,7 @@ pub fn show_edit_game_dialog(
         .text(&game.prefix_path)
         .build();
 
-    let prefix_browse_btn = gtk4::Button::builder()
-        .label("Browse...")
-        .valign(gtk4::Align::Center)
-        .build();
+    let prefix_browse_btn = gtk4::Button::builder().label("Browse...").build();
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let prefix_row_clone = prefix_row.clone();
@@ -369,7 +437,6 @@ pub fn show_edit_game_dialog(
         .text(&game.game_id)
         .build();
 
-    // Build Proton dropdown – display basenames, store full paths via index
     let proton_display_names_edit: Vec<String> = settings
         .available_proton_versions
         .iter()
@@ -393,7 +460,6 @@ pub fn show_edit_game_dialog(
         .model(&gtk4::StringList::new(&proton_display_refs_edit))
         .build();
 
-    // Set selected Proton version (match by full path)
     if let Some(pos) = settings
         .available_proton_versions
         .iter()
@@ -447,9 +513,7 @@ pub fn show_edit_game_dialog(
     advanced_group.add(&wow64_row_game);
     advanced_group.add(&ntsync_row_game);
 
-    let deps_btn = gtk4::Button::builder()
-        .label("Manage Dependencies")
-        .build();
+    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
 
     let game_prefix = game.prefix_path.clone();
     let game_proton = resolve_proton_path(&game.proton).unwrap_or_default();
@@ -484,12 +548,14 @@ pub fn show_edit_game_dialog(
     let dialog_clone = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
 
-    // --- SAVE EDITED GAME LOGIC ---
     let dialog_clone_2 = dialog.clone();
+    let flow_box_clone = flow_box.clone();
     let list_box_clone = list_box.clone();
-    let empty_state_clone = empty_state.clone();
+    let stack_clone = stack.clone();
+    let search_clone = search_entry.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
+    let view_mode = view_mode.clone();
 
     save_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
@@ -499,6 +565,13 @@ pub fn show_edit_game_dialog(
             overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
             return;
         }
+
+        let cover_value = cover_path_label.label().to_string();
+        let cover_path = if cover_value == "No cover selected" {
+            None
+        } else {
+            Some(cover_value)
+        };
 
         let edited_game = Game {
             id: game_id.clone(),
@@ -517,23 +590,22 @@ pub fn show_edit_game_dialog(
             game_wow64: wow64_row_game.is_active(),
             game_ntsync: ntsync_row_game.is_active(),
             game_id: game_id_row.text().to_string(),
+            cover_path,
         };
 
-        // Load games, find and replace the edited one
         let mut games = load_games();
         if let Some(pos) = games.iter().position(|g| g.id == game_id) {
             games[pos] = edited_game;
             save_games(&games);
-
-            // Refresh UI
-            populate_game_list(
+            refresh_ui(
+                &flow_box_clone,
                 &list_box_clone,
-                &empty_state_clone,
-                &games,
+                &stack_clone,
+                &search_clone,
                 &overlay_clone,
                 &parent_clone,
+                &view_mode,
             );
-
             overlay_clone.add_toast(adw::Toast::new("Game updated successfully"));
             dialog_clone_2.destroy();
         } else {
@@ -544,13 +616,15 @@ pub fn show_edit_game_dialog(
     dialog.present();
 }
 
-// --- DELETE CONFIRMATION DIALOG ---
-
+#[allow(clippy::too_many_arguments)]
 pub fn show_delete_confirmation(
     parent: &adw::ApplicationWindow,
-    list_box: &gtk4::Box,
-    empty_state: &gtk4::Box,
+    flow_box: &gtk4::FlowBox,
+    list_box: &gtk4::ListBox,
+    stack: &gtk4::Stack,
+    search_entry: &gtk4::SearchEntry,
     overlay: &adw::ToastOverlay,
+    view_mode: &ViewMode,
     game_id: &str,
 ) {
     let games = load_games();
@@ -561,7 +635,7 @@ pub fn show_delete_confirmation(
     let dialog = gtk4::AlertDialog::builder()
         .message("Delete Game?")
         .detail(&format!(
-            "Are you sure you want to delete '{}'?\n\nThis action cannot be undone.",
+            "Are you sure you want to delete '{}' ?\n\nThis action cannot be undone.",
             game_title
         ))
         .buttons(vec!["Cancel".to_string(), "Delete".to_string()])
@@ -570,35 +644,34 @@ pub fn show_delete_confirmation(
         .build();
 
     let game_id = game_id.to_string();
+    let flow_box_clone = flow_box.clone();
     let list_box_clone = list_box.clone();
-    let empty_state_clone = empty_state.clone();
+    let stack_clone = stack.clone();
+    let search_clone = search_entry.clone();
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
+    let view_mode = view_mode.clone();
 
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
-        if let Ok(response) = result {
-            if response == 1 {
-                // "Delete" button is at index 1
-                let mut games = load_games();
-                if let Some(pos) = games.iter().position(|g| g.id == game_id) {
-                    let deleted_title = games[pos].title.clone();
-                    games.remove(pos);
-                    save_games(&games);
-
-                    // Refresh UI
-                    populate_game_list(
-                        &list_box_clone,
-                        &empty_state_clone,
-                        &games,
-                        &overlay_clone,
-                        &parent_clone,
-                    );
-
-                    overlay_clone.add_toast(adw::Toast::new(&format!(
-                        "'{}' deleted successfully",
-                        deleted_title
-                    )));
-                }
+        if let Ok(1) = result {
+            let mut games = load_games();
+            if let Some(pos) = games.iter().position(|g| g.id == game_id) {
+                let deleted_title = games[pos].title.clone();
+                games.remove(pos);
+                save_games(&games);
+                refresh_ui(
+                    &flow_box_clone,
+                    &list_box_clone,
+                    &stack_clone,
+                    &search_clone,
+                    &overlay_clone,
+                    &parent_clone,
+                    &view_mode,
+                );
+                overlay_clone.add_toast(adw::Toast::new(&format!(
+                    "'{}' deleted successfully",
+                    deleted_title
+                )));
             }
         }
     });

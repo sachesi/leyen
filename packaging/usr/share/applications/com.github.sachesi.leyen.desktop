@@ -2,7 +2,7 @@
 Name=Leyen
 Comment=Wine/Proton game manager using umu-launcher
 Exec=leyen
-Icon=com.github.leyen
+Icon=com.github.sachesi.leyen
 Terminal=false
 Type=Application
 Categories=Game;

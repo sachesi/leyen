@@ -10,30 +10,19 @@ pub struct Game {
     pub launch_args: String,
     pub force_mangohud: bool,
     pub force_gamemode: bool,
-    #[serde(default)]
     pub custom_icon: bool,
-    #[serde(default)]
     pub game_wayland: bool,
-    #[serde(default)]
     pub game_wow64: bool,
-    #[serde(default)]
     pub game_ntsync: bool,
-    #[serde(default)]
     pub leyen_id: String,
-    #[serde(default)]
     pub game_id: String,
-    #[serde(default)]
     pub playtime_seconds: u64,
-    #[serde(default)]
     pub last_played_epoch_seconds: u64,
-    #[serde(default)]
     pub last_run_duration_seconds: u64,
-    #[serde(default)]
     pub last_run_status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
 pub struct GroupLaunchDefaults {
     pub prefix_path: String,
     pub proton: String,
@@ -43,9 +32,7 @@ pub struct GroupLaunchDefaults {
 pub struct GameGroup {
     pub id: String,
     pub title: String,
-    #[serde(default)]
     pub defaults: GroupLaunchDefaults,
-    #[serde(default)]
     pub games: Vec<Game>,
 }
 
@@ -57,7 +44,6 @@ pub enum LibraryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
 pub struct GlobalSettings {
     pub default_prefix_path: String,
     pub default_proton: String,
@@ -74,6 +60,5 @@ pub struct GlobalSettings {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GamesConfig {
-    #[serde(default)]
     pub items: Vec<LibraryItem>,
 }

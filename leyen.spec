@@ -2,12 +2,13 @@
 %define debug_package %{nil}
 
 Name:           leyen
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/sachesi/leyen
+Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 BuildRequires:  cargo
 BuildRequires:  rust >= 1.85
@@ -21,7 +22,7 @@ prefixes, MangoHud, GameMode, NTSync, WoW64, and a built-in dependency
 installer for Visual C++, .NET, DirectX, and more.
 
 %prep
-# Nothing to do — built in-place with --build-in-place
+%autosetup
 
 %build
 cargo build --release
@@ -38,5 +39,12 @@ install -Dm644 com.github.leyen.desktop \
 %{_datadir}/applications/com.github.leyen.desktop
 
 %changelog
-* Tue Apr 01 2026 leyen packager
+* Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.1-1
+- Bump release version to 0.1.1
+
+* Fri Apr 24 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.0-1
+- COPR/local workflow
+- Use GitHub tag archive Source0 with %autosetup
+
+* Wed Apr 01 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.0-1
 - Initial Fedora spec file

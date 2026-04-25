@@ -16,7 +16,10 @@ use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::proton::resolve_proton_path;
 
 use super::deps_dialog::show_dependencies_dialog;
-use super::{LibraryUi, refresh_library_view};
+use super::{
+    LibraryUi, SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH,
+    refresh_library_view,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AddLibraryItemKind {
@@ -66,8 +69,8 @@ pub fn show_add_library_item_dialog(
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(460)
-        .default_height(640)
+        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .destroy_with_parent(true)
         .build();
 
@@ -443,8 +446,8 @@ pub fn show_edit_group_dialog(
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(420)
-        .default_height(360)
+        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .destroy_with_parent(true)
         .build();
 
@@ -578,8 +581,8 @@ pub fn show_edit_game_dialog(
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(460)
-        .default_height(640)
+        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .destroy_with_parent(true)
         .build();
 

@@ -30,6 +30,11 @@ use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
 
+pub(crate) const MAIN_WINDOW_DEFAULT_WIDTH: i32 = 540;
+pub(crate) const MAIN_WINDOW_DEFAULT_HEIGHT: i32 = 640;
+pub(crate) const SECONDARY_WINDOW_DEFAULT_WIDTH: i32 = MAIN_WINDOW_DEFAULT_WIDTH - 20;
+pub(crate) const SECONDARY_WINDOW_DEFAULT_HEIGHT: i32 = MAIN_WINDOW_DEFAULT_HEIGHT - 20;
+
 #[derive(Clone)]
 pub struct LibraryUi {
     pub root_list_box: gtk4::Box,
@@ -784,8 +789,8 @@ pub fn build_ui(app: &adw::Application) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Leyen")
-        .default_width(540)
-        .default_height(640)
+        .default_width(MAIN_WINDOW_DEFAULT_WIDTH)
+        .default_height(MAIN_WINDOW_DEFAULT_HEIGHT)
         .resizable(false)
         .content(&toolbar_view)
         .build();

@@ -54,15 +54,6 @@ pub enum LibraryItem {
     Group(GameGroup),
 }
 
-impl LibraryItem {
-    pub fn title(&self) -> &str {
-        match self {
-            Self::Game(game) => &game.title,
-            Self::Group(group) => &group.title,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GlobalSettings {

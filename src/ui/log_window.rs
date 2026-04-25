@@ -27,6 +27,7 @@ fn scroll_to_bottom(
 fn rebuild_buffer(
     buffer: &gtk4::TextBuffer,
     selected_game_id: Option<&str>,
+    content_stack: &gtk4::Stack,
     scroll: &gtk4::ScrolledWindow,
     text_view: &gtk4::TextView,
 ) -> usize {
@@ -40,7 +41,12 @@ fn rebuild_buffer(
         .collect();
 
     buffer.set_text(&lines.join("\n"));
-    scroll_to_bottom(text_view, buffer, scroll);
+    if lines.is_empty() {
+        content_stack.set_visible_child_name("empty");
+    } else {
+        content_stack.set_visible_child_name("logs");
+        scroll_to_bottom(text_view, buffer, scroll);
+    }
     entries.len()
 }
 
@@ -114,10 +120,24 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
         .vexpand(true)
         .child(&text_view)
         .build();
+    let empty_state = adw::StatusPage::builder()
+        .icon_name("utilities-terminal-symbolic")
+        .title("No log lines to show")
+        .description("New logs will appear here automatically, or choose another filter.")
+        .build();
+    let content_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    content_stack.add_named(&empty_state, Some("empty"));
+    content_stack.add_named(&scroll, Some("logs"));
+    content_stack.set_visible_child_name("empty");
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&scroll));
+    toolbar_view.set_content(Some(&content_stack));
 
     window.set_content(Some(&toolbar_view));
     window.present();
@@ -126,11 +146,13 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
     let rendered_count = Cell::new(rebuild_buffer(
         &buffer,
         selected_filter.borrow().as_deref(),
+        &content_stack,
         &scroll,
         &text_view,
     ));
 
     let buffer_for_filter = buffer.clone();
+    let content_stack_for_filter = content_stack.clone();
     let scroll_for_filter = scroll.clone();
     let text_view_for_filter = text_view.clone();
     let selected_filter_for_dropdown = selected_filter.clone();
@@ -146,12 +168,14 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
         rendered_count_for_dropdown.set(rebuild_buffer(
             &buffer_for_filter,
             selected_filter_for_dropdown.borrow().as_deref(),
+            &content_stack_for_filter,
             &scroll_for_filter,
             &text_view_for_filter,
         ));
     });
 
     let buffer_for_clear = buffer.clone();
+    let content_stack_for_clear = content_stack.clone();
     let scroll_for_clear = scroll.clone();
     let text_view_for_clear = text_view.clone();
     let selected_filter_for_clear = selected_filter.clone();
@@ -161,6 +185,7 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
         rendered_count_for_clear.set(rebuild_buffer(
             &buffer_for_clear,
             selected_filter_for_clear.borrow().as_deref(),
+            &content_stack_for_clear,
             &scroll_for_clear,
             &text_view_for_clear,
         ));
@@ -168,6 +193,7 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
 
     let window_ref = window.clone();
     let buffer_for_tick = buffer.clone();
+    let content_stack_for_tick = content_stack.clone();
     let scroll_for_tick = scroll.clone();
     let text_view_for_tick = text_view.clone();
     glib::timeout_add_seconds_local(1, move || {
@@ -180,6 +206,7 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
             rendered_count.set(rebuild_buffer(
                 &buffer_for_tick,
                 selected_filter.borrow().as_deref(),
+                &content_stack_for_tick,
                 &scroll_for_tick,
                 &text_view_for_tick,
             ));

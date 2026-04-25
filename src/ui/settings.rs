@@ -143,11 +143,22 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
         .description("Use these actions to fix runtime issues.")
         .build();
 
+    let runtime_repair_row = adw::ExpanderRow::builder()
+        .title("Runtime Repair")
+        .subtitle("Open repair actions for the local umu runtime.")
+        .build();
+
     let reset_btn = gtk4::Button::builder()
         .label("Reset umu Runtime")
         .css_classes(["destructive-action"])
         .halign(gtk4::Align::Start)
         .build();
+    let reset_row = adw::ActionRow::builder()
+        .title("Reset umu Runtime")
+        .subtitle("Delete the local Steam Linux Runtime so umu can download a fresh copy.")
+        .activatable_widget(&reset_btn)
+        .build();
+    reset_row.add_suffix(&reset_btn);
 
     let pref_window_for_reset = pref_window.clone();
     let overlay_for_reset = overlay.clone();
@@ -194,7 +205,8 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
         );
     });
 
-    maintenance_group.add(&reset_btn);
+    runtime_repair_row.add_row(&reset_row);
+    maintenance_group.add(&runtime_repair_row);
     page.add(&maintenance_group);
 
     pref_window.add(&page);

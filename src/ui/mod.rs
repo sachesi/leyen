@@ -4,8 +4,8 @@ pub mod log_window;
 pub mod running_games;
 pub mod settings;
 
-use std::cell::RefCell;
-use std::path::PathBuf;
+use std::cell::{Cell, RefCell};
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 use libadwaita as adw;
@@ -34,10 +34,20 @@ pub(crate) const SECONDARY_WINDOW_DEFAULT_HEIGHT: i32 = MAIN_WINDOW_DEFAULT_HEIG
 
 #[derive(Clone)]
 pub struct LibraryUi {
-    pub root_list_box: gtk4::Box,
-    pub root_empty_state: gtk4::Box,
-    pub group_list_box: gtk4::Box,
-    pub group_empty_state: gtk4::Box,
+    pub root_list_stack: gtk4::Stack,
+    pub root_list_box_primary: gtk4::Box,
+    pub root_list_box_secondary: gtk4::Box,
+    pub root_list_showing_primary: Rc<Cell<bool>>,
+    pub root_content_stack: gtk4::Stack,
+    pub group_list_stack: gtk4::Stack,
+    pub group_list_box_primary: gtk4::Box,
+    pub group_list_box_secondary: gtk4::Box,
+    pub group_list_showing_primary: Rc<Cell<bool>>,
+    pub group_content_stack: gtk4::Stack,
+    pub root_running_duration_labels: Rc<RefCell<std::collections::HashMap<String, gtk4::Label>>>,
+    pub root_group_running_duration_labels:
+        Rc<RefCell<std::collections::HashMap<String, gtk4::Label>>>,
+    pub group_running_duration_labels: Rc<RefCell<std::collections::HashMap<String, gtk4::Label>>>,
     pub stack: gtk4::Stack,
     pub add_button_stack: gtk4::Stack,
     pub back_btn: gtk4::Button,
@@ -97,18 +107,10 @@ fn format_last_played(epoch_seconds: u64) -> String {
     format!("Last played: {}", ago)
 }
 
-fn display_proton_name(proton: &str) -> String {
-    if proton.trim().is_empty() || proton == "Default" {
-        return "Default Proton".to_string();
-    }
-
-    PathBuf::from(proton)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| proton.to_string())
-}
-
 type RunningGameMap = std::collections::HashMap<String, crate::launch::RunningGameSnapshot>;
+
+const LIST_PAGE_PRIMARY: &str = "primary";
+const LIST_PAGE_SECONDARY: &str = "secondary";
 
 fn running_game_map() -> RunningGameMap {
     running_games_snapshot()
@@ -121,27 +123,117 @@ fn game_is_running(running_games: &RunningGameMap, game_id: &str) -> bool {
     running_games.contains_key(game_id)
 }
 
+fn title_cmp(left: &str, right: &str) -> Ordering {
+    left.to_lowercase().cmp(&right.to_lowercase())
+}
+
+fn game_display_cmp(left: &Game, right: &Game, running_games: &RunningGameMap) -> Ordering {
+    game_is_running(running_games, &right.id)
+        .cmp(&game_is_running(running_games, &left.id))
+        .then_with(|| title_cmp(&left.title, &right.title))
+}
+
+fn root_library_item_cmp(
+    left: &LibraryItem,
+    right: &LibraryItem,
+    running_games: &RunningGameMap,
+) -> Ordering {
+    let left_running_game = matches!(
+        left,
+        LibraryItem::Game(game) if game_is_running(running_games, &game.id)
+    );
+    let right_running_game = matches!(
+        right,
+        LibraryItem::Game(game) if game_is_running(running_games, &game.id)
+    );
+
+    right_running_game
+        .cmp(&left_running_game)
+        .then_with(|| match (left, right) {
+            (LibraryItem::Group(left_group), LibraryItem::Group(right_group)) => {
+                title_cmp(&left_group.title, &right_group.title)
+            }
+            (LibraryItem::Group(_), LibraryItem::Game(_)) => Ordering::Less,
+            (LibraryItem::Game(_), LibraryItem::Group(_)) => Ordering::Greater,
+            (LibraryItem::Game(left_game), LibraryItem::Game(right_game)) => {
+                game_display_cmp(left_game, right_game, running_games)
+            }
+        })
+}
+
+fn clear_list_box(list_box: &gtk4::Box) {
+    while let Some(child) = list_box.first_child() {
+        list_box.remove(&child);
+    }
+}
+
+fn next_swap_list_box<'a>(
+    primary: &'a gtk4::Box,
+    secondary: &'a gtk4::Box,
+    showing_primary: &Cell<bool>,
+) -> (&'a gtk4::Box, &'static str) {
+    if showing_primary.get() {
+        (secondary, LIST_PAGE_SECONDARY)
+    } else {
+        (primary, LIST_PAGE_PRIMARY)
+    }
+}
+
+fn finish_list_swap(list_stack: &gtk4::Stack, showing_primary: &Cell<bool>, visible_page: &str) {
+    list_stack.set_visible_child_name(visible_page);
+    showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
+}
+
 fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
     running_games
         .get(game_id)
         .map(|snapshot| snapshot.elapsed_seconds)
 }
 
-fn format_group_defaults(group: &GameGroup) -> Option<String> {
-    let mut parts = Vec::new();
+fn group_running_elapsed_seconds(group: &GameGroup, running_games: &RunningGameMap) -> Option<u64> {
+    group
+        .games
+        .iter()
+        .filter_map(|game| running_game_elapsed_seconds(running_games, &game.id))
+        .max()
+}
 
-    if !group.defaults.prefix_path.trim().is_empty() {
-        parts.push("Prefix".to_string());
-    }
-
-    if !group.defaults.proton.trim().is_empty() && group.defaults.proton != "Default" {
-        parts.push(display_proton_name(&group.defaults.proton));
-    }
-
-    if parts.is_empty() {
-        None
+fn update_running_duration_labels(ui: &LibraryUi) {
+    let snapshots = running_game_map();
+    if ui.current_group_id.borrow().is_some() {
+        for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
+            if let Some(snapshot) = snapshots.get(game_id) {
+                label.set_label(&format!(
+                    "Running for {}",
+                    format_duration_brief(snapshot.elapsed_seconds)
+                ));
+            }
+        }
     } else {
-        Some(parts.join(" / "))
+        for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
+            if let Some(snapshot) = snapshots.get(game_id) {
+                label.set_label(&format!(
+                    "Running for {}",
+                    format_duration_brief(snapshot.elapsed_seconds)
+                ));
+            }
+        }
+
+        let items = ui.library_state.borrow();
+        for item in items.iter() {
+            if let LibraryItem::Group(group) = item
+                && let Some(elapsed_seconds) = group_running_elapsed_seconds(group, &snapshots)
+                && let Some(label) = ui
+                    .root_group_running_duration_labels
+                    .borrow()
+                    .get(&group.id)
+            {
+                label.set_label(&format!(
+                    "Running for {}",
+                    format_duration_brief(elapsed_seconds)
+                ));
+            }
+        }
     }
 }
 
@@ -175,13 +267,6 @@ fn group_last_played(group: &GameGroup) -> u64 {
         .map(|game| game.last_played_epoch_seconds)
         .max()
         .unwrap_or(0)
-}
-
-fn group_has_running_games(group: &GameGroup, running_games: &RunningGameMap) -> bool {
-    group
-        .games
-        .iter()
-        .any(|game| game_is_running(running_games, &game.id))
 }
 
 fn update_add_button_mode(ui: &LibraryUi) {
@@ -238,79 +323,56 @@ fn populate_root_view(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
 ) {
-    while let Some(child) = ui.root_list_box.first_child() {
-        ui.root_list_box.remove(&child);
-    }
+    let (root_list_box, visible_page) = next_swap_list_box(
+        &ui.root_list_box_primary,
+        &ui.root_list_box_secondary,
+        ui.root_list_showing_primary.as_ref(),
+    );
+    clear_list_box(root_list_box);
+    ui.root_running_duration_labels.borrow_mut().clear();
+    ui.root_group_running_duration_labels.borrow_mut().clear();
 
     let items = ui.library_state.borrow();
     if items.is_empty() {
-        ui.root_list_box.append(&ui.root_empty_state);
+        ui.root_content_stack.set_visible_child_name("empty");
         return;
     }
 
     let running_games = running_game_map();
     let mut sorted_items: Vec<LibraryItem> = items.clone();
-    sorted_items.sort_by(|left, right| {
-        let left_kind_rank = match left {
-            LibraryItem::Game(_) => 0,
-            LibraryItem::Group(_) => 1,
-        };
-        let right_kind_rank = match right {
-            LibraryItem::Game(_) => 0,
-            LibraryItem::Group(_) => 1,
-        };
-
-        let left_running = match left {
-            LibraryItem::Game(game) => game_is_running(&running_games, &game.id),
-            LibraryItem::Group(group) => group_has_running_games(group, &running_games),
-        };
-        let right_running = match right {
-            LibraryItem::Game(game) => game_is_running(&running_games, &game.id),
-            LibraryItem::Group(group) => group_has_running_games(group, &running_games),
-        };
-
-        let left_last_played = match left {
-            LibraryItem::Game(game) => game.last_played_epoch_seconds,
-            LibraryItem::Group(group) => group_last_played(group),
-        };
-        let right_last_played = match right {
-            LibraryItem::Game(game) => game.last_played_epoch_seconds,
-            LibraryItem::Group(group) => group_last_played(group),
-        };
-
-        left_kind_rank
-            .cmp(&right_kind_rank)
-            .then_with(|| right_running.cmp(&left_running))
-            .then_with(|| right_last_played.cmp(&left_last_played))
-            .then_with(|| {
-                left.title()
-                    .to_lowercase()
-                    .cmp(&right.title().to_lowercase())
-            })
-    });
+    sorted_items.sort_by(|left, right| root_library_item_cmp(left, right, &running_games));
 
     for item in &sorted_items {
         match item {
             LibraryItem::Game(game) => {
-                ui.root_list_box.append(&build_game_card(
+                root_list_box.append(&build_game_card(
                     game,
                     overlay,
                     window,
                     ui,
                     &running_games,
+                    &ui.root_running_duration_labels,
                 ));
             }
             LibraryItem::Group(group) => {
-                ui.root_list_box.append(&build_group_card(
+                root_list_box.append(&build_group_card(
                     group,
                     overlay,
                     window,
                     ui,
                     &running_games,
+                    &ui.root_group_running_duration_labels,
                 ));
             }
         }
     }
+
+    finish_list_swap(
+        &ui.root_list_stack,
+        ui.root_list_showing_primary.as_ref(),
+        visible_page,
+    );
+    ui.root_content_stack.set_visible_child_name("list");
 }
 
 fn populate_group_view(
@@ -318,9 +380,13 @@ fn populate_group_view(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
 ) {
-    while let Some(child) = ui.group_list_box.first_child() {
-        ui.group_list_box.remove(&child);
-    }
+    let (group_list_box, visible_page) = next_swap_list_box(
+        &ui.group_list_box_primary,
+        &ui.group_list_box_secondary,
+        ui.group_list_showing_primary.as_ref(),
+    );
+    clear_list_box(group_list_box);
+    ui.group_running_duration_labels.borrow_mut().clear();
 
     let Some(group_id) = ui.current_group_id.borrow().clone() else {
         return;
@@ -334,27 +400,31 @@ fn populate_group_view(
     ui.title.set_subtitle("Group");
 
     if group.games.is_empty() {
-        ui.group_list_box.append(&ui.group_empty_state);
+        ui.group_content_stack.set_visible_child_name("empty");
         return;
     }
 
     let running_games = running_game_map();
     let mut games = group.games.clone();
-    games.sort_by(|left, right| {
-        game_is_running(&running_games, &right.id)
-            .cmp(&game_is_running(&running_games, &left.id))
-            .then_with(|| {
-                right
-                    .last_played_epoch_seconds
-                    .cmp(&left.last_played_epoch_seconds)
-            })
-            .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
-    });
+    games.sort_by(|left, right| game_display_cmp(left, right, &running_games));
 
     for game in &games {
-        ui.group_list_box
-            .append(&build_game_card(game, overlay, window, ui, &running_games));
+        group_list_box.append(&build_game_card(
+            game,
+            overlay,
+            window,
+            ui,
+            &running_games,
+            &ui.group_running_duration_labels,
+        ));
     }
+
+    finish_list_swap(
+        &ui.group_list_stack,
+        ui.group_list_showing_primary.as_ref(),
+        visible_page,
+    );
+    ui.group_content_stack.set_visible_child_name("list");
 }
 
 fn build_group_card(
@@ -363,6 +433,7 @@ fn build_group_card(
     window: &adw::ApplicationWindow,
     ui: &LibraryUi,
     running_games: &RunningGameMap,
+    running_duration_labels: &Rc<RefCell<std::collections::HashMap<String, gtk4::Label>>>,
 ) -> gtk4::Frame {
     let card = gtk4::Frame::builder()
         .hexpand(true)
@@ -397,6 +468,16 @@ fn build_group_card(
         .xalign(0.0)
         .css_classes(["title-4"])
         .build();
+    let running_count = group
+        .games
+        .iter()
+        .filter(|game| game_is_running(running_games, &game.id))
+        .count();
+    let meta_row = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(8)
+        .hexpand(true)
+        .build();
     let count_label = gtk4::Label::builder()
         .label(format!(
             "{} game{}",
@@ -406,37 +487,38 @@ fn build_group_card(
         .xalign(0.0)
         .css_classes(["caption", "dim-label"])
         .build();
-    let last_played_label = gtk4::Label::builder()
-        .label(format_last_played(group_last_played(group)))
-        .xalign(0.0)
-        .css_classes(["caption", "dim-label"])
-        .build();
-
-    info_column.append(&title_label);
-    info_column.append(&count_label);
-    info_column.append(&last_played_label);
-    if let Some(defaults_label) = format_group_defaults(group) {
-        info_column.append(
+    meta_row.append(&count_label);
+    if running_count > 0 {
+        meta_row.append(
             &gtk4::Label::builder()
-                .label(defaults_label)
+                .label(format!("{} running", running_count))
                 .xalign(0.0)
-                .css_classes(["caption", "dim-label"])
+                .css_classes(["caption", "accent"])
                 .build(),
         );
     }
+    let group_running_elapsed = group_running_elapsed_seconds(group, running_games);
+    let status_label = gtk4::Label::builder()
+        .label(if let Some(elapsed_seconds) = group_running_elapsed {
+            format!("Running for {}", format_duration_brief(elapsed_seconds))
+        } else {
+            format_last_played(group_last_played(group))
+        })
+        .xalign(0.0)
+        .css_classes(if group_running_elapsed.is_some() {
+            ["caption", "accent"]
+        } else {
+            ["caption", "dim-label"]
+        })
+        .build();
 
-    if group_has_running_games(group, running_games) {
-        let running_count = group
-            .games
-            .iter()
-            .filter(|game| game_is_running(running_games, &game.id))
-            .count();
-        let running_label = gtk4::Label::builder()
-            .label(format!("{} running", running_count))
-            .xalign(0.0)
-            .css_classes(["caption", "accent"])
-            .build();
-        info_column.append(&running_label);
+    info_column.append(&title_label);
+    info_column.append(&meta_row);
+    info_column.append(&status_label);
+    if group_running_elapsed.is_some() {
+        running_duration_labels
+            .borrow_mut()
+            .insert(group.id.clone(), status_label.clone());
     }
 
     let open_area = gtk4::Box::builder()
@@ -517,6 +599,7 @@ fn build_game_card(
     window: &adw::ApplicationWindow,
     ui: &LibraryUi,
     running_games: &RunningGameMap,
+    running_duration_labels: &Rc<RefCell<std::collections::HashMap<String, gtk4::Label>>>,
 ) -> gtk4::Frame {
     let game_running = game_is_running(running_games, &game.id);
     let card = gtk4::Frame::builder()
@@ -566,28 +649,32 @@ fn build_game_card(
             .css_classes(["caption", "dim-label"])
             .build(),
     );
-    info_column.append(
-        &gtk4::Label::builder()
-            .label(format_last_played(game.last_played_epoch_seconds))
-            .xalign(0.0)
-            .css_classes(["caption", "dim-label"])
-            .build(),
-    );
-
-    if game_running {
-        info_column.append(
-            &gtk4::Label::builder()
-                .label(format!(
+    info_column.append(&{
+        let status_label = gtk4::Label::builder()
+            .label(if game_running {
+                format!(
                     "Running for {}",
                     format_duration_brief(
                         running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
                     )
-                ))
-                .xalign(0.0)
-                .css_classes(["caption", "accent"])
-                .build(),
-        );
-    }
+                )
+            } else {
+                format_last_played(game.last_played_epoch_seconds)
+            })
+            .xalign(0.0)
+            .css_classes(if game_running {
+                ["caption", "accent"]
+            } else {
+                ["caption", "dim-label"]
+            })
+            .build();
+        if game_running {
+            running_duration_labels
+                .borrow_mut()
+                .insert(game.id.clone(), status_label.clone());
+        }
+        status_label
+    });
 
     open_area.append(&icon);
     open_area.append(&info_column);
@@ -698,6 +785,8 @@ pub fn build_ui(app: &adw::Application) {
         .tooltip_text("Add Game")
         .build();
     let add_button_stack = gtk4::Stack::new();
+    add_button_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+    add_button_stack.set_transition_duration(180);
     add_button_stack.add_named(&add_menu_btn, Some("menu"));
     add_button_stack.add_named(&add_game_btn, Some("game"));
     add_button_stack.set_visible_child_name("menu");
@@ -719,62 +808,75 @@ pub fn build_ui(app: &adw::Application) {
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
 
-    let root_list_box = gtk4::Box::builder()
+    let root_list_box_primary = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .spacing(12)
         .hexpand(true)
         .build();
-    let group_list_box = gtk4::Box::builder()
+    let root_list_box_secondary = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .spacing(12)
         .hexpand(true)
         .build();
+    let root_list_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .hexpand(true)
+        .build();
+    root_list_stack.add_named(&root_list_box_primary, Some(LIST_PAGE_PRIMARY));
+    root_list_stack.add_named(&root_list_box_secondary, Some(LIST_PAGE_SECONDARY));
+    root_list_stack.set_visible_child_name(LIST_PAGE_PRIMARY);
 
-    let root_empty_state = gtk4::Box::builder()
+    let group_list_box_primary = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
+        .spacing(12)
+        .hexpand(true)
+        .build();
+    let group_list_box_secondary = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(12)
+        .hexpand(true)
+        .build();
+    let group_list_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .hexpand(true)
+        .build();
+    group_list_stack.add_named(&group_list_box_primary, Some(LIST_PAGE_PRIMARY));
+    group_list_stack.add_named(&group_list_box_secondary, Some(LIST_PAGE_SECONDARY));
+    group_list_stack.set_visible_child_name(LIST_PAGE_PRIMARY);
+
+    let root_empty_state = adw::StatusPage::builder()
+        .icon_name("applications-games-symbolic")
+        .title("No games added yet")
+        .description("Add a game or create a group to organize your library.")
+        .build();
+
+    let group_empty_state = adw::StatusPage::builder()
+        .icon_name("folder-symbolic")
+        .title("This group is empty")
+        .description("Add a game while inside the group to populate it.")
+        .build();
+
+    let root_content_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
         .hexpand(true)
         .vexpand(true)
-        .halign(gtk4::Align::Center)
-        .valign(gtk4::Align::Center)
-        .spacing(6)
         .build();
-    root_empty_state.append(
-        &gtk4::Label::builder()
-            .label("No games added yet")
-            .css_classes(["title-3"])
-            .build(),
-    );
-    root_empty_state.append(
-        &gtk4::Label::builder()
-            .label("Add a game or create a group to organize your library.")
-            .wrap(true)
-            .justify(gtk4::Justification::Center)
-            .css_classes(["dim-label"])
-            .build(),
-    );
+    root_content_stack.add_named(&root_empty_state, Some("empty"));
+    root_content_stack.add_named(&root_list_stack, Some("list"));
+    root_content_stack.set_visible_child_name("empty");
 
-    let group_empty_state = gtk4::Box::builder()
-        .orientation(gtk4::Orientation::Vertical)
+    let group_content_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
         .hexpand(true)
         .vexpand(true)
-        .halign(gtk4::Align::Center)
-        .valign(gtk4::Align::Center)
-        .spacing(6)
         .build();
-    group_empty_state.append(
-        &gtk4::Label::builder()
-            .label("This group is empty")
-            .css_classes(["title-3"])
-            .build(),
-    );
-    group_empty_state.append(
-        &gtk4::Label::builder()
-            .label("Add a game while inside the group to populate it.")
-            .wrap(true)
-            .justify(gtk4::Justification::Center)
-            .css_classes(["dim-label"])
-            .build(),
-    );
+    group_content_stack.add_named(&group_empty_state, Some("empty"));
+    group_content_stack.add_named(&group_list_stack, Some("list"));
+    group_content_stack.set_visible_child_name("empty");
 
     let root_clamp = adw::Clamp::builder()
         .maximum_size(800)
@@ -782,7 +884,7 @@ pub fn build_ui(app: &adw::Application) {
         .margin_bottom(24)
         .margin_start(16)
         .margin_end(16)
-        .child(&root_list_box)
+        .child(&root_content_stack)
         .build();
     let group_clamp = adw::Clamp::builder()
         .maximum_size(800)
@@ -790,11 +892,12 @@ pub fn build_ui(app: &adw::Application) {
         .margin_bottom(24)
         .margin_start(16)
         .margin_end(16)
-        .child(&group_list_box)
+        .child(&group_content_stack)
         .build();
 
     let stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::SlideLeftRight)
+        .transition_duration(260)
         .hexpand(true)
         .vexpand(true)
         .build();
@@ -827,10 +930,19 @@ pub fn build_ui(app: &adw::Application) {
         .build();
 
     let ui = LibraryUi {
-        root_list_box,
-        root_empty_state,
-        group_list_box,
-        group_empty_state,
+        root_list_stack,
+        root_list_box_primary,
+        root_list_box_secondary,
+        root_list_showing_primary: Rc::new(Cell::new(true)),
+        root_content_stack,
+        group_list_stack,
+        group_list_box_primary,
+        group_list_box_secondary,
+        group_list_showing_primary: Rc::new(Cell::new(true)),
+        group_content_stack,
+        root_running_duration_labels: Rc::new(RefCell::new(std::collections::HashMap::new())),
+        root_group_running_duration_labels: Rc::new(RefCell::new(std::collections::HashMap::new())),
+        group_running_duration_labels: Rc::new(RefCell::new(std::collections::HashMap::new())),
         stack,
         add_button_stack: add_button_stack.clone(),
         back_btn: back_btn.clone(),
@@ -895,9 +1007,11 @@ pub fn build_ui(app: &adw::Application) {
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
         let current_version = running_games_version();
-        if current_version != running_state_version.get() || current_version != 0 {
+        if current_version != running_state_version.get() {
             running_state_version.set(current_version);
             refresh_library_view(&ui_refresh, &overlay_refresh, &window_refresh);
+        } else if current_version != 0 {
+            update_running_duration_labels(&ui_refresh);
         }
         glib::ControlFlow::Continue
     });

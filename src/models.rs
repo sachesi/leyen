@@ -18,6 +18,47 @@ pub struct Game {
     pub game_ntsync: bool,
     #[serde(default)]
     pub game_id: String,
+    #[serde(default)]
+    pub playtime_seconds: u64,
+    #[serde(default)]
+    pub last_played_epoch_seconds: u64,
+    #[serde(default)]
+    pub last_run_duration_seconds: u64,
+    #[serde(default)]
+    pub last_run_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct GroupLaunchDefaults {
+    pub prefix_path: String,
+    pub proton: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameGroup {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub defaults: GroupLaunchDefaults,
+    #[serde(default)]
+    pub games: Vec<Game>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LibraryItem {
+    Game(Game),
+    Group(GameGroup),
+}
+
+impl LibraryItem {
+    pub fn title(&self) -> &str {
+        match self {
+            Self::Game(game) => &game.title,
+            Self::Group(group) => &group.title,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -38,5 +79,6 @@ pub struct GlobalSettings {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GamesConfig {
-    pub games: Vec<Game>,
+    #[serde(default)]
+    pub items: Vec<LibraryItem>,
 }

@@ -12,6 +12,10 @@ use crate::config::{
     load_library, load_settings, normalize_game_id_from_executable, remove_game, remove_group,
     replace_game, replace_group, save_library, suggest_prefix_path,
 };
+use crate::icons::{
+    clear_game_icon, clear_group_icon, extract_game_icon, game_icon_file, group_icon_file,
+    save_custom_game_icon, save_custom_group_icon,
+};
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::proton::resolve_proton_path;
 
@@ -49,6 +53,67 @@ fn build_proton_choices(
         settings.available_proton_versions.clone(),
         gtk4::StringList::new(&refs),
     )
+}
+
+fn build_icon_file_filter() -> gtk4::FileFilter {
+    let filter = gtk4::FileFilter::new();
+    filter.set_name(Some("Supported images"));
+    for suffix in ["png", "jpg", "jpeg", "ico"] {
+        filter.add_suffix(suffix);
+    }
+    filter
+}
+
+fn build_icon_file_dialog(title: &str) -> gtk4::FileDialog {
+    let filter = build_icon_file_filter();
+    gtk4::FileDialog::builder()
+        .title(title)
+        .default_filter(&filter)
+        .build()
+}
+
+fn apply_game_icon(
+    game_id: &str,
+    exe_path: &str,
+    custom_icon_enabled: bool,
+    icon_file: &str,
+) -> Result<Option<String>, String> {
+    if custom_icon_enabled {
+        let icon_file = icon_file.trim();
+        if icon_file.is_empty() {
+            return Err("Custom icon file is required".to_string());
+        }
+        save_custom_game_icon(game_id, icon_file)?;
+        Ok(None)
+    } else {
+        match extract_game_icon(game_id, exe_path) {
+            Ok(()) => Ok(None),
+            Err(_) => {
+                clear_game_icon(game_id);
+                Ok(Some(
+                    "No icon could be extracted from the executable; using the default symbol."
+                        .to_string(),
+                ))
+            }
+        }
+    }
+}
+
+fn apply_group_icon(
+    group_id: &str,
+    custom_icon_enabled: bool,
+    icon_file: &str,
+) -> Result<(), String> {
+    if custom_icon_enabled {
+        let icon_file = icon_file.trim();
+        if icon_file.is_empty() {
+            return Err("Custom icon file is required".to_string());
+        }
+        save_custom_group_icon(group_id, icon_file)
+    } else {
+        clear_group_icon(group_id);
+        Ok(())
+    }
 }
 
 pub fn show_add_library_item_dialog(
@@ -167,6 +232,23 @@ pub fn show_add_library_item_dialog(
         proton_override_row.add_row(&proton_row);
     }
 
+    let game_icon_row = adw::EntryRow::builder().title("Icon File").build();
+    let game_icon_browse_btn = gtk4::Button::builder()
+        .icon_name("folder-open-symbolic")
+        .tooltip_text("Browse for custom icon")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    game_icon_row.add_suffix(&game_icon_browse_btn);
+    let game_icon_override_row = adw::ExpanderRow::builder()
+        .title("Custom Icon")
+        .subtitle("Use a custom icon instead of extracting one from the executable.")
+        .show_enable_switch(true)
+        .enable_expansion(false)
+        .expanded(false)
+        .build();
+    game_icon_override_row.add_row(&game_icon_row);
+
     let args_entry = gtk4::Entry::builder()
         .placeholder_text("%command%")
         .hexpand(true)
@@ -205,6 +287,7 @@ pub fn show_add_library_item_dialog(
         .title("Game Settings")
         .build();
     game_details_group.add(&path_row);
+    game_details_group.add(&game_icon_override_row);
     game_details_group.add(&leyen_id_row);
     game_details_group.add(&game_id_row);
     if grouped_game {
@@ -234,11 +317,28 @@ pub fn show_add_library_item_dialog(
         .title("Proton")
         .model(&proton_model)
         .build();
+    let group_icon_row = adw::EntryRow::builder().title("Icon File").build();
+    let group_icon_browse_btn = gtk4::Button::builder()
+        .icon_name("folder-open-symbolic")
+        .tooltip_text("Browse for group icon")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    group_icon_row.add_suffix(&group_icon_browse_btn);
+    let group_icon_override_row = adw::ExpanderRow::builder()
+        .title("Custom Icon")
+        .subtitle("Set an optional custom icon for this group.")
+        .show_enable_switch(true)
+        .enable_expansion(false)
+        .expanded(false)
+        .build();
+    group_icon_override_row.add_row(&group_icon_row);
 
     let group_defaults_group = adw::PreferencesGroup::builder()
         .title("Group Defaults")
         .description("Leave prefix empty or Proton on Default to keep using global defaults.")
         .build();
+    group_defaults_group.add(&group_icon_override_row);
     group_defaults_group.add(&group_prefix_row);
     group_defaults_group.add(&group_proton_row);
 
@@ -377,6 +477,34 @@ pub fn show_add_library_item_dialog(
         });
     });
 
+    let game_icon_row_clone = game_icon_row.clone();
+    let parent_clone = parent.clone();
+    game_icon_browse_btn.connect_clicked(move |_| {
+        let game_icon_row_clone = game_icon_row_clone.clone();
+        let file_dialog = build_icon_file_dialog("Select Icon");
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                game_icon_row_clone.set_text(&path.to_string_lossy());
+            }
+        });
+    });
+
+    let group_icon_row_clone = group_icon_row.clone();
+    let parent_clone = parent.clone();
+    group_icon_browse_btn.connect_clicked(move |_| {
+        let group_icon_row_clone = group_icon_row_clone.clone();
+        let file_dialog = build_icon_file_dialog("Select Group Icon");
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                group_icon_row_clone.set_text(&path.to_string_lossy());
+            }
+        });
+    });
+
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .child(&page)
@@ -401,9 +529,21 @@ pub fn show_add_library_item_dialog(
 
         let mut items = load_library();
 
+        let mut icon_notice = None;
+
         if kind == AddLibraryItemKind::Group {
+            let group_id = uuid::Uuid::new_v4().to_string();
+            if let Err(err) = apply_group_icon(
+                &group_id,
+                group_icon_override_row.enables_expansion(),
+                group_icon_row.text().as_str(),
+            ) {
+                overlay_clone.add_toast(adw::Toast::new(&err));
+                return;
+            }
+
             items.push(LibraryItem::Group(GameGroup {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: group_id,
                 title,
                 defaults: GroupLaunchDefaults {
                     prefix_path: group_prefix_row.text().to_string(),
@@ -420,6 +560,18 @@ pub fn show_add_library_item_dialog(
                 overlay_clone.add_toast(adw::Toast::new("Executable path is required"));
                 return;
             }
+
+            let game_id = uuid::Uuid::new_v4().to_string();
+            let custom_icon = game_icon_override_row.enables_expansion();
+            icon_notice =
+                match apply_game_icon(&game_id, &exe, custom_icon, game_icon_row.text().as_str()) {
+                    Ok(warning) => warning,
+                    Err(err) => {
+                        overlay_clone.add_toast(adw::Toast::new(&err));
+                        return;
+                    }
+                };
+
             let normalized_game_id = normalize_game_id_from_executable(&exe);
             let leyen_id = if find_game_by_leyen_id(&items, &generated_leyen_id).is_some() {
                 generate_unique_leyen_id(&items)
@@ -427,7 +579,7 @@ pub fn show_add_library_item_dialog(
                 generated_leyen_id.clone()
             };
             let game = Game {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: game_id.clone(),
                 title,
                 exe_path: exe,
                 prefix_path: if grouped_game && !prefix_override_row.enables_expansion() {
@@ -451,12 +603,18 @@ pub fn show_add_library_item_dialog(
                 game_ntsync: ntsync_row.is_active(),
                 leyen_id,
                 game_id: normalized_game_id,
+                custom_icon,
                 playtime_seconds: 0,
                 last_played_epoch_seconds: 0,
                 last_run_duration_seconds: 0,
                 last_run_status: String::new(),
             };
-            let _ = insert_game(&mut items, current_group_id.as_deref(), game);
+            if !insert_game(&mut items, current_group_id.as_deref(), game) {
+                clear_game_icon(&game_id);
+                overlay_clone
+                    .add_toast(adw::Toast::new("Failed to add game to the selected group"));
+                return;
+            }
         }
 
         save_library(&items);
@@ -465,7 +623,12 @@ pub fn show_add_library_item_dialog(
             ui_clone.back_btn.set_visible(true);
         }
         refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-        overlay_clone.add_toast(adw::Toast::new("Item added successfully"));
+        let success_message = if let Some(icon_notice) = icon_notice {
+            format!("Item added successfully. {}", icon_notice)
+        } else {
+            "Item added successfully".to_string()
+        };
+        overlay_clone.add_toast(adw::Toast::new(&success_message));
         dialog_clone.destroy();
     });
 
@@ -530,6 +693,30 @@ pub fn show_edit_group_dialog(
         proton_row.set_selected(0);
     }
 
+    let existing_group_icon = group_icon_file(&group.id)
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let custom_group_icon_active = !existing_group_icon.is_empty();
+    let group_icon_row = adw::EntryRow::builder()
+        .title("Icon File")
+        .text(&existing_group_icon)
+        .build();
+    let group_icon_browse_btn = gtk4::Button::builder()
+        .icon_name("folder-open-symbolic")
+        .tooltip_text("Browse for group icon")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    group_icon_row.add_suffix(&group_icon_browse_btn);
+    let group_icon_override_row = adw::ExpanderRow::builder()
+        .title("Custom Icon")
+        .subtitle("Set an optional custom icon for this group.")
+        .show_enable_switch(true)
+        .enable_expansion(custom_group_icon_active)
+        .expanded(custom_group_icon_active)
+        .build();
+    group_icon_override_row.add_row(&group_icon_row);
+
     let page = adw::PreferencesPage::builder().build();
     let group_settings = adw::PreferencesGroup::builder().title("Group").build();
     group_settings.add(&title_row);
@@ -537,6 +724,7 @@ pub fn show_edit_group_dialog(
         .title("Group Defaults")
         .description("Leave prefix empty or Proton on Default to inherit global settings.")
         .build();
+    defaults_group.add(&group_icon_override_row);
     defaults_group.add(&prefix_row);
     defaults_group.add(&proton_row);
     page.add(&group_settings);
@@ -563,6 +751,20 @@ pub fn show_edit_group_dialog(
         });
     });
 
+    let group_icon_row_clone = group_icon_row.clone();
+    let parent_clone = parent.clone();
+    group_icon_browse_btn.connect_clicked(move |_| {
+        let group_icon_row_clone = group_icon_row_clone.clone();
+        let file_dialog = build_icon_file_dialog("Select Group Icon");
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                group_icon_row_clone.set_text(&path.to_string_lossy());
+            }
+        });
+    });
+
     let dialog_clone = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
 
@@ -579,6 +781,15 @@ pub fn show_edit_group_dialog(
         }
 
         let mut items = load_library();
+        if let Err(err) = apply_group_icon(
+            &group_id,
+            group_icon_override_row.enables_expansion(),
+            group_icon_row.text().as_str(),
+        ) {
+            overlay_clone.add_toast(adw::Toast::new(&err));
+            return;
+        }
+
         if replace_group(
             &mut items,
             &group_id,
@@ -727,6 +938,33 @@ pub fn show_edit_game_dialog(
         proton_override_row.add_row(&proton_row);
     }
 
+    let existing_custom_game_icon = if game.custom_icon {
+        game_icon_file(&game.id)
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let game_icon_row = adw::EntryRow::builder()
+        .title("Icon File")
+        .text(&existing_custom_game_icon)
+        .build();
+    let game_icon_browse_btn = gtk4::Button::builder()
+        .icon_name("folder-open-symbolic")
+        .tooltip_text("Browse for custom icon")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    game_icon_row.add_suffix(&game_icon_browse_btn);
+    let game_icon_override_row = adw::ExpanderRow::builder()
+        .title("Custom Icon")
+        .subtitle("Use a custom icon instead of extracting one from the executable.")
+        .show_enable_switch(true)
+        .enable_expansion(game.custom_icon)
+        .expanded(game.custom_icon)
+        .build();
+    game_icon_override_row.add_row(&game_icon_row);
+
     let args_entry = gtk4::Entry::builder()
         .text(&game.launch_args)
         .placeholder_text("%command%")
@@ -777,6 +1015,7 @@ pub fn show_edit_game_dialog(
         .build();
     env_group.add(&leyen_id_row);
     env_group.add(&game_id_row);
+    env_group.add(&game_icon_override_row);
     if grouped_game {
         env_group.add(&prefix_override_row);
         env_group.add(&proton_override_row);
@@ -939,6 +1178,20 @@ pub fn show_edit_game_dialog(
         });
     });
 
+    let game_icon_row_clone = game_icon_row.clone();
+    let parent_clone = parent.clone();
+    game_icon_browse_btn.connect_clicked(move |_| {
+        let game_icon_row_clone = game_icon_row_clone.clone();
+        let file_dialog = build_icon_file_dialog("Select Icon");
+        file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                game_icon_row_clone.set_text(&path.to_string_lossy());
+            }
+        });
+    });
+
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
     let scroll = gtk4::ScrolledWindow::builder()
@@ -965,6 +1218,15 @@ pub fn show_edit_game_dialog(
             return;
         }
         let normalized_game_id = normalize_game_id_from_executable(&exe);
+        let custom_icon = game_icon_override_row.enables_expansion();
+        let icon_notice =
+            match apply_game_icon(&game_id, &exe, custom_icon, game_icon_row.text().as_str()) {
+                Ok(warning) => warning,
+                Err(err) => {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
+            };
 
         let edited_game = Game {
             id: game_id.clone(),
@@ -991,6 +1253,7 @@ pub fn show_edit_game_dialog(
             game_ntsync: ntsync_row.is_active(),
             leyen_id: original_game.leyen_id.clone(),
             game_id: normalized_game_id,
+            custom_icon,
             playtime_seconds: original_game.playtime_seconds,
             last_played_epoch_seconds: original_game.last_played_epoch_seconds,
             last_run_duration_seconds: original_game.last_run_duration_seconds,
@@ -1001,7 +1264,12 @@ pub fn show_edit_game_dialog(
         if replace_game(&mut items, &edited_game) {
             save_library(&items);
             refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-            overlay_clone.add_toast(adw::Toast::new("Game updated successfully"));
+            let success_message = if let Some(icon_notice) = icon_notice {
+                format!("Game updated successfully. {}", icon_notice)
+            } else {
+                "Game updated successfully".to_string()
+            };
+            overlay_clone.add_toast(adw::Toast::new(&success_message));
             dialog_clone.destroy();
         } else {
             overlay_clone.add_toast(adw::Toast::new("Error: Game not found"));
@@ -1057,9 +1325,18 @@ pub fn show_delete_confirmation(
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
         if let Ok(1) = result {
             let mut items = load_library();
-            let deleted = remove_game(&mut items, &item_id)
-                .map(|game| game.title)
-                .or_else(|| remove_group(&mut items, &item_id));
+            let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
+                clear_game_icon(&game.id);
+                Some(game.title)
+            } else if let Some(group) = remove_group(&mut items, &item_id) {
+                clear_group_icon(&group.id);
+                for game in &group.games {
+                    clear_game_icon(&game.id);
+                }
+                Some(group.title)
+            } else {
+                None
+            };
 
             if let Some(title) = deleted {
                 save_library(&items);

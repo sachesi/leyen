@@ -387,12 +387,12 @@ pub fn replace_group(
     true
 }
 
-pub fn remove_group(items: &mut Vec<LibraryItem>, group_id: &str) -> Option<String> {
+pub fn remove_group(items: &mut Vec<LibraryItem>, group_id: &str) -> Option<GameGroup> {
     let pos = items
         .iter()
         .position(|item| matches!(item, LibraryItem::Group(group) if group.id == group_id))?;
     match items.remove(pos) {
-        LibraryItem::Group(group) => Some(group.title),
+        LibraryItem::Group(group) => Some(group),
         LibraryItem::Game(_) => None,
     }
 }
@@ -562,6 +562,7 @@ mod tests {
             launch_args: String::new(),
             force_mangohud: false,
             force_gamemode: false,
+            custom_icon: false,
             game_wayland: false,
             game_wow64: false,
             game_ntsync: false,

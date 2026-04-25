@@ -98,8 +98,13 @@ fn download_and_install_umu(dest_dir: &str) -> bool {
     // Resolve the latest release tag via the GitHub redirect.
     let tag_output = std::process::Command::new("curl")
         .args([
-            "-sI",
-            "-L",
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail",
             "-o",
             "/dev/null",
             "-w",
@@ -133,7 +138,22 @@ fn download_and_install_umu(dest_dir: &str) -> bool {
     );
 
     let ok = std::process::Command::new("curl")
-        .args(["-sL", "--fail", "-o", &tarball_path, &download_url])
+        .args([
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail",
+            "--retry",
+            "3",
+            "--retry-delay",
+            "1",
+            "-o",
+            &tarball_path,
+            &download_url,
+        ])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);

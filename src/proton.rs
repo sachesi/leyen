@@ -3,31 +3,11 @@ use std::fs;
 static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Resolves a Proton value stored in a game config (which may be a full path
-/// or, for configs written before the path-storage change, just a directory
-/// name) into the full path expected by `PROTONPATH`.
+/// Resolves a Proton value stored in config.
 /// Returns `None` when the value represents the "Default" / unset state.
 pub fn resolve_proton_path(proton: &str) -> Option<String> {
     if proton.is_empty() || proton == "Default" {
         return None;
-    }
-
-    // Already a full path
-    if proton.starts_with('/') {
-        return Some(proton.to_string());
-    }
-
-    // Backward-compat: resolve a bare directory name to its full path
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let candidates = [
-        format!("{}/.local/share/leyen/proton/{}", home, proton),
-        format!("{}/.steam/steam/compatibilitytools.d/{}", home, proton),
-        format!("{}/.steam/steam/steamapps/common/{}", home, proton),
-    ];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return Some(path.clone());
-        }
     }
 
     Some(proton.to_string())

@@ -9,7 +9,6 @@ use crate::config::get_config_dir;
 use crate::models::GlobalSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
 pub struct LogEntry {
     pub line: String,
     pub game_id: Option<String>,

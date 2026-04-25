@@ -173,17 +173,7 @@ pub fn show_add_library_item_dialog(
     path_row.add_suffix(&browse_btn);
 
     let grouped_game = kind == AddLibraryItemKind::Game && inside_group;
-    let initial_prefix = if grouped_game {
-        String::new()
-    } else if let Some(group) = current_group.as_ref() {
-        if !group.defaults.prefix_path.trim().is_empty() {
-            group.defaults.prefix_path.clone()
-        } else {
-            settings.default_prefix_path.clone()
-        }
-    } else {
-        settings.default_prefix_path.clone()
-    };
+    let initial_prefix = String::new();
     let prefix_row = adw::EntryRow::builder()
         .title("Prefix")
         .text(&initial_prefix)
@@ -203,9 +193,7 @@ pub fn show_add_library_item_dialog(
         .enable_expansion(false)
         .expanded(false)
         .build();
-    if grouped_game {
-        prefix_override_row.add_row(&prefix_row);
-    }
+    prefix_override_row.add_row(&prefix_row);
 
     let generated_leyen_id = generate_unique_leyen_id(&library);
     let leyen_id_row = adw::EntryRow::builder()
@@ -287,14 +275,13 @@ pub fn show_add_library_item_dialog(
         .title("Game Settings")
         .build();
     game_details_group.add(&path_row);
-    game_details_group.add(&game_icon_override_row);
     game_details_group.add(&leyen_id_row);
     game_details_group.add(&game_id_row);
+    game_details_group.add(&game_icon_override_row);
+    game_details_group.add(&prefix_override_row);
     if grouped_game {
-        game_details_group.add(&prefix_override_row);
         game_details_group.add(&proton_override_row);
     } else {
-        game_details_group.add(&prefix_row);
         game_details_group.add(&proton_row);
     }
     game_details_group.add(&args_row);
@@ -333,13 +320,21 @@ pub fn show_add_library_item_dialog(
         .expanded(false)
         .build();
     group_icon_override_row.add_row(&group_icon_row);
+    let group_prefix_override_row = adw::ExpanderRow::builder()
+        .title("Custom Prefix")
+        .subtitle("Use a group-specific prefix instead of the global default.")
+        .show_enable_switch(true)
+        .enable_expansion(false)
+        .expanded(false)
+        .build();
+    group_prefix_override_row.add_row(&group_prefix_row);
 
     let group_defaults_group = adw::PreferencesGroup::builder()
         .title("Group Defaults")
         .description("Leave prefix empty or Proton on Default to keep using global defaults.")
         .build();
     group_defaults_group.add(&group_icon_override_row);
-    group_defaults_group.add(&group_prefix_row);
+    group_defaults_group.add(&group_prefix_override_row);
     group_defaults_group.add(&group_proton_row);
 
     page.add(&game_group);
@@ -359,10 +354,6 @@ pub fn show_add_library_item_dialog(
     let prefix_override_row_clone = prefix_override_row.clone();
     let title_row_for_prefix = title_row.clone();
     let default_prefix_for_inherit = settings.default_prefix_path.clone();
-    let group_default_prefix = current_group
-        .as_ref()
-        .map(|group| group.defaults.prefix_path.clone())
-        .unwrap_or_default();
     let manual_prefix = Rc::new(RefCell::new(initial_prefix.clone()));
     let manual_prefix_clone = manual_prefix.clone();
     prefix_override_row.connect_enable_expansion_notify(move |row| {
@@ -372,8 +363,6 @@ pub fn show_add_library_item_dialog(
                 let stored = manual_prefix_clone.borrow().clone();
                 if !stored.trim().is_empty() {
                     stored
-                } else if !group_default_prefix.trim().is_empty() {
-                    group_default_prefix.clone()
                 } else {
                     suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
                 }
@@ -384,6 +373,32 @@ pub fn show_add_library_item_dialog(
             *manual_prefix_clone.borrow_mut() = prefix_row_clone.text().to_string();
             prefix_row_clone.set_text("");
             prefix_override_row_clone.set_expanded(false);
+        }
+    });
+
+    let group_prefix_row_clone = group_prefix_row.clone();
+    let group_prefix_override_row_clone = group_prefix_override_row.clone();
+    let title_row_for_group_prefix = title_row.clone();
+    let default_group_prefix = settings.default_prefix_path.clone();
+    let group_manual_prefix = Rc::new(RefCell::new(String::new()));
+    let group_manual_prefix_clone = group_manual_prefix.clone();
+    group_prefix_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            let fallback = {
+                let stored = group_manual_prefix_clone.borrow().clone();
+                if !stored.trim().is_empty() {
+                    stored
+                } else {
+                    suggest_prefix_path(&default_group_prefix, &title_row_for_group_prefix.text())
+                }
+            };
+            group_prefix_row_clone.set_text(&fallback);
+            group_prefix_override_row_clone.set_expanded(true);
+        } else {
+            *group_manual_prefix_clone.borrow_mut() = group_prefix_row_clone.text().to_string();
+            group_prefix_row_clone.set_text("");
+            group_prefix_override_row_clone.set_expanded(false);
         }
     });
 
@@ -410,7 +425,7 @@ pub fn show_add_library_item_dialog(
     let default_prefix_path = settings.default_prefix_path.clone();
     title_row.connect_changed(move |row| {
         let title = row.text().to_string();
-        if !grouped_game || prefix_override_row_clone.enables_expansion() {
+        if prefix_override_row_clone.enables_expansion() {
             let suggested_prefix = suggest_prefix_path(&default_prefix_path, &title);
             let current_prefix = prefix_row_clone.text().to_string();
             let previous_prefix = previous_auto_prefix_clone.borrow().clone();
@@ -421,6 +436,27 @@ pub fn show_add_library_item_dialog(
                 prefix_row_clone.set_text(&suggested_prefix);
             }
             *previous_auto_prefix_clone.borrow_mut() = suggested_prefix;
+        }
+    });
+
+    let previous_auto_group_prefix = Rc::new(RefCell::new(String::new()));
+    let group_prefix_row_clone = group_prefix_row.clone();
+    let group_prefix_override_row_clone = group_prefix_override_row.clone();
+    let previous_auto_group_prefix_clone = previous_auto_group_prefix.clone();
+    let default_group_prefix_path = settings.default_prefix_path.clone();
+    title_row.connect_changed(move |row| {
+        let title = row.text().to_string();
+        if group_prefix_override_row_clone.enables_expansion() {
+            let suggested_prefix = suggest_prefix_path(&default_group_prefix_path, &title);
+            let current_prefix = group_prefix_row_clone.text().to_string();
+            let previous_prefix = previous_auto_group_prefix_clone.borrow().clone();
+            if current_prefix.trim().is_empty()
+                || current_prefix == previous_prefix
+                || current_prefix == default_group_prefix_path
+            {
+                group_prefix_row_clone.set_text(&suggested_prefix);
+            }
+            *previous_auto_group_prefix_clone.borrow_mut() = suggested_prefix;
         }
     });
 
@@ -546,7 +582,11 @@ pub fn show_add_library_item_dialog(
                 id: group_id,
                 title,
                 defaults: GroupLaunchDefaults {
-                    prefix_path: group_prefix_row.text().to_string(),
+                    prefix_path: if group_prefix_override_row.enables_expansion() {
+                        group_prefix_row.text().to_string()
+                    } else {
+                        String::new()
+                    },
                     proton: available_protons
                         .get(group_proton_row.selected() as usize)
                         .cloned()
@@ -582,7 +622,7 @@ pub fn show_add_library_item_dialog(
                 id: game_id.clone(),
                 title,
                 exe_path: exe,
-                prefix_path: if grouped_game && !prefix_override_row.enables_expansion() {
+                prefix_path: if !prefix_override_row.enables_expansion() {
                     String::new()
                 } else {
                     prefix_row.text().to_string()
@@ -667,10 +707,13 @@ pub fn show_edit_group_dialog(
         .title("Title")
         .text(&group.title)
         .build();
-    let prefix_row = adw::EntryRow::builder()
-        .title("Prefix")
-        .text(&group.defaults.prefix_path)
-        .build();
+    let custom_prefix_active = !group.defaults.prefix_path.trim().is_empty();
+    let prefix_row = adw::EntryRow::builder().title("Prefix").build();
+    prefix_row.set_text(if custom_prefix_active {
+        &group.defaults.prefix_path
+    } else {
+        ""
+    });
     let prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
         .tooltip_text("Browse for prefix folder")
@@ -716,6 +759,14 @@ pub fn show_edit_group_dialog(
         .expanded(custom_group_icon_active)
         .build();
     group_icon_override_row.add_row(&group_icon_row);
+    let prefix_override_row = adw::ExpanderRow::builder()
+        .title("Custom Prefix")
+        .subtitle("Use a group-specific prefix instead of the global default.")
+        .show_enable_switch(true)
+        .enable_expansion(custom_prefix_active)
+        .expanded(custom_prefix_active)
+        .build();
+    prefix_override_row.add_row(&prefix_row);
 
     let page = adw::PreferencesPage::builder().build();
     let group_settings = adw::PreferencesGroup::builder().title("Group").build();
@@ -725,7 +776,7 @@ pub fn show_edit_group_dialog(
         .description("Leave prefix empty or Proton on Default to inherit global settings.")
         .build();
     defaults_group.add(&group_icon_override_row);
-    defaults_group.add(&prefix_row);
+    defaults_group.add(&prefix_override_row);
     defaults_group.add(&proton_row);
     page.add(&group_settings);
     page.add(&defaults_group);
@@ -734,6 +785,53 @@ pub fn show_edit_group_dialog(
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&page));
     dialog.set_content(Some(&toolbar_view));
+
+    let prefix_row_clone = prefix_row.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
+    let title_row_for_prefix = title_row.clone();
+    let default_prefix_for_inherit = settings.default_prefix_path.clone();
+    let manual_prefix = Rc::new(RefCell::new(group.defaults.prefix_path.clone()));
+    let manual_prefix_clone = manual_prefix.clone();
+    prefix_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            let fallback = {
+                let stored = manual_prefix_clone.borrow().clone();
+                if !stored.trim().is_empty() {
+                    stored
+                } else {
+                    suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
+                }
+            };
+            prefix_row_clone.set_text(&fallback);
+            prefix_override_row_clone.set_expanded(true);
+        } else {
+            *manual_prefix_clone.borrow_mut() = prefix_row_clone.text().to_string();
+            prefix_row_clone.set_text("");
+            prefix_override_row_clone.set_expanded(false);
+        }
+    });
+
+    let previous_auto_prefix = Rc::new(RefCell::new(group.defaults.prefix_path.clone()));
+    let prefix_row_clone = prefix_row.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
+    let previous_auto_prefix_clone = previous_auto_prefix.clone();
+    let default_prefix_path = settings.default_prefix_path.clone();
+    title_row.connect_changed(move |row| {
+        let title = row.text().to_string();
+        if prefix_override_row_clone.enables_expansion() {
+            let suggested_prefix = suggest_prefix_path(&default_prefix_path, &title);
+            let current_prefix = prefix_row_clone.text().to_string();
+            let previous_prefix = previous_auto_prefix_clone.borrow().clone();
+            if current_prefix.trim().is_empty()
+                || current_prefix == previous_prefix
+                || current_prefix == default_prefix_path
+            {
+                prefix_row_clone.set_text(&suggested_prefix);
+            }
+            *previous_auto_prefix_clone.borrow_mut() = suggested_prefix;
+        }
+    });
 
     let prefix_row_clone = prefix_row.clone();
     let parent_clone = parent.clone();
@@ -795,7 +893,11 @@ pub fn show_edit_group_dialog(
             &group_id,
             title,
             GroupLaunchDefaults {
-                prefix_path: prefix_row.text().to_string(),
+                prefix_path: if prefix_override_row.enables_expansion() {
+                    prefix_row.text().to_string()
+                } else {
+                    String::new()
+                },
                 proton: available_protons
                     .get(proton_row.selected() as usize)
                     .cloned()
@@ -872,8 +974,8 @@ pub fn show_edit_game_dialog(
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let grouped_game = current_parent_group.is_some();
-    let custom_prefix_active = grouped_game && !game.prefix_path.trim().is_empty();
-    prefix_row.set_text(if grouped_game && !custom_prefix_active {
+    let custom_prefix_active = !game.prefix_path.trim().is_empty();
+    prefix_row.set_text(if !custom_prefix_active {
         ""
     } else {
         &game.prefix_path
@@ -885,9 +987,7 @@ pub fn show_edit_game_dialog(
         .enable_expansion(custom_prefix_active)
         .expanded(custom_prefix_active)
         .build();
-    if grouped_game {
-        prefix_override_row.add_row(&prefix_row);
-    }
+    prefix_override_row.add_row(&prefix_row);
 
     let leyen_id_row = adw::EntryRow::builder()
         .title("Leyen ID")
@@ -1016,11 +1116,10 @@ pub fn show_edit_game_dialog(
     env_group.add(&leyen_id_row);
     env_group.add(&game_id_row);
     env_group.add(&game_icon_override_row);
+    env_group.add(&prefix_override_row);
     if grouped_game {
-        env_group.add(&prefix_override_row);
         env_group.add(&proton_override_row);
     } else {
-        env_group.add(&prefix_row);
         env_group.add(&proton_row);
     }
     let overrides = adw::PreferencesGroup::builder().title("Overrides").build();
@@ -1076,10 +1175,6 @@ pub fn show_edit_game_dialog(
     let prefix_override_row_clone = prefix_override_row.clone();
     let title_row_for_prefix = title_row.clone();
     let default_prefix_for_inherit = settings.default_prefix_path.clone();
-    let group_default_prefix = current_parent_group
-        .as_ref()
-        .map(|group| group.defaults.prefix_path.clone())
-        .unwrap_or_default();
     let manual_prefix = Rc::new(RefCell::new(game.prefix_path.clone()));
     let manual_prefix_clone = manual_prefix.clone();
     prefix_override_row.connect_enable_expansion_notify(move |row| {
@@ -1089,8 +1184,6 @@ pub fn show_edit_game_dialog(
                 let stored = manual_prefix_clone.borrow().clone();
                 if !stored.trim().is_empty() {
                     stored
-                } else if !group_default_prefix.trim().is_empty() {
-                    group_default_prefix.clone()
                 } else {
                     suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
                 }
@@ -1127,7 +1220,7 @@ pub fn show_edit_game_dialog(
     let default_prefix_path = settings.default_prefix_path.clone();
     title_row.connect_changed(move |row| {
         let title = row.text().to_string();
-        if !grouped_game || prefix_override_row_clone.enables_expansion() {
+        if prefix_override_row_clone.enables_expansion() {
             let suggested_prefix = suggest_prefix_path(&default_prefix_path, &title);
             let current_prefix = prefix_row_clone.text().to_string();
             let previous_prefix = previous_auto_prefix_clone.borrow().clone();
@@ -1232,7 +1325,7 @@ pub fn show_edit_game_dialog(
             id: game_id.clone(),
             title,
             exe_path: exe,
-            prefix_path: if grouped_game && !prefix_override_row.enables_expansion() {
+            prefix_path: if !prefix_override_row.enables_expansion() {
                 String::new()
             } else {
                 prefix_row.text().to_string()

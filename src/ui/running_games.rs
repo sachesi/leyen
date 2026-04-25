@@ -4,13 +4,12 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::glib;
-use gtk4::prelude::Cast;
 
 use crate::config::load_games;
 use crate::icons::game_icon_file;
 use crate::launch::{running_games_snapshot, stop_game};
 
-use super::log_window::show_log_window;
+use super::{build_library_icon, log_window::show_log_window};
 
 fn format_duration_brief(total_seconds: u64) -> String {
     let hours = total_seconds / 3600;
@@ -24,25 +23,6 @@ fn format_duration_brief(total_seconds: u64) -> String {
     } else {
         format!("{}s", seconds)
     }
-}
-
-fn build_running_game_icon(icon_path: Option<std::path::PathBuf>) -> gtk4::Widget {
-    if let Some(icon_path) = icon_path
-        && icon_path.is_file()
-    {
-        let picture = gtk4::Picture::for_filename(icon_path);
-        picture.set_size_request(48, 48);
-        picture.set_can_shrink(true);
-        picture.set_content_fit(gtk4::ContentFit::Contain);
-        return picture.upcast();
-    }
-
-    gtk4::Image::builder()
-        .icon_name("application-x-executable-symbolic")
-        .pixel_size(40)
-        .valign(gtk4::Align::Center)
-        .build()
-        .upcast()
 }
 
 fn rebuild_running_games(
@@ -93,7 +73,11 @@ fn rebuild_running_games(
             .margin_start(12)
             .margin_end(12)
             .build();
-        let icon = build_running_game_icon(icon_paths.get(&snapshot.game_id).cloned());
+        let icon = build_library_icon(
+            icon_paths.get(&snapshot.game_id).cloned(),
+            "application-x-executable-symbolic",
+            gtk4::Align::Center,
+        );
 
         let info = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Vertical)

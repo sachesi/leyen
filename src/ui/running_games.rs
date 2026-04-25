@@ -26,12 +26,15 @@ fn format_duration_brief(total_seconds: u64) -> String {
 
 fn rebuild_running_games(
     list_box: &gtk4::Box,
+    content_stack: &gtk4::Stack,
     overlay: &adw::ToastOverlay,
     parent: &adw::ApplicationWindow,
+    running_duration_labels: &std::rc::Rc<std::cell::RefCell<HashMap<String, gtk4::Label>>>,
 ) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
+    running_duration_labels.borrow_mut().clear();
 
     let games = load_games();
     let titles: HashMap<String, String> = games
@@ -41,14 +44,7 @@ fn rebuild_running_games(
 
     let snapshots = running_games_snapshot();
     if snapshots.is_empty() {
-        let empty = gtk4::Label::builder()
-            .label("No running games")
-            .css_classes(["title-4", "dim-label"])
-            .halign(gtk4::Align::Center)
-            .margin_top(24)
-            .margin_bottom(24)
-            .build();
-        list_box.append(&empty);
+        content_stack.set_visible_child_name("empty");
         return;
     }
 
@@ -109,6 +105,9 @@ fn rebuild_running_games(
             .xalign(0.0)
             .css_classes(["caption", "accent"])
             .build();
+        running_duration_labels
+            .borrow_mut()
+            .insert(snapshot.game_id.clone(), runtime_label.clone());
 
         info.append(&title_label);
         info.append(&pid_label);
@@ -156,6 +155,26 @@ fn rebuild_running_games(
         card.set_child(Some(&content));
         list_box.append(&card);
     }
+
+    content_stack.set_visible_child_name("list");
+}
+
+fn update_running_durations(
+    running_duration_labels: &std::rc::Rc<std::cell::RefCell<HashMap<String, gtk4::Label>>>,
+) {
+    let snapshots: HashMap<String, u64> = running_games_snapshot()
+        .into_iter()
+        .map(|snapshot| (snapshot.game_id, snapshot.elapsed_seconds))
+        .collect();
+
+    for (game_id, label) in running_duration_labels.borrow().iter() {
+        if let Some(elapsed_seconds) = snapshots.get(game_id) {
+            label.set_label(&format!(
+                "Running for {}",
+                format_duration_brief(*elapsed_seconds)
+            ));
+        }
+    }
 }
 
 pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
@@ -183,28 +202,64 @@ pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
         .vexpand(true)
         .child(&list_box)
         .build();
+    let empty_state = adw::StatusPage::builder()
+        .icon_name("media-playback-stop-symbolic")
+        .title("No running games")
+        .description("Games you launch through Leyen will appear here while they are active.")
+        .build();
+    let content_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    content_stack.add_named(&empty_state, Some("empty"));
+    content_stack.add_named(&scroll, Some("list"));
+    content_stack.set_visible_child_name("empty");
 
     let overlay = adw::ToastOverlay::new();
-    overlay.set_child(Some(&scroll));
+    overlay.set_child(Some(&content_stack));
+    let running_duration_labels = std::rc::Rc::new(std::cell::RefCell::new(HashMap::new()));
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&overlay));
     window.set_content(Some(&toolbar_view));
 
-    rebuild_running_games(&list_box, &overlay, parent);
+    rebuild_running_games(
+        &list_box,
+        &content_stack,
+        &overlay,
+        parent,
+        &running_duration_labels,
+    );
     window.present();
 
     let window_ref = window.clone();
     let list_box_ref = list_box.clone();
+    let content_stack_ref = content_stack.clone();
     let overlay_ref = overlay.clone();
     let parent_ref = parent.clone();
+    let running_duration_labels_ref = running_duration_labels.clone();
+    let mut last_version = crate::launch::running_games_version();
     glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
 
-        rebuild_running_games(&list_box_ref, &overlay_ref, &parent_ref);
+        let current_version = crate::launch::running_games_version();
+        if current_version != last_version {
+            last_version = current_version;
+            rebuild_running_games(
+                &list_box_ref,
+                &content_stack_ref,
+                &overlay_ref,
+                &parent_ref,
+                &running_duration_labels_ref,
+            );
+        } else if current_version != 0 {
+            update_running_durations(&running_duration_labels_ref);
+        }
         glib::ControlFlow::Continue
     });
 }

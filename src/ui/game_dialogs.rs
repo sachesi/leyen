@@ -107,9 +107,8 @@ pub fn show_add_library_item_dialog(
         .build();
     path_row.add_suffix(&browse_btn);
 
-    let inherited_prefix_active = kind == AddLibraryItemKind::Game && inside_group;
-    let inherited_proton_active = kind == AddLibraryItemKind::Game && inside_group;
-    let initial_prefix = if inherited_prefix_active {
+    let grouped_game = kind == AddLibraryItemKind::Game && inside_group;
+    let initial_prefix = if grouped_game {
         String::new()
     } else if let Some(group) = current_group.as_ref() {
         if !group.defaults.prefix_path.trim().is_empty() {
@@ -132,12 +131,16 @@ pub fn show_add_library_item_dialog(
         .build();
     prefix_row.add_suffix(&prefix_browse_btn);
 
-    let inherit_prefix_row = adw::SwitchRow::builder()
-        .title("Inherit Prefix")
-        .subtitle("Resolve prefix from the group first, then from global settings")
-        .active(inherited_prefix_active)
-        .visible(kind == AddLibraryItemKind::Game && inside_group)
+    let prefix_override_row = adw::ExpanderRow::builder()
+        .title("Custom Prefix")
+        .subtitle("Use a per-game prefix instead of the inherited group and global defaults.")
+        .show_enable_switch(true)
+        .enable_expansion(false)
+        .expanded(false)
         .build();
+    if grouped_game {
+        prefix_override_row.add_row(&prefix_row);
+    }
 
     let generated_leyen_id = generate_unique_leyen_id(&library);
     let leyen_id_row = adw::EntryRow::builder()
@@ -153,12 +156,16 @@ pub fn show_add_library_item_dialog(
         .title("Proton")
         .model(&proton_model)
         .build();
-    let inherit_proton_row = adw::SwitchRow::builder()
-        .title("Inherit Proton")
-        .subtitle("Resolve Proton from the group first, then from global settings")
-        .active(inherited_proton_active)
-        .visible(kind == AddLibraryItemKind::Game && inside_group)
+    let proton_override_row = adw::ExpanderRow::builder()
+        .title("Custom Proton")
+        .subtitle("Use a per-game Proton version instead of the inherited default.")
+        .show_enable_switch(true)
+        .enable_expansion(false)
+        .expanded(false)
         .build();
+    if grouped_game {
+        proton_override_row.add_row(&proton_row);
+    }
 
     let args_entry = gtk4::Entry::builder()
         .placeholder_text("%command%")
@@ -198,12 +205,15 @@ pub fn show_add_library_item_dialog(
         .title("Game Settings")
         .build();
     game_details_group.add(&path_row);
-    game_details_group.add(&inherit_prefix_row);
-    game_details_group.add(&prefix_row);
-    game_details_group.add(&inherit_proton_row);
     game_details_group.add(&leyen_id_row);
     game_details_group.add(&game_id_row);
-    game_details_group.add(&proton_row);
+    if grouped_game {
+        game_details_group.add(&prefix_override_row);
+        game_details_group.add(&proton_override_row);
+    } else {
+        game_details_group.add(&prefix_row);
+        game_details_group.add(&proton_row);
+    }
     game_details_group.add(&args_row);
     game_details_group.add(&mangohud_row);
     game_details_group.add(&gamemode_row);
@@ -241,55 +251,66 @@ pub fn show_add_library_item_dialog(
     game_details_group.set_visible(kind == AddLibraryItemKind::Game);
     group_defaults_group.set_visible(kind == AddLibraryItemKind::Group);
 
-    let proton_inherited_available = inside_group;
-    prefix_row.set_sensitive(!inherit_prefix_row.is_active());
-    prefix_browse_btn.set_sensitive(!inherit_prefix_row.is_active());
-    proton_row.set_sensitive(!inherit_proton_row.is_active());
-    if proton_inherited_available {
+    if grouped_game {
         proton_row.set_selected(0);
     }
 
     let prefix_row_clone = prefix_row.clone();
-    let prefix_browse_btn_clone = prefix_browse_btn.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
     let title_row_for_prefix = title_row.clone();
     let default_prefix_for_inherit = settings.default_prefix_path.clone();
     let group_default_prefix = current_group
         .as_ref()
         .map(|group| group.defaults.prefix_path.clone())
         .unwrap_or_default();
-    inherit_prefix_row.connect_active_notify(move |row| {
-        let inherited = row.is_active();
-        prefix_row_clone.set_sensitive(!inherited);
-        prefix_browse_btn_clone.set_sensitive(!inherited);
-        if inherited {
-            prefix_row_clone.set_text("");
-        } else if prefix_row_clone.text().is_empty() {
-            let fallback = if !group_default_prefix.trim().is_empty() {
-                group_default_prefix.clone()
-            } else {
-                suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
+    let manual_prefix = Rc::new(RefCell::new(initial_prefix.clone()));
+    let manual_prefix_clone = manual_prefix.clone();
+    prefix_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            let fallback = {
+                let stored = manual_prefix_clone.borrow().clone();
+                if !stored.trim().is_empty() {
+                    stored
+                } else if !group_default_prefix.trim().is_empty() {
+                    group_default_prefix.clone()
+                } else {
+                    suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
+                }
             };
             prefix_row_clone.set_text(&fallback);
+            prefix_override_row_clone.set_expanded(true);
+        } else {
+            *manual_prefix_clone.borrow_mut() = prefix_row_clone.text().to_string();
+            prefix_row_clone.set_text("");
+            prefix_override_row_clone.set_expanded(false);
         }
     });
 
     let proton_row_clone = proton_row.clone();
-    inherit_proton_row.connect_active_notify(move |row| {
-        let inherited = row.is_active();
-        proton_row_clone.set_sensitive(!inherited);
-        if inherited {
+    let proton_override_row_clone = proton_override_row.clone();
+    let manual_proton_selection = Rc::new(RefCell::new(proton_row.selected()));
+    let manual_proton_selection_clone = manual_proton_selection.clone();
+    proton_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            proton_row_clone.set_selected(*manual_proton_selection_clone.borrow());
+            proton_override_row_clone.set_expanded(true);
+        } else {
+            *manual_proton_selection_clone.borrow_mut() = proton_row_clone.selected();
             proton_row_clone.set_selected(0);
+            proton_override_row_clone.set_expanded(false);
         }
     });
 
     let previous_auto_prefix = Rc::new(RefCell::new(initial_prefix.clone()));
     let prefix_row_clone = prefix_row.clone();
-    let inherit_prefix_row_clone = inherit_prefix_row.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
     let previous_auto_prefix_clone = previous_auto_prefix.clone();
     let default_prefix_path = settings.default_prefix_path.clone();
     title_row.connect_changed(move |row| {
         let title = row.text().to_string();
-        if !inherit_prefix_row_clone.is_active() {
+        if !grouped_game || prefix_override_row_clone.enables_expansion() {
             let suggested_prefix = suggest_prefix_path(&default_prefix_path, &title);
             let current_prefix = prefix_row_clone.text().to_string();
             let previous_prefix = previous_auto_prefix_clone.borrow().clone();
@@ -409,12 +430,12 @@ pub fn show_add_library_item_dialog(
                 id: uuid::Uuid::new_v4().to_string(),
                 title,
                 exe_path: exe,
-                prefix_path: if inherit_prefix_row.is_active() {
+                prefix_path: if grouped_game && !prefix_override_row.enables_expansion() {
                     String::new()
                 } else {
                     prefix_row.text().to_string()
                 },
-                proton: if inherit_proton_row.is_active() {
+                proton: if grouped_game && !proton_override_row.enables_expansion() {
                     "Default".to_string()
                 } else {
                     available_protons
@@ -639,19 +660,23 @@ pub fn show_edit_game_dialog(
         .build();
     prefix_row.add_suffix(&prefix_browse_btn);
 
-    let inherit_prefix_active =
-        current_parent_group.is_some() && game.prefix_path.trim().is_empty();
-    prefix_row.set_text(if inherit_prefix_active {
+    let grouped_game = current_parent_group.is_some();
+    let custom_prefix_active = grouped_game && !game.prefix_path.trim().is_empty();
+    prefix_row.set_text(if grouped_game && !custom_prefix_active {
         ""
     } else {
         &game.prefix_path
     });
-    let inherit_prefix_row = adw::SwitchRow::builder()
-        .title("Inherit Prefix")
-        .subtitle("Resolve prefix from the group first, then from global settings")
-        .active(inherit_prefix_active)
-        .visible(current_parent_group.is_some())
+    let prefix_override_row = adw::ExpanderRow::builder()
+        .title("Custom Prefix")
+        .subtitle("Use a per-game prefix instead of the inherited group and global defaults.")
+        .show_enable_switch(true)
+        .enable_expansion(custom_prefix_active)
+        .expanded(custom_prefix_active)
         .build();
+    if grouped_game {
+        prefix_override_row.add_row(&prefix_row);
+    }
 
     let leyen_id_row = adw::EntryRow::builder()
         .title("Leyen ID")
@@ -670,9 +695,15 @@ pub fn show_edit_game_dialog(
         .title("Proton")
         .model(&proton_model)
         .build();
-    let inherit_proton_active = current_parent_group.is_some()
-        && (game.proton.trim().is_empty() || game.proton == "Default");
-    let selected_proton = if inherit_proton_active {
+    let custom_proton_active =
+        grouped_game && !game.proton.trim().is_empty() && game.proton != "Default";
+    let selected_proton = if grouped_game {
+        if custom_proton_active {
+            &game.proton
+        } else {
+            "Default"
+        }
+    } else if game.proton.trim().is_empty() {
         "Default"
     } else {
         &game.proton
@@ -685,12 +716,16 @@ pub fn show_edit_game_dialog(
     } else {
         proton_row.set_selected(0);
     }
-    let inherit_proton_row = adw::SwitchRow::builder()
-        .title("Inherit Proton")
-        .subtitle("Resolve Proton from the group first, then from global settings")
-        .active(inherit_proton_active)
-        .visible(current_parent_group.is_some())
+    let proton_override_row = adw::ExpanderRow::builder()
+        .title("Custom Proton")
+        .subtitle("Use a per-game Proton version instead of the inherited default.")
+        .show_enable_switch(true)
+        .enable_expansion(custom_proton_active)
+        .expanded(custom_proton_active)
         .build();
+    if grouped_game {
+        proton_override_row.add_row(&proton_row);
+    }
 
     let args_entry = gtk4::Entry::builder()
         .text(&game.launch_args)
@@ -740,12 +775,15 @@ pub fn show_edit_game_dialog(
     let env_group = adw::PreferencesGroup::builder()
         .title("Environment")
         .build();
-    env_group.add(&inherit_prefix_row);
-    env_group.add(&prefix_row);
-    env_group.add(&inherit_proton_row);
     env_group.add(&leyen_id_row);
     env_group.add(&game_id_row);
-    env_group.add(&proton_row);
+    if grouped_game {
+        env_group.add(&prefix_override_row);
+        env_group.add(&proton_override_row);
+    } else {
+        env_group.add(&prefix_row);
+        env_group.add(&proton_row);
+    }
     let overrides = adw::PreferencesGroup::builder().title("Overrides").build();
     overrides.add(&args_row);
     overrides.add(&mangohud_row);
@@ -795,51 +833,62 @@ pub fn show_edit_game_dialog(
     page.add(&overrides);
     page.add(&tools);
 
-    prefix_row.set_sensitive(!inherit_prefix_row.is_active());
-    prefix_browse_btn.set_sensitive(!inherit_prefix_row.is_active());
-    proton_row.set_sensitive(!inherit_proton_row.is_active());
-
     let prefix_row_clone = prefix_row.clone();
-    let prefix_browse_btn_clone = prefix_browse_btn.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
     let title_row_for_prefix = title_row.clone();
     let default_prefix_for_inherit = settings.default_prefix_path.clone();
     let group_default_prefix = current_parent_group
         .as_ref()
         .map(|group| group.defaults.prefix_path.clone())
         .unwrap_or_default();
-    inherit_prefix_row.connect_active_notify(move |row| {
-        let inherited = row.is_active();
-        prefix_row_clone.set_sensitive(!inherited);
-        prefix_browse_btn_clone.set_sensitive(!inherited);
-        if inherited {
-            prefix_row_clone.set_text("");
-        } else if prefix_row_clone.text().is_empty() {
-            let fallback = if !group_default_prefix.trim().is_empty() {
-                group_default_prefix.clone()
-            } else {
-                suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
+    let manual_prefix = Rc::new(RefCell::new(game.prefix_path.clone()));
+    let manual_prefix_clone = manual_prefix.clone();
+    prefix_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            let fallback = {
+                let stored = manual_prefix_clone.borrow().clone();
+                if !stored.trim().is_empty() {
+                    stored
+                } else if !group_default_prefix.trim().is_empty() {
+                    group_default_prefix.clone()
+                } else {
+                    suggest_prefix_path(&default_prefix_for_inherit, &title_row_for_prefix.text())
+                }
             };
             prefix_row_clone.set_text(&fallback);
+            prefix_override_row_clone.set_expanded(true);
+        } else {
+            *manual_prefix_clone.borrow_mut() = prefix_row_clone.text().to_string();
+            prefix_row_clone.set_text("");
+            prefix_override_row_clone.set_expanded(false);
         }
     });
 
     let proton_row_clone = proton_row.clone();
-    inherit_proton_row.connect_active_notify(move |row| {
-        let inherited = row.is_active();
-        proton_row_clone.set_sensitive(!inherited);
-        if inherited {
+    let proton_override_row_clone = proton_override_row.clone();
+    let manual_proton_selection = Rc::new(RefCell::new(proton_row.selected()));
+    let manual_proton_selection_clone = manual_proton_selection.clone();
+    proton_override_row.connect_enable_expansion_notify(move |row| {
+        let custom_enabled = row.enables_expansion();
+        if custom_enabled {
+            proton_row_clone.set_selected(*manual_proton_selection_clone.borrow());
+            proton_override_row_clone.set_expanded(true);
+        } else {
+            *manual_proton_selection_clone.borrow_mut() = proton_row_clone.selected();
             proton_row_clone.set_selected(0);
+            proton_override_row_clone.set_expanded(false);
         }
     });
 
     let previous_auto_prefix = Rc::new(RefCell::new(game.prefix_path.clone()));
     let prefix_row_clone = prefix_row.clone();
-    let inherit_prefix_row_clone = inherit_prefix_row.clone();
+    let prefix_override_row_clone = prefix_override_row.clone();
     let previous_auto_prefix_clone = previous_auto_prefix.clone();
     let default_prefix_path = settings.default_prefix_path.clone();
     title_row.connect_changed(move |row| {
         let title = row.text().to_string();
-        if !inherit_prefix_row_clone.is_active() {
+        if !grouped_game || prefix_override_row_clone.enables_expansion() {
             let suggested_prefix = suggest_prefix_path(&default_prefix_path, &title);
             let current_prefix = prefix_row_clone.text().to_string();
             let previous_prefix = previous_auto_prefix_clone.borrow().clone();
@@ -921,12 +970,12 @@ pub fn show_edit_game_dialog(
             id: game_id.clone(),
             title,
             exe_path: exe,
-            prefix_path: if inherit_prefix_row.is_active() {
+            prefix_path: if grouped_game && !prefix_override_row.enables_expansion() {
                 String::new()
             } else {
                 prefix_row.text().to_string()
             },
-            proton: if inherit_proton_row.is_active() {
+            proton: if grouped_game && !proton_override_row.enables_expansion() {
                 "Default".to_string()
             } else {
                 available_protons

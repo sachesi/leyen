@@ -25,13 +25,11 @@ pub struct LaunchReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
 struct RunningGamesRegistry {
     sessions: Vec<RunningGameSession>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
 struct RunningGameSession {
     game_id: String,
     pid: u32,

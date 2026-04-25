@@ -107,7 +107,7 @@ fn ensure_icons_dir() -> Result<PathBuf, String> {
 
 fn managed_icons_dir_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".local/leyen/icons")
+    PathBuf::from(home).join(".local/share/leyen/icons")
 }
 
 fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<(), String> {

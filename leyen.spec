@@ -1,8 +1,9 @@
 %define _debugsource_template %{nil}
 %define debug_package %{nil}
+%global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.1.3
+Version:        0.1.4
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -29,16 +30,24 @@ cargo build --release
 
 %install
 install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
-install -Dm644 com.github.leyen.desktop \
-    %{buildroot}%{_datadir}/applications/com.github.leyen.desktop
+install -Dm644 assets/usr/share/applications/%{app_id}.desktop \
+    %{buildroot}%{_datadir}/applications/%{app_id}.desktop
+install -Dm644 assets/usr/share/icons/hicolor/256x256/apps/%{app_id}.svg \
+    %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/%{app_id}.svg
 
 %files
 %license LICENSE
 %doc README.md
 %{_bindir}/%{name}
-%{_datadir}/applications/com.github.leyen.desktop
+%{_datadir}/applications/%{app_id}.desktop
+%{_datadir}/icons/hicolor/256x256/apps/%{app_id}.svg
 
 %changelog
+* Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.4-1
+- Add managed game and group icons with desktop asset packaging
+- Refine library sorting, running-game promotion, and card icon rendering
+- Make custom prefix overrides opt-in in add and edit dialogs
+
 * Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.3-1
 - Recheck runtime tracking, CLI flow, and packaging helper docs
 - Tighten download transport defaults for runtime fetches

@@ -13,7 +13,7 @@ mod proton;
 mod ui;
 mod umu;
 
-const APP_ID: &str = "com.github.leyen";
+const APP_ID: &str = "com.github.sachesi.leyen";
 
 fn main() -> glib::ExitCode {
     if let Some(exit_code) = cli::maybe_run_from_args() {

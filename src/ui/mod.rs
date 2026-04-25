@@ -6,8 +6,10 @@ pub mod settings;
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
+use std::path::Path;
 use std::rc::Rc;
 
+use image::imageops::FilterType;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -33,6 +35,8 @@ pub(crate) const MAIN_WINDOW_DEFAULT_WIDTH: i32 = 540;
 pub(crate) const MAIN_WINDOW_DEFAULT_HEIGHT: i32 = 640;
 pub(crate) const SECONDARY_WINDOW_DEFAULT_WIDTH: i32 = MAIN_WINDOW_DEFAULT_WIDTH - 20;
 pub(crate) const SECONDARY_WINDOW_DEFAULT_HEIGHT: i32 = MAIN_WINDOW_DEFAULT_HEIGHT - 20;
+const LIBRARY_ICON_SIZE: i32 = 48;
+const LIBRARY_ICON_CORNER_RADIUS: i32 = 7;
 
 #[derive(Clone)]
 pub struct LibraryUi {
@@ -186,22 +190,132 @@ fn finish_list_swap(list_stack: &gtk4::Stack, showing_primary: &Cell<bool>, visi
     showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
 }
 
-fn build_library_icon(icon_path: Option<std::path::PathBuf>, fallback_icon: &str) -> gtk4::Widget {
-    if let Some(path) = icon_path.filter(|path| path.is_file()) {
-        let picture = gtk4::Picture::for_filename(path);
-        picture.set_can_shrink(true);
-        picture.set_content_fit(gtk4::ContentFit::Contain);
-        picture.set_size_request(48, 48);
-        picture.set_valign(gtk4::Align::Start);
-        picture.upcast()
-    } else {
-        gtk4::Image::builder()
-            .icon_name(fallback_icon)
-            .pixel_size(48)
-            .valign(gtk4::Align::Start)
-            .build()
-            .upcast()
+pub(super) fn build_library_icon(
+    icon_path: Option<std::path::PathBuf>,
+    fallback_icon: &str,
+    valign: gtk4::Align,
+) -> gtk4::Widget {
+    let wrapper = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .halign(gtk4::Align::Center)
+        .valign(valign)
+        .build();
+    wrapper.set_size_request(LIBRARY_ICON_SIZE, LIBRARY_ICON_SIZE);
+    wrapper.set_overflow(gtk4::Overflow::Hidden);
+    wrapper.add_css_class("library-icon-frame");
+
+    if let Some(path) = icon_path.as_deref().filter(|path| path.is_file())
+        && let Some(icon) = build_scaled_art_icon(path)
+    {
+        wrapper.append(&icon);
+        return wrapper.upcast();
     }
+
+    if fallback_icon == "folder"
+        && let Some(icon) = build_themed_folder_icon()
+    {
+        wrapper.append(&icon);
+        return wrapper.upcast();
+    }
+
+    wrapper.append(
+        &gtk4::Image::builder()
+            .icon_name(fallback_icon)
+            .pixel_size(LIBRARY_ICON_SIZE)
+            .halign(gtk4::Align::Center)
+            .valign(gtk4::Align::Center)
+            .build(),
+    );
+    wrapper.upcast()
+}
+
+fn build_scaled_art_icon(path: &Path) -> Option<gtk4::Picture> {
+    let image = image::open(path).ok()?;
+    let image = crop_transparent_padding(image);
+    let image = image.resize(
+        (LIBRARY_ICON_SIZE * 2) as u32,
+        (LIBRARY_ICON_SIZE * 2) as u32,
+        FilterType::Lanczos3,
+    );
+    let rgba = image.to_rgba8();
+    let width = i32::try_from(rgba.width()).ok()?;
+    let height = i32::try_from(rgba.height()).ok()?;
+    let stride = usize::try_from(width).ok()?.checked_mul(4)?;
+    let bytes = gtk4::glib::Bytes::from_owned(rgba.into_raw());
+    let texture = gtk4::gdk::MemoryTexture::new(
+        width,
+        height,
+        gtk4::gdk::MemoryFormat::R8g8b8a8,
+        &bytes,
+        stride,
+    );
+
+    let picture = gtk4::Picture::for_paintable(&texture);
+    picture.set_content_fit(gtk4::ContentFit::Cover);
+    picture.set_can_shrink(true);
+    picture.set_size_request(LIBRARY_ICON_SIZE, LIBRARY_ICON_SIZE);
+    picture.set_halign(gtk4::Align::Fill);
+    picture.set_valign(gtk4::Align::Fill);
+    picture.add_css_class("library-icon-media");
+
+    Some(picture)
+}
+
+fn build_themed_folder_icon() -> Option<gtk4::Picture> {
+    let display = gtk4::gdk::Display::default()?;
+    let theme = gtk4::IconTheme::for_display(&display);
+    let icon = theme.lookup_icon(
+        "folder",
+        &[],
+        LIBRARY_ICON_SIZE * 2,
+        1,
+        gtk4::TextDirection::Ltr,
+        gtk4::IconLookupFlags::empty(),
+    );
+
+    let picture = gtk4::Picture::for_paintable(&icon);
+    picture.set_content_fit(gtk4::ContentFit::Cover);
+    picture.set_can_shrink(true);
+    picture.set_size_request(LIBRARY_ICON_SIZE, LIBRARY_ICON_SIZE);
+    picture.set_halign(gtk4::Align::Fill);
+    picture.set_valign(gtk4::Align::Fill);
+    picture.add_css_class("library-icon-media");
+
+    Some(picture)
+}
+
+fn crop_transparent_padding(image: image::DynamicImage) -> image::DynamicImage {
+    let Some((left, top, right, bottom)) = alpha_bounds(&image) else {
+        return image;
+    };
+
+    if left == 0 && top == 0 && right + 1 == image.width() && bottom + 1 == image.height() {
+        return image;
+    }
+
+    image.crop_imm(left, top, right - left + 1, bottom - top + 1)
+}
+
+fn alpha_bounds(image: &image::DynamicImage) -> Option<(u32, u32, u32, u32)> {
+    let rgba = image.to_rgba8();
+    let mut left = image.width();
+    let mut top = image.height();
+    let mut right = 0;
+    let mut bottom = 0;
+    let mut found = false;
+
+    for (x, y, pixel) in rgba.enumerate_pixels() {
+        if pixel.0[3] <= 8 {
+            continue;
+        }
+        found = true;
+        left = left.min(x);
+        top = top.min(y);
+        right = right.max(x);
+        bottom = bottom.max(y);
+    }
+
+    found.then_some((left, top, right, bottom))
 }
 
 fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
@@ -471,7 +585,7 @@ fn build_group_card(
         .margin_end(12)
         .build();
 
-    let icon = build_library_icon(group_icon_file(&group.id), "folder-symbolic");
+    let icon = build_library_icon(group_icon_file(&group.id), "folder", gtk4::Align::Start);
 
     let info_column = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
@@ -637,6 +751,7 @@ fn build_game_card(
     let icon = build_library_icon(
         game_icon_file(&game.id),
         "application-x-executable-symbolic",
+        gtk4::Align::Start,
     );
 
     let info_column = gtk4::Box::builder()
@@ -769,10 +884,12 @@ fn build_game_card(
 
 pub fn build_ui(app: &adw::Application) {
     let css = gtk4::CssProvider::new();
-    css.load_from_string(
-        "image.edit-icon { min-width: 0px; min-height: 0px; \
-         margin: 0px; padding: 0px; opacity: 0; }",
-    );
+    css.load_from_string(&format!(
+        "image.edit-icon {{ min-width: 0px; min-height: 0px; margin: 0px; padding: 0px; opacity: 0; }} \
+         .library-icon-frame {{ min-width: {0}px; min-height: {0}px; border-radius: {1}px; padding: 0px; margin: 0px; background: transparent; }} \
+         .library-icon-media {{ border-radius: {1}px; }}",
+        LIBRARY_ICON_SIZE, LIBRARY_ICON_CORNER_RADIUS
+    ));
     if let Some(display) = gtk4::gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
             &display,

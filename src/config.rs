@@ -3,8 +3,6 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-use serde::Deserialize;
-
 use crate::logging::apply_log_settings;
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
@@ -13,12 +11,6 @@ use crate::proton::check_or_install_protonge;
 
 const LEYEN_ID_PREFIX: &str = "ly-";
 const LEYEN_ID_DIGITS: usize = 4;
-
-#[derive(Debug, Deserialize)]
-struct LegacyGamesConfig {
-    #[serde(default)]
-    games: Vec<Game>,
-}
 
 pub fn get_config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -43,19 +35,9 @@ pub fn load_library() -> Vec<LibraryItem> {
         return Vec::new();
     };
 
-    let mut items = if let Ok(config) = toml::from_str::<GamesConfig>(&data) {
-        config.items
-    } else {
-        toml::from_str::<LegacyGamesConfig>(&data)
-            .map(|legacy| legacy.games.into_iter().map(LibraryItem::Game).collect())
-            .unwrap_or_default()
-    };
-
-    if normalize_library_leyen_ids(&mut items) {
-        save_library(&items);
-    }
-
-    items
+    toml::from_str::<GamesConfig>(&data)
+        .map(|config| config.items)
+        .unwrap_or_default()
 }
 
 pub fn save_library(items: &[LibraryItem]) {
@@ -250,35 +232,6 @@ fn collect_leyen_ids(items: &[LibraryItem]) -> HashSet<String> {
     }
 
     used_ids
-}
-
-fn normalize_library_leyen_ids(items: &mut [LibraryItem]) -> bool {
-    let mut used_ids = HashSet::new();
-    let mut changed = false;
-
-    for item in items {
-        match item {
-            LibraryItem::Game(game) => {
-                changed |= normalize_game_leyen_id(game, &mut used_ids);
-            }
-            LibraryItem::Group(group) => {
-                for game in &mut group.games {
-                    changed |= normalize_game_leyen_id(game, &mut used_ids);
-                }
-            }
-        }
-    }
-
-    changed
-}
-
-fn normalize_game_leyen_id(game: &mut Game, used_ids: &mut HashSet<String>) -> bool {
-    if is_valid_leyen_id(&game.leyen_id) && used_ids.insert(game.leyen_id.clone()) {
-        return false;
-    }
-
-    game.leyen_id = generate_unique_leyen_id_with_used(used_ids);
-    true
 }
 
 fn generate_unique_leyen_id_with_used(used_ids: &mut HashSet<String>) -> String {
@@ -584,30 +537,26 @@ mod tests {
     }
 
     #[test]
-    fn normalize_library_assigns_unique_leyen_ids() {
-        let mut duplicate = sample_game("grouped");
-        duplicate.leyen_id = "ly-1234".to_string();
+    fn generate_unique_leyen_id_avoids_existing_ids() {
+        let mut root = sample_game("root");
+        root.leyen_id = "ly-1234".to_string();
 
-        let mut items = vec![
-            LibraryItem::Game(sample_game("root")),
-            LibraryItem::Game(Game {
-                leyen_id: "ly-1234".to_string(),
-                ..sample_game("root-two")
-            }),
+        let mut grouped = sample_game("grouped");
+        grouped.leyen_id = "ly-5678".to_string();
+
+        let items = vec![
+            LibraryItem::Game(root),
             LibraryItem::Group(GameGroup {
                 id: "group-1".to_string(),
                 title: "Group".to_string(),
                 defaults: GroupLaunchDefaults::default(),
-                games: vec![duplicate],
+                games: vec![grouped],
             }),
         ];
 
-        assert!(normalize_library_leyen_ids(&mut items));
-
-        let mut seen = HashSet::new();
-        for game in flatten_games(&items) {
-            assert!(is_valid_leyen_id(&game.leyen_id));
-            assert!(seen.insert(game.leyen_id));
-        }
+        let generated = generate_unique_leyen_id(&items);
+        assert!(is_valid_leyen_id(&generated));
+        assert_ne!(generated, "ly-1234");
+        assert_ne!(generated, "ly-5678");
     }
 }

@@ -3,7 +3,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.1.4
+Version:        0.1.5
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -43,6 +43,11 @@ install -Dm644 assets/usr/share/icons/hicolor/256x256/apps/%{app_id}.svg \
 %{_datadir}/icons/hicolor/256x256/apps/%{app_id}.svg
 
 %changelog
+* Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.5-1
+- Add desktop integration for per-game menu launchers via `leyen run`
+- Store managed game and group icons under hicolor app icon paths
+- Add menu toggle actions to game settings tools
+
 * Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.4-1
 - Add managed game and group icons with desktop asset packaging
 - Refine library sorting, running-game promotion, and card icon rendering

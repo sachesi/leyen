@@ -6,7 +6,7 @@ use image::imageops::FilterType;
 use pelite::PeFile;
 use pelite::resources::FindError;
 
-const MANAGED_ICON_SIZE: u32 = 128;
+const MANAGED_ICON_SIZE: u32 = 256;
 const ICO_HEADER_LEN: usize = 6;
 const ICO_DIR_ENTRY_LEN: usize = 16;
 const MAX_ICON_DIR_ENTRIES: usize = 64;
@@ -25,11 +25,19 @@ const RT_GROUP_ICON: u32 = 14;
 const MAX_GROUP_ICON_ENTRIES: usize = 256;
 
 pub fn game_icon_path(game_id: &str) -> PathBuf {
-    managed_icons_dir_path().join(format!("game-{game_id}.png"))
+    managed_icons_dir_path().join(format!("{}.png", game_icon_name(game_id)))
 }
 
 pub fn group_icon_path(group_id: &str) -> PathBuf {
-    managed_icons_dir_path().join(format!("group-{group_id}.png"))
+    managed_icons_dir_path().join(format!("{}.png", group_icon_name(group_id)))
+}
+
+pub fn game_icon_name(game_id: &str) -> String {
+    format!("{}.game-{}", crate::APP_ID, game_id)
+}
+
+pub fn group_icon_name(group_id: &str) -> String {
+    format!("{}.group-{}", crate::APP_ID, group_id)
 }
 
 pub fn game_icon_file(game_id: &str) -> Option<PathBuf> {
@@ -107,7 +115,7 @@ fn ensure_icons_dir() -> Result<PathBuf, String> {
 
 fn managed_icons_dir_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".local/share/leyen/icons")
+    PathBuf::from(home).join(".local/share/icons/hicolor/256x256/apps")
 }
 
 fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<(), String> {
@@ -675,7 +683,10 @@ fn find_ico_blob(bytes: &[u8]) -> Option<&[u8]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_ico_from_group, decode_icon_blob, find_best_png_icon, find_ico_blob};
+    use super::{
+        build_ico_from_group, decode_icon_blob, find_best_png_icon, find_ico_blob, game_icon_path,
+        group_icon_path,
+    };
     use image::{ImageBuffer, Rgba};
     use std::collections::BTreeMap;
 
@@ -786,5 +797,18 @@ mod tests {
         assert!(rebuilt.is_some());
         let decoded = decode_icon_blob(&rebuilt.unwrap_or_default());
         assert!(decoded.is_some());
+    }
+
+    #[test]
+    fn managed_icon_paths_use_hicolor_app_directory() {
+        let game_path = game_icon_path("game-1");
+        let group_path = group_icon_path("group-1");
+        let game_rendered = game_path.to_string_lossy();
+        let group_rendered = group_path.to_string_lossy();
+
+        assert!(game_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
+        assert!(group_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
+        assert!(game_rendered.ends_with("com.github.sachesi.leyen.game-game-1.png"));
+        assert!(group_rendered.ends_with("com.github.sachesi.leyen.group-group-1.png"));
     }
 }

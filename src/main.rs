@@ -5,6 +5,7 @@ use libadwaita as adw;
 mod cli;
 mod config;
 mod deps;
+mod desktop;
 mod icons;
 mod launch;
 mod logging;

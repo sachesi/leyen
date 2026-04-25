@@ -15,10 +15,7 @@ use gtk4::gio;
 use gtk4::glib;
 
 use crate::config::load_library;
-use crate::launch::{
-    has_running_games, is_game_running, launch_game, running_game_elapsed, running_games_version,
-    stop_game,
-};
+use crate::launch::{launch_game, running_games_snapshot, running_games_version, stop_game};
 use crate::models::{Game, GameGroup, LibraryItem};
 use crate::umu::{UMU_DOWNLOADING, is_umu_run_available};
 
@@ -111,6 +108,25 @@ fn display_proton_name(proton: &str) -> String {
         .unwrap_or_else(|| proton.to_string())
 }
 
+type RunningGameMap = std::collections::HashMap<String, crate::launch::RunningGameSnapshot>;
+
+fn running_game_map() -> RunningGameMap {
+    running_games_snapshot()
+        .into_iter()
+        .map(|snapshot| (snapshot.game_id.clone(), snapshot))
+        .collect()
+}
+
+fn game_is_running(running_games: &RunningGameMap, game_id: &str) -> bool {
+    running_games.contains_key(game_id)
+}
+
+fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
+    running_games
+        .get(game_id)
+        .map(|snapshot| snapshot.elapsed_seconds)
+}
+
 fn format_group_defaults(group: &GameGroup) -> Option<String> {
     let mut parts = Vec::new();
 
@@ -130,7 +146,7 @@ fn format_group_defaults(group: &GameGroup) -> Option<String> {
 }
 
 fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
-    if is_game_running(&game.id) {
+    if game_is_running(&running_game_map(), &game.id) {
         match stop_game(&game.id) {
             Ok(true) => {
                 overlay.add_toast(adw::Toast::new(&format!("Stopping {}...", game.title)));
@@ -161,8 +177,11 @@ fn group_last_played(group: &GameGroup) -> u64 {
         .unwrap_or(0)
 }
 
-fn group_has_running_games(group: &GameGroup) -> bool {
-    group.games.iter().any(|game| is_game_running(&game.id))
+fn group_has_running_games(group: &GameGroup, running_games: &RunningGameMap) -> bool {
+    group
+        .games
+        .iter()
+        .any(|game| game_is_running(running_games, &game.id))
 }
 
 fn update_add_button_mode(ui: &LibraryUi) {
@@ -229,6 +248,7 @@ fn populate_root_view(
         return;
     }
 
+    let running_games = running_game_map();
     let mut sorted_items: Vec<LibraryItem> = items.clone();
     sorted_items.sort_by(|left, right| {
         let left_kind_rank = match left {
@@ -241,12 +261,12 @@ fn populate_root_view(
         };
 
         let left_running = match left {
-            LibraryItem::Game(game) => is_game_running(&game.id),
-            LibraryItem::Group(group) => group_has_running_games(group),
+            LibraryItem::Game(game) => game_is_running(&running_games, &game.id),
+            LibraryItem::Group(group) => group_has_running_games(group, &running_games),
         };
         let right_running = match right {
-            LibraryItem::Game(game) => is_game_running(&game.id),
-            LibraryItem::Group(group) => group_has_running_games(group),
+            LibraryItem::Game(game) => game_is_running(&running_games, &game.id),
+            LibraryItem::Group(group) => group_has_running_games(group, &running_games),
         };
 
         let left_last_played = match left {
@@ -272,12 +292,22 @@ fn populate_root_view(
     for item in &sorted_items {
         match item {
             LibraryItem::Game(game) => {
-                ui.root_list_box
-                    .append(&build_game_card(game, overlay, window, ui));
+                ui.root_list_box.append(&build_game_card(
+                    game,
+                    overlay,
+                    window,
+                    ui,
+                    &running_games,
+                ));
             }
             LibraryItem::Group(group) => {
-                ui.root_list_box
-                    .append(&build_group_card(group, overlay, window, ui));
+                ui.root_list_box.append(&build_group_card(
+                    group,
+                    overlay,
+                    window,
+                    ui,
+                    &running_games,
+                ));
             }
         }
     }
@@ -308,10 +338,11 @@ fn populate_group_view(
         return;
     }
 
+    let running_games = running_game_map();
     let mut games = group.games.clone();
     games.sort_by(|left, right| {
-        is_game_running(&right.id)
-            .cmp(&is_game_running(&left.id))
+        game_is_running(&running_games, &right.id)
+            .cmp(&game_is_running(&running_games, &left.id))
             .then_with(|| {
                 right
                     .last_played_epoch_seconds
@@ -322,7 +353,7 @@ fn populate_group_view(
 
     for game in &games {
         ui.group_list_box
-            .append(&build_game_card(game, overlay, window, ui));
+            .append(&build_game_card(game, overlay, window, ui, &running_games));
     }
 }
 
@@ -331,6 +362,7 @@ fn build_group_card(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
     ui: &LibraryUi,
+    running_games: &RunningGameMap,
 ) -> gtk4::Frame {
     let card = gtk4::Frame::builder()
         .hexpand(true)
@@ -393,11 +425,11 @@ fn build_group_card(
         );
     }
 
-    if group_has_running_games(group) {
+    if group_has_running_games(group, running_games) {
         let running_count = group
             .games
             .iter()
-            .filter(|game| is_game_running(&game.id))
+            .filter(|game| game_is_running(running_games, &game.id))
             .count();
         let running_label = gtk4::Label::builder()
             .label(format!("{} running", running_count))
@@ -484,8 +516,9 @@ fn build_game_card(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
     ui: &LibraryUi,
+    running_games: &RunningGameMap,
 ) -> gtk4::Frame {
-    let game_running = is_game_running(&game.id);
+    let game_running = game_is_running(running_games, &game.id);
     let card = gtk4::Frame::builder()
         .hexpand(true)
         .margin_top(4)
@@ -547,9 +580,7 @@ fn build_game_card(
                 .label(format!(
                     "Running for {}",
                     format_duration_brief(
-                        running_game_elapsed(&game.id)
-                            .map(|elapsed| elapsed.as_secs())
-                            .unwrap_or(0)
+                        running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
                     )
                 ))
                 .xalign(0.0)
@@ -864,7 +895,7 @@ pub fn build_ui(app: &adw::Application) {
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
         let current_version = running_games_version();
-        if current_version != running_state_version.get() || has_running_games() {
+        if current_version != running_state_version.get() || current_version != 0 {
             running_state_version.set(current_version);
             refresh_library_view(&ui_refresh, &overlay_refresh, &window_refresh);
         }
@@ -913,4 +944,9 @@ pub fn build_ui(app: &adw::Application) {
     window.add_action(&running_games_action);
 
     window.present();
+
+    let open_logs_on_start = crate::cli::take_open_logs_on_start();
+    if open_logs_on_start {
+        show_log_window(&window, None);
+    }
 }

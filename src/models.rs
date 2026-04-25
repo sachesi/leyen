@@ -17,6 +17,8 @@ pub struct Game {
     #[serde(default)]
     pub game_ntsync: bool,
     #[serde(default)]
+    pub leyen_id: String,
+    #[serde(default)]
     pub game_id: String,
     #[serde(default)]
     pub playtime_seconds: u64,

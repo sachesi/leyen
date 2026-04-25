@@ -5,8 +5,9 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::glib;
 
-use crate::config::load_games;
+use crate::config::load_library;
 use crate::logging::{clear_log_buffer, get_log_entries};
+use crate::models::LibraryItem;
 
 fn scroll_to_bottom(
     text_view: &gtk4::TextView,
@@ -52,13 +53,25 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
         .modal(false)
         .build();
 
-    let games = load_games();
+    let library = load_library();
     let mut filter_ids: Vec<Option<String>> = vec![None];
     let mut filter_labels: Vec<String> = vec!["All Logs".to_string()];
-    for game in &games {
-        filter_ids.push(Some(game.id.clone()));
-        filter_labels.push(game.title.clone());
+
+    for item in &library {
+        match item {
+            LibraryItem::Game(game) => {
+                filter_ids.push(Some(game.id.clone()));
+                filter_labels.push(game.title.clone());
+            }
+            LibraryItem::Group(group) => {
+                for game in &group.games {
+                    filter_ids.push(Some(game.id.clone()));
+                    filter_labels.push(format!("{}: {}", group.title, game.title));
+                }
+            }
+        }
     }
+
     let filter_refs: Vec<&str> = filter_labels.iter().map(|label| label.as_str()).collect();
     let filter_model = gtk4::StringList::new(&filter_refs);
 

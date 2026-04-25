@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -9,6 +10,9 @@ use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
 };
 use crate::proton::check_or_install_protonge;
+
+const LEYEN_ID_PREFIX: &str = "ly-";
+const LEYEN_ID_DIGITS: usize = 4;
 
 #[derive(Debug, Deserialize)]
 struct LegacyGamesConfig {
@@ -39,13 +43,19 @@ pub fn load_library() -> Vec<LibraryItem> {
         return Vec::new();
     };
 
-    if let Ok(config) = toml::from_str::<GamesConfig>(&data) {
-        return config.items;
+    let mut items = if let Ok(config) = toml::from_str::<GamesConfig>(&data) {
+        config.items
+    } else {
+        toml::from_str::<LegacyGamesConfig>(&data)
+            .map(|legacy| legacy.games.into_iter().map(LibraryItem::Game).collect())
+            .unwrap_or_default()
+    };
+
+    if normalize_library_leyen_ids(&mut items) {
+        save_library(&items);
     }
 
-    toml::from_str::<LegacyGamesConfig>(&data)
-        .map(|legacy| legacy.games.into_iter().map(LibraryItem::Game).collect())
-        .unwrap_or_default()
+    items
 }
 
 pub fn save_library(items: &[LibraryItem]) {
@@ -99,6 +109,33 @@ pub fn find_game_and_group<'a>(
     None
 }
 
+pub fn find_game_by_leyen_id<'a>(
+    items: &'a [LibraryItem],
+    leyen_id: &str,
+) -> Option<(&'a Game, Option<&'a GameGroup>)> {
+    let requested = leyen_id.trim();
+
+    for item in items {
+        match item {
+            LibraryItem::Game(game) if game.leyen_id.eq_ignore_ascii_case(requested) => {
+                return Some((game, None));
+            }
+            LibraryItem::Group(group) => {
+                if let Some(game) = group
+                    .games
+                    .iter()
+                    .find(|game| game.leyen_id.eq_ignore_ascii_case(requested))
+                {
+                    return Some((game, Some(group)));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 pub fn format_launch_slug(title: &str) -> String {
     let mut slug = String::new();
     let mut needs_separator = false;
@@ -132,6 +169,19 @@ pub fn normalize_game_id_from_executable(exe_path: &str) -> String {
         .file_name()
         .map(|name| name.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| exe_path.to_lowercase())
+}
+
+pub fn is_valid_leyen_id(leyen_id: &str) -> bool {
+    let Some(digits) = leyen_id.trim().strip_prefix(LEYEN_ID_PREFIX) else {
+        return false;
+    };
+
+    digits.len() == LEYEN_ID_DIGITS && digits.chars().all(|digit| digit.is_ascii_digit())
+}
+
+pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
+    let mut used_ids = collect_leyen_ids(items);
+    generate_unique_leyen_id_with_used(&mut used_ids)
 }
 
 pub fn effective_game_id(game: &Game) -> String {
@@ -170,15 +220,86 @@ pub fn game_parent_group_id(items: &[LibraryItem], game_id: &str) -> Option<Opti
     for item in items {
         match item {
             LibraryItem::Game(game) if game.id == game_id => return Some(None),
-            LibraryItem::Group(group) => {
-                if group.games.iter().any(|game| game.id == game_id) {
-                    return Some(Some(group.id.clone()));
-                }
+            LibraryItem::Group(group) if group.games.iter().any(|game| game.id == game_id) => {
+                return Some(Some(group.id.clone()));
             }
             _ => {}
         }
     }
     None
+}
+
+fn collect_leyen_ids(items: &[LibraryItem]) -> HashSet<String> {
+    let mut used_ids = HashSet::new();
+
+    for item in items {
+        match item {
+            LibraryItem::Game(game) => {
+                if is_valid_leyen_id(&game.leyen_id) {
+                    used_ids.insert(game.leyen_id.clone());
+                }
+            }
+            LibraryItem::Group(group) => {
+                for game in &group.games {
+                    if is_valid_leyen_id(&game.leyen_id) {
+                        used_ids.insert(game.leyen_id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    used_ids
+}
+
+fn normalize_library_leyen_ids(items: &mut [LibraryItem]) -> bool {
+    let mut used_ids = HashSet::new();
+    let mut changed = false;
+
+    for item in items {
+        match item {
+            LibraryItem::Game(game) => {
+                changed |= normalize_game_leyen_id(game, &mut used_ids);
+            }
+            LibraryItem::Group(group) => {
+                for game in &mut group.games {
+                    changed |= normalize_game_leyen_id(game, &mut used_ids);
+                }
+            }
+        }
+    }
+
+    changed
+}
+
+fn normalize_game_leyen_id(game: &mut Game, used_ids: &mut HashSet<String>) -> bool {
+    if is_valid_leyen_id(&game.leyen_id) && used_ids.insert(game.leyen_id.clone()) {
+        return false;
+    }
+
+    game.leyen_id = generate_unique_leyen_id_with_used(used_ids);
+    true
+}
+
+fn generate_unique_leyen_id_with_used(used_ids: &mut HashSet<String>) -> String {
+    for _ in 0..20_000 {
+        let candidate = format!(
+            "{LEYEN_ID_PREFIX}{:04}",
+            uuid::Uuid::new_v4().as_u128() % 10_000
+        );
+        if used_ids.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+
+    for value in 0..10_000 {
+        let candidate = format!("{LEYEN_ID_PREFIX}{value:04}");
+        if used_ids.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+
+    unreachable!("exhausted all available Leyen IDs");
 }
 
 pub fn replace_game(items: &mut [LibraryItem], updated_game: &Game) -> bool {
@@ -333,6 +454,10 @@ fn find_game_mut<'a>(items: &'a mut [LibraryItem], game_id: &str) -> Option<&'a 
 }
 
 pub fn load_settings() -> GlobalSettings {
+    load_settings_with_auto_install(true)
+}
+
+pub fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSettings {
     let path = get_settings_path();
     let mut settings: GlobalSettings = if let Ok(data) = fs::read_to_string(&path) {
         toml::from_str(&data).unwrap_or_default()
@@ -344,7 +469,7 @@ pub fn load_settings() -> GlobalSettings {
     if settings.default_prefix_path.is_empty() {
         settings.default_prefix_path = fresh.default_prefix_path;
     }
-    if settings.available_proton_versions.len() <= 1 {
+    if auto_install_proton && settings.available_proton_versions.len() <= 1 {
         check_or_install_protonge();
     }
     save_settings(&settings);
@@ -378,26 +503,26 @@ pub fn detect_proton_versions() -> GlobalSettings {
     }
 
     let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
-    if steam_compat.exists() {
-        if let Ok(entries) = fs::read_dir(steam_compat) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    versions.push(entry.path().to_string_lossy().to_string());
-                }
+    if steam_compat.exists()
+        && let Ok(entries) = fs::read_dir(steam_compat)
+    {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                versions.push(entry.path().to_string_lossy().to_string());
             }
         }
     }
 
     let steam_root = PathBuf::from(format!("{}/.steam/steam/steamapps/common", home));
-    if steam_root.exists() {
-        if let Ok(entries) = fs::read_dir(steam_root) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir()
-                    && let Some(name) = entry.file_name().to_str()
-                    && name.contains("Proton")
-                {
-                    versions.push(entry.path().to_string_lossy().to_string());
-                }
+    if steam_root.exists()
+        && let Ok(entries) = fs::read_dir(steam_root)
+    {
+        for entry in entries.flatten() {
+            if entry.path().is_dir()
+                && let Some(name) = entry.file_name().to_str()
+                && name.contains("Proton")
+            {
+                versions.push(entry.path().to_string_lossy().to_string());
             }
         }
     }
@@ -420,5 +545,68 @@ pub fn detect_proton_versions() -> GlobalSettings {
         log_errors: true,
         log_warnings: false,
         log_operations: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_game(name: &str) -> Game {
+        Game {
+            id: format!("internal-{name}"),
+            title: name.to_string(),
+            exe_path: format!("/tmp/{name}.exe"),
+            prefix_path: String::new(),
+            proton: "Default".to_string(),
+            launch_args: String::new(),
+            force_mangohud: false,
+            force_gamemode: false,
+            game_wayland: false,
+            game_wow64: false,
+            game_ntsync: false,
+            leyen_id: String::new(),
+            game_id: String::new(),
+            playtime_seconds: 0,
+            last_played_epoch_seconds: 0,
+            last_run_duration_seconds: 0,
+            last_run_status: String::new(),
+        }
+    }
+
+    #[test]
+    fn valid_leyen_id_matches_expected_shape() {
+        assert!(is_valid_leyen_id("ly-2534"));
+        assert!(!is_valid_leyen_id("ly-253"));
+        assert!(!is_valid_leyen_id("ly-25a4"));
+        assert!(!is_valid_leyen_id("game-2534"));
+    }
+
+    #[test]
+    fn normalize_library_assigns_unique_leyen_ids() {
+        let mut duplicate = sample_game("grouped");
+        duplicate.leyen_id = "ly-1234".to_string();
+
+        let mut items = vec![
+            LibraryItem::Game(sample_game("root")),
+            LibraryItem::Game(Game {
+                leyen_id: "ly-1234".to_string(),
+                ..sample_game("root-two")
+            }),
+            LibraryItem::Group(GameGroup {
+                id: "group-1".to_string(),
+                title: "Group".to_string(),
+                defaults: GroupLaunchDefaults::default(),
+                games: vec![duplicate],
+            }),
+        ];
+
+        assert!(normalize_library_leyen_ids(&mut items));
+
+        let mut seen = HashSet::new();
+        for game in flatten_games(&items) {
+            assert!(is_valid_leyen_id(&game.leyen_id));
+            assert!(seen.insert(game.leyen_id));
+        }
     }
 }

@@ -136,7 +136,7 @@ pub fn show_dependencies_dialog(
 
             let row = adw::ActionRow::builder()
                 .title(entry.name)
-                .subtitle(&escape_dep_markup(entry.description))
+                .subtitle(escape_dep_markup(entry.description))
                 .build();
 
             let spinner = gtk4::Spinner::builder()
@@ -363,7 +363,7 @@ pub fn show_dependencies_dialog(
                     };
 
                     let confirm = gtk4::AlertDialog::builder()
-                        .message(&format!("Remove '{}'?", dep_id))
+                        .message(format!("Remove '{}'?", dep_id))
                         .detail(detail)
                         .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
                         .cancel_button(0)

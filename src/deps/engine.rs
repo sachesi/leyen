@@ -5,11 +5,11 @@ use std::process::Stdio;
 
 use gtk4::glib;
 
-use crate::logging::{leyen_log, LOG_OPERATIONS};
-use crate::umu::{get_umu_run_path, is_umu_run_available, UMU_DOWNLOADING};
+use crate::logging::{LOG_OPERATIONS, leyen_log};
+use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
-use super::get_deps_cache_dir;
 use super::catalog::{get_dep_steps, get_dep_uninstall_steps};
+use super::get_deps_cache_dir;
 
 // ── Data Structures ──────────────────────────────────────────────────────────
 
@@ -122,7 +122,10 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
             for pair in extra_env.split_whitespace() {
                 if let Some(eq) = pair.find('=') {
@@ -155,13 +158,12 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
-            let mut run_args = vec![
-                "msiexec.exe".to_string(),
-                "/i".to_string(),
-                msi_path,
-            ];
+            let mut run_args = vec!["msiexec.exe".to_string(), "/i".to_string(), msi_path];
             for arg in args.split_whitespace() {
                 run_args.push(arg.to_string());
             }
@@ -209,7 +211,10 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regedit.exe", "/S", &reg_path]);
             if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -233,7 +238,10 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regsvr32.exe", "/s", dll]);
             if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -254,13 +262,31 @@ pub fn execute_dep_step(
         } => {
             let archive_path = format!("{}/{}", cache_dir, archive_name);
             let dest_path = format!("{}/{}", cache_dir, dest_subdir);
-            fs::create_dir_all(&dest_path)
-                .map_err(|e| format!("Failed to create extraction directory '{}': {}", dest_path, e))?;
+            fs::create_dir_all(&dest_path).map_err(|e| {
+                format!(
+                    "Failed to create extraction directory '{}': {}",
+                    dest_path, e
+                )
+            })?;
             let mut cmd = std::process::Command::new("tar");
             if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
-                cmd.args(["-I", "zstd", "-xf", &archive_path, "-C", &dest_path, "--strip-components=1"]);
+                cmd.args([
+                    "-I",
+                    "zstd",
+                    "-xf",
+                    &archive_path,
+                    "-C",
+                    &dest_path,
+                    "--strip-components=1",
+                ]);
             } else {
-                cmd.args(["-xf", &archive_path, "-C", &dest_path, "--strip-components=1"]);
+                cmd.args([
+                    "-xf",
+                    &archive_path,
+                    "-C",
+                    &dest_path,
+                    "--strip-components=1",
+                ]);
             }
             let status = cmd
                 .status()
@@ -284,8 +310,7 @@ pub fn execute_dep_step(
                 let dll = dll.trim();
                 let src = format!("{}/{}.dll", src_dir, dll);
                 let dst = format!("{}/{}.dll", dst_dir, dll);
-                fs::copy(&src, &dst)
-                    .map_err(|e| format!("Failed to copy {}.dll: {}", dll, e))?;
+                fs::copy(&src, &dst).map_err(|e| format!("Failed to copy {}.dll: {}", dll, e))?;
             }
             Ok(())
         }
@@ -298,7 +323,10 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["winetricks", "-q", verb]);
             if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -320,7 +348,10 @@ pub fn execute_dep_step(
                 let path = format!("{}/{}.dll", dst_dir, dll);
                 if let Err(e) = fs::remove_file(&path) {
                     if e.kind() != std::io::ErrorKind::NotFound {
-                        leyen_log("WARN ", &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e));
+                        leyen_log(
+                            "WARN ",
+                            &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e),
+                        );
                     }
                 }
             }
@@ -355,7 +386,10 @@ pub fn execute_dep_step(
                 cmd.env("PROTONPATH", proton_path);
             }
             cmd.env("GAMEID", "leyen-dep-install");
-            cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+            cmd.env(
+                "WINEDLLOVERRIDES",
+                "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+            );
             cmd.env("WINEDEBUG", "fixme-all");
             cmd.args(["regedit.exe", "/S", &reg_path]);
             if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -422,37 +456,63 @@ pub fn install_dep_async(
     let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
     let on_progress = std::rc::Rc::new(on_progress);
 
-    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
-        let mut q = queue.lock().unwrap();
-        while let Some(msg) = q.pop_front() {
-            match msg {
-                DepInstallMsg::Progress { step, total, description } => {
-                    on_progress(step, total, description);
-                }
-                DepInstallMsg::Done => {
-                    if let Some(f) = on_finish.borrow_mut().take() { f(true, None); }
-                    return glib::ControlFlow::Break;
-                }
-                DepInstallMsg::Failed(err) => {
-                    if let Some(f) = on_finish.borrow_mut().take() { f(false, Some(err)); }
-                    return glib::ControlFlow::Break;
+    glib::timeout_add_local(
+        std::time::Duration::from_millis(DEP_ASYNC_POLL_MS),
+        move || {
+            let mut q = queue.lock().unwrap();
+            while let Some(msg) = q.pop_front() {
+                match msg {
+                    DepInstallMsg::Progress {
+                        step,
+                        total,
+                        description,
+                    } => {
+                        on_progress(step, total, description);
+                    }
+                    DepInstallMsg::Done => {
+                        if let Some(f) = on_finish.borrow_mut().take() {
+                            f(true, None);
+                        }
+                        return glib::ControlFlow::Break;
+                    }
+                    DepInstallMsg::Failed(err) => {
+                        if let Some(f) = on_finish.borrow_mut().take() {
+                            f(false, Some(err));
+                        }
+                        return glib::ControlFlow::Break;
+                    }
                 }
             }
-        }
-        glib::ControlFlow::Continue
-    });
+            glib::ControlFlow::Continue
+        },
+    );
 
     std::thread::spawn(move || {
-        leyen_log("INFO ", &format!("[dep:{}] starting install ({} steps)", dep_id_t, total));
+        leyen_log(
+            "INFO ",
+            &format!("[dep:{}] starting install ({} steps)", dep_id_t, total),
+        );
         for (i, step) in steps.iter().enumerate() {
-            leyen_log("INFO ", &format!("[dep:{}] step {}/{}: {}", dep_id_t, i + 1, total, step.description));
+            leyen_log(
+                "INFO ",
+                &format!(
+                    "[dep:{}] step {}/{}: {}",
+                    dep_id_t,
+                    i + 1,
+                    total,
+                    step.description
+                ),
+            );
             queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                 step: i + 1,
                 total,
                 description: step.description.to_string(),
             });
             if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
-                leyen_log("ERROR", &format!("[dep:{}] step {} failed: {}", dep_id_t, i + 1, e));
+                leyen_log(
+                    "ERROR",
+                    &format!("[dep:{}] step {} failed: {}", dep_id_t, i + 1, e),
+                );
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }
@@ -504,37 +564,63 @@ pub fn uninstall_dep_async(
     let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
     let on_progress = std::rc::Rc::new(on_progress);
 
-    glib::timeout_add_local(std::time::Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
-        let mut q = queue.lock().unwrap();
-        while let Some(msg) = q.pop_front() {
-            match msg {
-                DepInstallMsg::Progress { step, total, description } => {
-                    on_progress(step, total, description);
-                }
-                DepInstallMsg::Done => {
-                    if let Some(f) = on_finish.borrow_mut().take() { f(true, None); }
-                    return glib::ControlFlow::Break;
-                }
-                DepInstallMsg::Failed(err) => {
-                    if let Some(f) = on_finish.borrow_mut().take() { f(false, Some(err)); }
-                    return glib::ControlFlow::Break;
+    glib::timeout_add_local(
+        std::time::Duration::from_millis(DEP_ASYNC_POLL_MS),
+        move || {
+            let mut q = queue.lock().unwrap();
+            while let Some(msg) = q.pop_front() {
+                match msg {
+                    DepInstallMsg::Progress {
+                        step,
+                        total,
+                        description,
+                    } => {
+                        on_progress(step, total, description);
+                    }
+                    DepInstallMsg::Done => {
+                        if let Some(f) = on_finish.borrow_mut().take() {
+                            f(true, None);
+                        }
+                        return glib::ControlFlow::Break;
+                    }
+                    DepInstallMsg::Failed(err) => {
+                        if let Some(f) = on_finish.borrow_mut().take() {
+                            f(false, Some(err));
+                        }
+                        return glib::ControlFlow::Break;
+                    }
                 }
             }
-        }
-        glib::ControlFlow::Continue
-    });
+            glib::ControlFlow::Continue
+        },
+    );
 
     std::thread::spawn(move || {
-        leyen_log("INFO ", &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total));
+        leyen_log(
+            "INFO ",
+            &format!("[dep:{}] starting uninstall ({} steps)", dep_id_t, total),
+        );
         for (i, step) in steps.iter().enumerate() {
-            leyen_log("INFO ", &format!("[dep:{}] uninstall step {}/{}: {}", dep_id_t, i + 1, total, step.description));
+            leyen_log(
+                "INFO ",
+                &format!(
+                    "[dep:{}] uninstall step {}/{}: {}",
+                    dep_id_t,
+                    i + 1,
+                    total,
+                    step.description
+                ),
+            );
             queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                 step: i + 1,
                 total,
                 description: step.description.to_string(),
             });
             if let Err(e) = execute_dep_step(step, &prefix_t, &proton_t, &cache_dir) {
-                leyen_log("ERROR", &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e));
+                leyen_log(
+                    "ERROR",
+                    &format!("[dep:{}] uninstall step {} failed: {}", dep_id_t, i + 1, e),
+                );
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Failed(e));
                 return;
             }

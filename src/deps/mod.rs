@@ -1,9 +1,7 @@
 mod catalog;
 mod engine;
 
-pub use catalog::{
-    DEP_CATALOG, DEP_CATEGORY_ORDER, DepCatalogEntry, get_dep_uninstall_steps,
-};
+pub use catalog::{DEP_CATALOG, DEP_CATEGORY_ORDER, DepCatalogEntry, get_dep_uninstall_steps};
 pub use engine::{install_dep_async, uninstall_dep_async};
 
 use std::collections::HashSet;

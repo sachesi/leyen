@@ -2,18 +2,22 @@ use std::sync::Mutex;
 
 use crate::models::GlobalSettings;
 
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub line: String,
+    pub game_id: Option<String>,
+}
+
 /// Atomic flags mirroring GlobalSettings.log_* so background threads can log
 /// without reading the settings file on every message.
-pub static LOG_ERRORS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true);
-pub static LOG_WARNINGS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static LOG_ERRORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub static LOG_WARNINGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static LOG_OPERATIONS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// In-memory buffer that stores every log line regardless of the per-level
 /// flags.  The log window reads from this buffer.
-static LOG_BUFFER: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static LOG_BUFFER: Mutex<Vec<LogEntry>> = Mutex::new(Vec::new());
 
 pub fn apply_log_settings(s: &GlobalSettings) {
     use std::sync::atomic::Ordering::Relaxed;
@@ -23,7 +27,7 @@ pub fn apply_log_settings(s: &GlobalSettings) {
 }
 
 /// Return a snapshot of every log line captured so far.
-pub fn get_log_buffer() -> Vec<String> {
+pub fn get_log_entries() -> Vec<LogEntry> {
     LOG_BUFFER.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
@@ -38,18 +42,32 @@ pub fn clear_log_buffer() {
 /// in-memory buffer so the log window can display it.
 /// Level: "ERROR" | "WARN " | "INFO "
 pub fn leyen_log(level: &str, message: &str) {
+    log_impl(level, message, None);
+}
+
+pub fn leyen_game_log(game_id: &str, level: &str, message: &str) {
+    log_impl(level, message, Some(game_id));
+}
+
+fn log_impl(level: &str, message: &str, game_id: Option<&str>) {
     use std::sync::atomic::Ordering::Relaxed;
-    let line = format!("[LEYEN] [{level}] {message}");
+    let line = match game_id {
+        Some(game_id) => format!("[LEYEN] [{level}] [game:{game_id}] {message}"),
+        None => format!("[LEYEN] [{level}] {message}"),
+    };
 
     // Always append to the buffer so the log window shows everything.
     if let Ok(mut buf) = LOG_BUFFER.lock() {
-        buf.push(line.clone());
+        buf.push(LogEntry {
+            line: line.clone(),
+            game_id: game_id.map(str::to_string),
+        });
     }
 
     let enabled = match level {
         "ERROR" => LOG_ERRORS.load(Relaxed),
         "WARN " => LOG_WARNINGS.load(Relaxed),
-        _       => LOG_OPERATIONS.load(Relaxed),
+        _ => LOG_OPERATIONS.load(Relaxed),
     };
     if enabled {
         eprintln!("{line}");

@@ -439,12 +439,10 @@ fn d3dcompiler47_steps() -> Vec<DepStep> {
 }
 
 fn xact_steps() -> Vec<DepStep> {
-    vec![
-        DepStep {
-            description: "Installing XACT audio runtime via winetricks…",
-            action: DepStepAction::RunWinetricks { verb: "xact" },
-        },
-    ]
+    vec![DepStep {
+        description: "Installing XACT audio runtime via winetricks…",
+        action: DepStepAction::RunWinetricks { verb: "xact" },
+    }]
 }
 
 // ── Uninstall step functions ──────────────────────────────────────────────────
@@ -543,18 +541,15 @@ fn dotnet_uninstall_steps() -> Vec<DepStep> {
 }
 
 fn directx_uninstall_steps() -> Vec<DepStep> {
-    const D3DX9_DLLS: &str =
-        "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
+    const D3DX9_DLLS: &str = "d3dx9_24,d3dx9_25,d3dx9_26,d3dx9_27,d3dx9_28,d3dx9_29,d3dx9_30,\
          d3dx9_31,d3dx9_32,d3dx9_33,d3dx9_34,d3dx9_35,d3dx9_36,d3dx9_37,\
          d3dx9_38,d3dx9_39,d3dx9_40,d3dx9_41,d3dx9_42,d3dx9_43";
 
-    const D3DCOMP_DLLS: &str =
-        "d3dcompiler_33,d3dcompiler_34,d3dcompiler_35,d3dcompiler_36,\
+    const D3DCOMP_DLLS: &str = "d3dcompiler_33,d3dcompiler_34,d3dcompiler_35,d3dcompiler_36,\
          d3dcompiler_37,d3dcompiler_38,d3dcompiler_39,d3dcompiler_40,\
          d3dcompiler_41,d3dcompiler_42,d3dcompiler_43,d3dcompiler_46";
 
-    const D3DX10_DLLS: &str =
-        "d3dx10,d3dx10_33,d3dx10_34,d3dx10_35,d3dx10_36,d3dx10_37,\
+    const D3DX10_DLLS: &str = "d3dx10,d3dx10_33,d3dx10_34,d3dx10_35,d3dx10_36,d3dx10_37,\
          d3dx10_38,d3dx10_39,d3dx10_40,d3dx10_41,d3dx10_42,d3dx10_43";
 
     const D3DX11_DLLS: &str = "d3dx11_43";

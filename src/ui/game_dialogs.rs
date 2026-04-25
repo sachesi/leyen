@@ -12,6 +12,10 @@ use crate::config::{
     load_library, load_settings, normalize_game_id_from_executable, remove_game, remove_group,
     replace_game, replace_group, save_library, suggest_prefix_path,
 };
+use crate::desktop::{
+    create_game_desktop_entry, desktop_entry_exists, remove_game_desktop_entry,
+    update_game_desktop_entry_if_present, update_group_desktop_entries_if_present,
+};
 use crate::icons::{
     clear_game_icon, clear_group_icon, extract_game_icon, game_icon_file, group_icon_file,
     save_custom_game_icon, save_custom_group_icon,
@@ -555,6 +559,7 @@ pub fn show_add_library_item_dialog(
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
     let dialog_clone = dialog.clone();
+    let current_group_for_desktop = current_group.clone();
     let generated_leyen_id = generated_leyen_id.clone();
     add_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
@@ -649,11 +654,21 @@ pub fn show_add_library_item_dialog(
                 last_run_duration_seconds: 0,
                 last_run_status: String::new(),
             };
+            let desktop_game = game.clone();
             if !insert_game(&mut items, current_group_id.as_deref(), game) {
                 clear_game_icon(&game_id);
                 overlay_clone
                     .add_toast(adw::Toast::new("Failed to add game to the selected group"));
                 return;
+            }
+
+            if let Err(err) =
+                create_game_desktop_entry(&desktop_game, current_group_for_desktop.as_ref())
+            {
+                icon_notice = Some(match icon_notice {
+                    Some(existing) => format!("{existing} Failed to create menu entry: {err}"),
+                    None => format!("Failed to create menu entry: {err}"),
+                });
             }
         }
 
@@ -905,8 +920,20 @@ pub fn show_edit_group_dialog(
             },
         ) {
             save_library(&items);
+            let desktop_notice = find_group(&items, &group_id)
+                .cloned()
+                .and_then(|updated_group| {
+                    update_group_desktop_entries_if_present(&updated_group)
+                        .err()
+                        .map(|err| format!("Failed to update menu entries: {err}"))
+                });
             refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-            overlay_clone.add_toast(adw::Toast::new("Group updated successfully"));
+            let success_message = if let Some(desktop_notice) = desktop_notice {
+                format!("Group updated successfully. {desktop_notice}")
+            } else {
+                "Group updated successfully".to_string()
+            };
+            overlay_clone.add_toast(adw::Toast::new(&success_message));
             dialog_clone.destroy();
         }
     });
@@ -1132,6 +1159,15 @@ pub fn show_edit_game_dialog(
 
     let tools = adw::PreferencesGroup::builder().title("Tools").build();
     let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    deps_btn.set_margin_bottom(6);
+    let menu_btn = gtk4::Button::builder()
+        .label(if desktop_entry_exists(&game.leyen_id) {
+            "Remove from menu"
+        } else {
+            "Add to menu"
+        })
+        .build();
+    menu_btn.set_margin_top(6);
     let deps_prefix = if !game.prefix_path.trim().is_empty() {
         game.prefix_path.clone()
     } else if let Some(group) = current_parent_group.as_ref() {
@@ -1165,6 +1201,33 @@ pub fn show_edit_game_dialog(
         );
     });
     tools.add(&deps_btn);
+    let overlay_clone_menu = overlay.clone();
+    let game_for_menu = game.clone();
+    let group_for_menu = current_parent_group.clone();
+    menu_btn.connect_clicked(move |button| {
+        if desktop_entry_exists(&game_for_menu.leyen_id) {
+            match remove_game_desktop_entry(&game_for_menu.leyen_id) {
+                Ok(_) => {
+                    button.set_label("Add to menu");
+                    overlay_clone_menu.add_toast(adw::Toast::new("Removed from menu"));
+                }
+                Err(err) => overlay_clone_menu.add_toast(adw::Toast::new(&format!(
+                    "Failed to remove menu entry: {err}"
+                ))),
+            }
+        } else {
+            match create_game_desktop_entry(&game_for_menu, group_for_menu.as_ref()) {
+                Ok(_) => {
+                    button.set_label("Remove from menu");
+                    overlay_clone_menu.add_toast(adw::Toast::new("Added to menu"));
+                }
+                Err(err) => overlay_clone_menu.add_toast(adw::Toast::new(&format!(
+                    "Failed to create menu entry: {err}"
+                ))),
+            }
+        }
+    });
+    tools.add(&menu_btn);
 
     page.add(&game_group);
     page.add(&env_group);
@@ -1356,11 +1419,22 @@ pub fn show_edit_game_dialog(
         let mut items = load_library();
         if replace_game(&mut items, &edited_game) {
             save_library(&items);
+            let desktop_notice =
+                update_game_desktop_entry_if_present(&edited_game, current_parent_group.as_ref())
+                    .err()
+                    .map(|err| format!("Failed to update menu entry: {err}"));
             refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-            let success_message = if let Some(icon_notice) = icon_notice {
-                format!("Game updated successfully. {}", icon_notice)
-            } else {
+            let mut notices = Vec::new();
+            if let Some(icon_notice) = icon_notice {
+                notices.push(icon_notice);
+            }
+            if let Some(desktop_notice) = desktop_notice {
+                notices.push(desktop_notice);
+            }
+            let success_message = if notices.is_empty() {
                 "Game updated successfully".to_string()
+            } else {
+                format!("Game updated successfully. {}", notices.join(" "))
             };
             overlay_clone.add_toast(adw::Toast::new(&success_message));
             dialog_clone.destroy();
@@ -1418,13 +1492,20 @@ pub fn show_delete_confirmation(
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
         if let Ok(1) = result {
             let mut items = load_library();
+            let mut delete_notice = None;
             let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                 clear_game_icon(&game.id);
+                if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
+                    delete_notice = Some(format!("Failed to remove menu entry: {err}"));
+                }
                 Some(game.title)
             } else if let Some(group) = remove_group(&mut items, &item_id) {
                 clear_group_icon(&group.id);
                 for game in &group.games {
                     clear_game_icon(&game.id);
+                    if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
+                        delete_notice = Some(format!("Failed to remove a menu entry: {err}"));
+                    }
                 }
                 Some(group.title)
             } else {
@@ -1434,10 +1515,12 @@ pub fn show_delete_confirmation(
             if let Some(title) = deleted {
                 save_library(&items);
                 refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-                overlay_clone.add_toast(adw::Toast::new(&format!(
-                    "'{}' deleted successfully",
-                    title
-                )));
+                let message = if let Some(delete_notice) = delete_notice {
+                    format!("'{}' deleted successfully. {}", title, delete_notice)
+                } else {
+                    format!("'{}' deleted successfully", title)
+                };
+                overlay_clone.add_toast(adw::Toast::new(&message));
             }
         }
     });

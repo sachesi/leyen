@@ -5,6 +5,7 @@ use gtk4::gio;
 use std::fs;
 use std::path::PathBuf;
 
+use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::config::{load_settings, save_settings};
 use crate::umu::get_umu_runtime_dir;
 
@@ -15,8 +16,8 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
         .transient_for(parent)
         .modal(true)
         .search_enabled(true)
-        .default_width(700)
-        .default_height(500)
+        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .build();
 
     let page = adw::PreferencesPage::builder()

@@ -11,6 +11,8 @@ pub struct Game {
     pub force_mangohud: bool,
     pub force_gamemode: bool,
     #[serde(default)]
+    pub custom_icon: bool,
+    #[serde(default)]
     pub game_wayland: bool,
     #[serde(default)]
     pub game_wow64: bool,

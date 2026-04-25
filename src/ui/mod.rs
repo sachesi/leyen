@@ -13,8 +13,10 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::gio;
 use gtk4::glib;
+use gtk4::prelude::Cast;
 
 use crate::config::load_library;
+use crate::icons::{game_icon_file, group_icon_file};
 use crate::launch::{launch_game, running_games_snapshot, running_games_version, stop_game};
 use crate::models::{Game, GameGroup, LibraryItem};
 use crate::umu::{UMU_DOWNLOADING, is_umu_run_available};
@@ -182,6 +184,24 @@ fn next_swap_list_box<'a>(
 fn finish_list_swap(list_stack: &gtk4::Stack, showing_primary: &Cell<bool>, visible_page: &str) {
     list_stack.set_visible_child_name(visible_page);
     showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
+}
+
+fn build_library_icon(icon_path: Option<std::path::PathBuf>, fallback_icon: &str) -> gtk4::Widget {
+    if let Some(path) = icon_path.filter(|path| path.is_file()) {
+        let picture = gtk4::Picture::for_filename(path);
+        picture.set_can_shrink(true);
+        picture.set_content_fit(gtk4::ContentFit::Contain);
+        picture.set_size_request(48, 48);
+        picture.set_valign(gtk4::Align::Start);
+        picture.upcast()
+    } else {
+        gtk4::Image::builder()
+            .icon_name(fallback_icon)
+            .pixel_size(48)
+            .valign(gtk4::Align::Start)
+            .build()
+            .upcast()
+    }
 }
 
 fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
@@ -451,11 +471,7 @@ fn build_group_card(
         .margin_end(12)
         .build();
 
-    let icon = gtk4::Image::builder()
-        .icon_name("folder-symbolic")
-        .pixel_size(48)
-        .valign(gtk4::Align::Start)
-        .build();
+    let icon = build_library_icon(group_icon_file(&group.id), "folder-symbolic");
 
     let info_column = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
@@ -618,11 +634,10 @@ fn build_game_card(
         .margin_end(12)
         .build();
 
-    let icon = gtk4::Image::builder()
-        .icon_name("application-x-executable-symbolic")
-        .pixel_size(48)
-        .valign(gtk4::Align::Start)
-        .build();
+    let icon = build_library_icon(
+        game_icon_file(&game.id),
+        "application-x-executable-symbolic",
+    );
 
     let info_column = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)

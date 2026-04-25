@@ -4,17 +4,17 @@
 #
 # Usage:
 #
-#   make -f .local/Makefile info
-#   make -f .local/Makefile
-#   make -f .local/Makefile rpm
-#   make -f .local/Makefile srpm
-#   make -f .local/Makefile archive
-#   make -f .local/Makefile clean
+#   make info
+#   make
+#   make rpm
+#   make srpm
+#   make archive
+#   make clean
 #
 # Override paths if needed:
 #
-#   make -f .local/Makefile PROJECT_DIR=/path/to/leyen
-#   make -f .local/Makefile VERSION=0.1.0
+#   make PROJECT_DIR=/path/to/leyen
+#   make VERSION=0.1.0
 
 SHELL := /usr/bin/env bash
 .DELETE_ON_ERROR:

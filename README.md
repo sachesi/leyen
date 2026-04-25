@@ -7,6 +7,7 @@ A modern GTK4/Libadwaita frontend for managing Wine/Proton games using umu-launc
 ### Core Features
 - **Game Library Management**
   - Add, edit, and delete games from your library
+  - Stable `Leyen ID` per game for CLI launch and listing
   - Persistent storage of game configurations
   - Clean, modern GTK4/Libadwaita interface
 
@@ -121,6 +122,10 @@ The compiled binary will be available at `target/release/leyen`.
 ### Launching Games
 - Click the play button (green circular button) on any game
 - Toast notifications will inform you of launch success/failure
+- Run `leyen list` to inspect root games, grouped games, and currently running games from the terminal
+- Run `leyen run <leyen-id>` to launch a managed game from the terminal using its saved `Leyen ID`
+- Run `leyen logs` to open the log window directly from the terminal
+- Run `leyen kill <leyen-id>` to stop a managed game from the terminal
 
 ## Configuration Files
 

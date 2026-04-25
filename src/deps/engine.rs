@@ -93,13 +93,34 @@ pub fn execute_dep_step(
 ) -> Result<(), String> {
     match &step.action {
         DepStepAction::DownloadFile { url, file_name } => {
+            if !url.starts_with("https://") {
+                return Err(format!(
+                    "Refusing to download '{}' from a non-HTTPS source",
+                    file_name
+                ));
+            }
             let dest = format!("{}/{}", cache_dir, file_name);
             if std::path::Path::new(&dest).exists() {
                 return Ok(());
             }
             let _ = fs::create_dir_all(cache_dir);
             let status = std::process::Command::new("curl")
-                .args(["-sL", "--fail", "--location", "-o", &dest, url])
+                .args([
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--location",
+                    "--retry",
+                    "3",
+                    "--retry-delay",
+                    "1",
+                    "-o",
+                    &dest,
+                    url,
+                ])
                 .status()
                 .map_err(|e| format!("curl unavailable: {}", e))?;
             if !status.success() {
@@ -346,13 +367,13 @@ pub fn execute_dep_step(
             for dll in dlls.split(',') {
                 let dll = dll.trim();
                 let path = format!("{}/{}.dll", dst_dir, dll);
-                if let Err(e) = fs::remove_file(&path) {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        leyen_log(
-                            "WARN ",
-                            &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e),
-                        );
-                    }
+                if let Err(e) = fs::remove_file(&path)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    leyen_log(
+                        "WARN ",
+                        &format!("Could not remove {}.dll from {}: {}", dll, wine_dir, e),
+                    );
                 }
             }
             Ok(())

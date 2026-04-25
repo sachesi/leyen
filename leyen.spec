@@ -2,7 +2,7 @@
 %define debug_package %{nil}
 
 Name:           leyen
-Version:        0.1.2
+Version:        0.1.3
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -39,6 +39,10 @@ install -Dm644 com.github.leyen.desktop \
 %{_datadir}/applications/com.github.leyen.desktop
 
 %changelog
+* Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.3-1
+- Recheck runtime tracking, CLI flow, and packaging helper docs
+- Tighten download transport defaults for runtime fetches
+
 * Sat Apr 25 2026 sachesi <sachesi.bb.passp@proton.me> - 0.1.2-1
 - Bump release version to 0.1.2
 

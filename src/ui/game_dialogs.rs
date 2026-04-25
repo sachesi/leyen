@@ -8,9 +8,9 @@ use adw::prelude::*;
 use gtk4::gio;
 
 use crate::config::{
-    find_group, game_parent_group_id, insert_game, load_library, load_settings,
-    normalize_game_id_from_executable, remove_game, remove_group, replace_game, replace_group,
-    save_library, suggest_prefix_path,
+    find_game_by_leyen_id, find_group, game_parent_group_id, generate_unique_leyen_id, insert_game,
+    load_library, load_settings, normalize_game_id_from_executable, remove_game, remove_group,
+    replace_game, replace_group, save_library, suggest_prefix_path,
 };
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::proton::resolve_proton_path;
@@ -139,7 +139,14 @@ pub fn show_add_library_item_dialog(
         .visible(kind == AddLibraryItemKind::Game && inside_group)
         .build();
 
-    let game_id_row = adw::EntryRow::builder().title("ID").build();
+    let generated_leyen_id = generate_unique_leyen_id(&library);
+    let leyen_id_row = adw::EntryRow::builder()
+        .title("Leyen ID")
+        .text(&generated_leyen_id)
+        .build();
+    leyen_id_row.set_editable(false);
+
+    let game_id_row = adw::EntryRow::builder().title("Game ID").build();
     game_id_row.set_editable(false);
     let (available_protons, proton_model) = build_proton_choices(&settings);
     let proton_row = adw::ComboRow::builder()
@@ -194,6 +201,7 @@ pub fn show_add_library_item_dialog(
     game_details_group.add(&inherit_prefix_row);
     game_details_group.add(&prefix_row);
     game_details_group.add(&inherit_proton_row);
+    game_details_group.add(&leyen_id_row);
     game_details_group.add(&game_id_row);
     game_details_group.add(&proton_row);
     game_details_group.add(&args_row);
@@ -362,6 +370,7 @@ pub fn show_add_library_item_dialog(
     let overlay_clone = overlay.clone();
     let parent_clone = parent.clone();
     let dialog_clone = dialog.clone();
+    let generated_leyen_id = generated_leyen_id.clone();
     add_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
         if title.trim().is_empty() {
@@ -391,6 +400,11 @@ pub fn show_add_library_item_dialog(
                 return;
             }
             let normalized_game_id = normalize_game_id_from_executable(&exe);
+            let leyen_id = if find_game_by_leyen_id(&items, &generated_leyen_id).is_some() {
+                generate_unique_leyen_id(&items)
+            } else {
+                generated_leyen_id.clone()
+            };
             let game = Game {
                 id: uuid::Uuid::new_v4().to_string(),
                 title,
@@ -414,6 +428,7 @@ pub fn show_add_library_item_dialog(
                 game_wayland: wayland_row.is_active(),
                 game_wow64: wow64_row.is_active(),
                 game_ntsync: ntsync_row.is_active(),
+                leyen_id,
                 game_id: normalized_game_id,
                 playtime_seconds: 0,
                 last_played_epoch_seconds: 0,
@@ -638,9 +653,15 @@ pub fn show_edit_game_dialog(
         .visible(current_parent_group.is_some())
         .build();
 
+    let leyen_id_row = adw::EntryRow::builder()
+        .title("Leyen ID")
+        .text(&game.leyen_id)
+        .build();
+    leyen_id_row.set_editable(false);
+
     let game_id_row = adw::EntryRow::builder()
-        .title("ID")
-        .text(&normalize_game_id_from_executable(&game.exe_path))
+        .title("Game ID")
+        .text(normalize_game_id_from_executable(&game.exe_path))
         .build();
     game_id_row.set_editable(false);
 
@@ -722,6 +743,7 @@ pub fn show_edit_game_dialog(
     env_group.add(&inherit_prefix_row);
     env_group.add(&prefix_row);
     env_group.add(&inherit_proton_row);
+    env_group.add(&leyen_id_row);
     env_group.add(&game_id_row);
     env_group.add(&proton_row);
     let overrides = adw::PreferencesGroup::builder().title("Overrides").build();
@@ -918,6 +940,7 @@ pub fn show_edit_game_dialog(
             game_wayland: wayland_row.is_active(),
             game_wow64: wow64_row.is_active(),
             game_ntsync: ntsync_row.is_active(),
+            leyen_id: original_game.leyen_id.clone(),
             game_id: normalized_game_id,
             playtime_seconds: original_game.playtime_seconds,
             last_played_epoch_seconds: original_game.last_played_epoch_seconds,
@@ -969,7 +992,7 @@ pub fn show_delete_confirmation(
 
     let dialog = gtk4::AlertDialog::builder()
         .message("Delete Item?")
-        .detail(&format!(
+        .detail(format!(
             "Are you sure you want to delete {}?\n\nThis action cannot be undone.",
             label
         ))

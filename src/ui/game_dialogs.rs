@@ -23,6 +23,7 @@ use crate::icons::{
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::proton::resolve_proton_path;
+use crate::tools::{gamemode_available, mangohud_available};
 
 use super::deps_dialog::show_dependencies_dialog;
 use super::{
@@ -331,10 +332,12 @@ pub fn show_add_library_item_dialog(
     let mangohud_row = adw::SwitchRow::builder()
         .title("Force MangoHud")
         .active(settings.global_mangohud)
+        .visible(mangohud_available())
         .build();
     let gamemode_row = adw::SwitchRow::builder()
         .title("Force GameMode")
         .active(settings.global_gamemode)
+        .visible(gamemode_available())
         .build();
     let wayland_row = adw::SwitchRow::builder().title("Wayland").build();
     let wow64_row = adw::SwitchRow::builder().title("WoW64").build();
@@ -718,8 +721,8 @@ pub fn show_add_library_item_dialog(
                         .unwrap_or_else(|| "Default".to_string())
                 },
                 launch_args: args_entry.text().to_string(),
-                force_mangohud: mangohud_row.is_active(),
-                force_gamemode: gamemode_row.is_active(),
+                force_mangohud: mangohud_available() && mangohud_row.is_active(),
+                force_gamemode: gamemode_available() && gamemode_row.is_active(),
                 game_wayland: wayland_row.is_active(),
                 game_wow64: wow64_row.is_active(),
                 game_ntsync: ntsync_row.is_active(),
@@ -1294,10 +1297,12 @@ pub fn show_edit_game_dialog(
     let mangohud_row = adw::SwitchRow::builder()
         .title("Force MangoHud")
         .active(game.force_mangohud)
+        .visible(mangohud_available())
         .build();
     let gamemode_row = adw::SwitchRow::builder()
         .title("Force GameMode")
         .active(game.force_gamemode)
+        .visible(gamemode_available())
         .build();
     let wayland_row = adw::SwitchRow::builder()
         .title("Wayland")
@@ -1686,8 +1691,8 @@ pub fn show_edit_game_dialog(
                     .unwrap_or_else(|| "Default".to_string())
             },
             launch_args: args_entry.text().to_string(),
-            force_mangohud: mangohud_row.is_active(),
-            force_gamemode: gamemode_row.is_active(),
+            force_mangohud: mangohud_available() && mangohud_row.is_active(),
+            force_gamemode: gamemode_available() && gamemode_row.is_active(),
             game_wayland: wayland_row.is_active(),
             game_wow64: wow64_row.is_active(),
             game_ntsync: ntsync_row.is_active(),

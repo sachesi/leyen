@@ -2,8 +2,18 @@
 
 _leyen_ids() {
   local -a ids
-  ids=(${(f)"$(leyen list 2>/dev/null | awk '/^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }')"})
+  ids=(${(f)"$(leyen list 2>/dev/null | awk '/^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }' | sort -u)"})
   _describe -t leyen-ids 'Leyen IDs' ids
+}
+
+_leyen_running_ids() {
+  local -a ids
+  ids=(${(f)"$(leyen list 2>/dev/null | awk '
+    /^Running[[:space:]]*$/ { running = 1; next }
+    /^[^[:space:]]/ { running = 0 }
+    running && /^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }
+  ' | sort -u)"})
+  _describe -t leyen-running-ids 'Running Leyen IDs' ids
 }
 
 _leyen() {
@@ -26,8 +36,11 @@ _leyen() {
       ;;
     argument)
       case "$words[2]" in
-        run|kill)
+        run)
           _leyen_ids
+          ;;
+        kill)
+          _leyen_running_ids
           ;;
         help|list|logs)
           ;;

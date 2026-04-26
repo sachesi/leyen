@@ -10,6 +10,7 @@ mod icons;
 mod launch;
 mod logging;
 mod models;
+mod prefix_tools;
 mod proton;
 mod ui;
 mod umu;

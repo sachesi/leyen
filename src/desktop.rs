@@ -6,15 +6,26 @@ use crate::icons::game_icon_file;
 use crate::models::{Game, GameGroup};
 
 pub fn desktop_entry_exists(leyen_id: &str) -> bool {
-    desktop_entry_path(leyen_id).is_file()
+    !desktop_entry_paths_for_leyen_id(leyen_id).is_empty()
 }
 
 pub fn create_game_desktop_entry(
     game: &Game,
     group: Option<&GameGroup>,
 ) -> Result<PathBuf, String> {
-    let path = desktop_entry_path(&game.leyen_id);
+    let path = desired_desktop_entry_path(game, group);
     ensure_applications_dir()?;
+    for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
+        if existing != path && existing.exists() {
+            fs::remove_file(&existing).map_err(|err| {
+                format!(
+                    "Failed to remove desktop entry '{}': {}",
+                    existing.display(),
+                    err
+                )
+            })?;
+        }
+    }
     let icon = desktop_icon(game);
     fs::write(&path, render_game_desktop_entry(game, group, &icon)).map_err(|err| {
         format!(
@@ -49,10 +60,10 @@ pub fn update_group_desktop_entries_if_present(group: &GameGroup) -> Result<usiz
 }
 
 pub fn remove_game_desktop_entry(leyen_id: &str) -> Result<bool, String> {
-    let path = desktop_entry_path(leyen_id);
-    let had_desktop_file = path.exists();
+    let paths = desktop_entry_paths_for_leyen_id(leyen_id);
+    let had_desktop_file = !paths.is_empty();
 
-    if had_desktop_file {
+    for path in paths {
         fs::remove_file(&path).map_err(|err| {
             format!(
                 "Failed to remove desktop entry '{}': {}",
@@ -98,12 +109,15 @@ fn desktop_icon(game: &Game) -> String {
         .unwrap_or_else(|| crate::APP_ID.to_string())
 }
 
-fn desktop_entry_path(leyen_id: &str) -> PathBuf {
-    applications_dir_path().join(format!(
-        "{}.{}.desktop",
-        crate::APP_ID,
-        leyen_id.trim().to_ascii_lowercase()
-    ))
+fn desired_desktop_entry_path(game: &Game, group: Option<&GameGroup>) -> PathBuf {
+    applications_dir_path().join(desktop_entry_file_name(game, group))
+}
+
+fn desktop_entry_file_name(game: &Game, group: Option<&GameGroup>) -> String {
+    format!(
+        "{}.desktop",
+        sanitize_desktop_file_name(&display_name(game, group))
+    )
 }
 
 fn ensure_applications_dir() -> Result<PathBuf, String> {
@@ -123,6 +137,28 @@ fn applications_dir_path() -> PathBuf {
     PathBuf::from(home).join(".local/share/applications")
 }
 
+fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(applications_dir_path()) else {
+        return Vec::new();
+    };
+
+    let exec_line = format!("Exec=leyen run {}", leyen_id.trim());
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
+        })
+        .filter(|path| {
+            fs::read_to_string(path)
+                .ok()
+                .is_some_and(|content| content.lines().any(|line| line.trim() == exec_line))
+        })
+        .collect()
+}
+
 fn sanitize_desktop_value(value: &str) -> String {
     let sanitized = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if sanitized.is_empty() {
@@ -132,9 +168,24 @@ fn sanitize_desktop_value(value: &str) -> String {
     }
 }
 
+fn sanitize_desktop_file_name(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\0' => '-',
+            '\n' | '\r' | '\t' => ' ',
+            ch if ch.is_control() => ' ',
+            ch => ch,
+        })
+        .collect::<String>();
+    sanitize_desktop_value(&sanitized)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{desktop_icon, render_game_desktop_entry, startup_wm_class};
+    use super::{
+        desktop_entry_file_name, desktop_icon, render_game_desktop_entry, startup_wm_class,
+    };
     use crate::models::{Game, GameGroup, GroupLaunchDefaults};
 
     fn sample_game() -> Game {
@@ -186,6 +237,26 @@ mod tests {
             crate::APP_ID,
         );
         assert!(rendered.contains("Name=Favorites: Nier Replicant"));
+    }
+
+    #[test]
+    fn desktop_file_name_uses_game_or_group_display_name() {
+        assert_eq!(
+            desktop_entry_file_name(&sample_game(), None),
+            "Nier Replicant.desktop"
+        );
+        assert_eq!(
+            desktop_entry_file_name(
+                &sample_game(),
+                Some(&GameGroup {
+                    id: "group-1".to_string(),
+                    title: "Favorites".to_string(),
+                    defaults: GroupLaunchDefaults::default(),
+                    games: Vec::new(),
+                }),
+            ),
+            "Favorites: Nier Replicant.desktop"
+        );
     }
 
     #[test]

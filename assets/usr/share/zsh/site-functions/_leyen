@@ -1,0 +1,39 @@
+#compdef leyen
+
+_leyen_ids() {
+  local -a ids
+  ids=(${(f)"$(leyen list 2>/dev/null | awk '/^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }')"})
+  _describe -t leyen-ids 'Leyen IDs' ids
+}
+
+_leyen() {
+  local -a commands
+  commands=(
+    'help:show usage'
+    'list:list games and running sessions'
+    'run:launch a game by Leyen ID'
+    'logs:open the log window'
+    'kill:stop a running game by Leyen ID'
+  )
+
+  _arguments -C \
+    '1:command:->command' \
+    '*::argument:->argument'
+
+  case "$state" in
+    command)
+      _describe -t commands 'leyen command' commands
+      ;;
+    argument)
+      case "$words[2]" in
+        run|kill)
+          _leyen_ids
+          ;;
+        help|list|logs)
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_leyen "$@"

@@ -3,7 +3,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -15,6 +15,13 @@ BuildRequires:  cargo
 BuildRequires:  rust >= 1.85
 BuildRequires:  pkgconfig(gtk4)
 BuildRequires:  pkgconfig(libadwaita-1)
+
+Requires:       curl
+Requires:       tar
+Requires:       hicolor-icon-theme
+Recommends:     mangohud
+Recommends:     gamemode
+Recommends:     winetricks
 
 %description
 Leyen is a modern GTK4/Libadwaita frontend for managing Wine/Proton games
@@ -35,14 +42,28 @@ install -Dm644 assets/usr/share/applications/%{app_id}.desktop \
 install -Dm644 assets/usr/share/icons/hicolor/256x256/apps/%{app_id}.svg \
     %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/%{app_id}.svg
 
+install -Dpm 0644 assets/usr/share/bash-completion/completions/leyen.bash \
+    %{buildroot}%{_datadir}/bash-completion/completions/leyen.bash
+install -Dpm 0644 assets/usr/share/fish/vendor_completions.d/leyen.fish \
+    %{buildroot}%{_datadir}/fish/vendor_completions.d/leyen.fish
+install -Dpm 0644 assets/usr/share/zsh/site-functions/_leyen \
+    %{buildroot}%{_datadir}/zsh/site-functions/_leyen
+
 %files
 %license LICENSE
-%doc README.md
+%doc README.md docs/
 %{_bindir}/%{name}
 %{_datadir}/applications/%{app_id}.desktop
 %{_datadir}/icons/hicolor/256x256/apps/%{app_id}.svg
+%{_datadir}/bash-completion/completions/leyen.bash
+%{_datadir}/fish/vendor_completions.d/leyen.fish
+%{_datadir}/zsh/site-functions/_leyen
 
 %changelog
+* Sun Apr 26 2026 sachesi <xsachesi@proton.me> - 0.2.1-1
+- Modify README, add documentation
+- Add pregenerated Bash, Fish, and Zsh completions under assets
+
 * Sun Apr 26 2026 sachesi <sachesi.bb.passp@proton.me> - 0.2.0-1
 - Rework dependency management around tracked prefix state and profiles
 - Add group, game, and global dependency tools with managed-prefix ownership

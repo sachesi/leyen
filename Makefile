@@ -12,6 +12,13 @@ SRPMS_DIR    ?= $(RPMBUILD_DIR)/SRPMS
 RPMS_DIR     ?= $(RPMBUILD_DIR)/RPMS
 OUTDIR       ?= $(or $(outdir),$(SRPMS_DIR))
 
+# Persistent Cargo build cache for local binary RPM builds.
+# This makes repeated `make rpm` / `make ba` behave much closer to normal
+# `cargo build`, instead of rebuilding all dependencies from scratch.
+#
+# Not used for COPR or SRPM generation.
+CARGO_TARGET_DIR ?= $(HOME)/.cache/rpmbuild-cargo-target/$(NAME)
+
 VERSION := $(shell rpmspec -q --qf '%{VERSION}\n' --srpm "$(SPECFILE)" 2>/dev/null | head -n1)
 
 SOURCE_ARCHIVE := $(SOURCES_DIR)/$(NAME)-$(VERSION).tar.gz
@@ -22,7 +29,7 @@ VENDOR_PATH    := $(SOURCES_DIR)/$(VENDOR_NAME)
 	rpm srpm ba bs \
 	rpm-local srpm-local ba-local bs-local \
 	copr vendor \
-	sources local-sources prepare clean info check
+	sources local-sources prepare clean clean-cargo info check
 
 all: srpm
 
@@ -32,15 +39,20 @@ srpm: bs
 rpm-local: ba-local
 srpm-local: bs-local
 
-# Normal online local build:
+# Normal online local binary RPM build:
 # Downloads Source0 from the spec URL into ~/rpmbuild/SOURCES.
 # Does not generate vendor archive.
+# Uses persistent CARGO_TARGET_DIR for faster rebuilds.
 ba: sources
 	rpmbuild -ba --without vendored \
 		--define "_topdir $(RPMBUILD_DIR)" \
 		--define "_sourcedir $(SOURCES_DIR)" \
+		--define "_cargo_target_dir $(CARGO_TARGET_DIR)" \
 		"$(SPECFILE)"
 
+# Normal online local SRPM build:
+# Downloads Source0 from the spec URL.
+# Does not compile, so no Cargo target cache is needed.
 bs: sources
 	rpmbuild -bs --without vendored \
 		--define "_topdir $(RPMBUILD_DIR)" \
@@ -48,16 +60,21 @@ bs: sources
 		--define "_srcrpmdir $(OUTDIR)" \
 		"$(SPECFILE)"
 
-# Local generated-source build:
+# Local generated-source binary RPM build:
 # Creates Source0 from PROJECT_DIR into ~/rpmbuild/SOURCES.
 # Does not write generated artifacts into the repo.
 # Does not generate vendor archive.
+# Uses persistent CARGO_TARGET_DIR for faster rebuilds.
 ba-local: local-sources
 	rpmbuild -ba --without vendored \
 		--define "_topdir $(RPMBUILD_DIR)" \
 		--define "_sourcedir $(SOURCES_DIR)" \
+		--define "_cargo_target_dir $(CARGO_TARGET_DIR)" \
 		"$(SPECFILE)"
 
+# Local generated-source SRPM build:
+# Creates Source0 from PROJECT_DIR.
+# Does not compile, so no Cargo target cache is needed.
 bs-local: local-sources
 	rpmbuild -bs --without vendored \
 		--define "_topdir $(RPMBUILD_DIR)" \
@@ -101,6 +118,7 @@ local-sources: check prepare
 
 # Only COPR/offline builds need vendoring.
 # Uses Source0 from local checkout, not downloaded Source0.
+# Does NOT use the local Cargo target cache.
 vendor: local-sources
 	@echo ":: creating vendor tarball: $(VENDOR_PATH)"
 	@tmpdir="$$(mktemp -d)"; \
@@ -121,6 +139,7 @@ vendor: local-sources
 # COPR custom-source entry point:
 # Generates Source0 + vendor archive into ~/rpmbuild/SOURCES.
 # Writes final SRPM into OUTDIR, or COPR-provided outdir=...
+# Does NOT use the local Cargo target cache.
 copr: vendor
 	rpmbuild -bs --with vendored \
 		--define "_topdir $(RPMBUILD_DIR)" \
@@ -151,17 +170,21 @@ check:
 	@command -v zstd >/dev/null || { echo "ERROR: zstd not found. Install zstd." >&2; exit 1; }
 
 info:
-	@echo "NAME:           $(NAME)"
-	@echo "VERSION:        $(VERSION)"
-	@echo "PROJECT_DIR:    $(PROJECT_DIR)"
-	@echo "SPECFILE:       $(SPECFILE)"
-	@echo "RPMBUILD_DIR:   $(RPMBUILD_DIR)"
-	@echo "SOURCES_DIR:    $(SOURCES_DIR)"
-	@echo "SRPMS_DIR:      $(SRPMS_DIR)"
-	@echo "RPMS_DIR:       $(RPMS_DIR)"
-	@echo "OUTDIR:         $(OUTDIR)"
-	@echo "SOURCE_ARCHIVE: $(SOURCE_ARCHIVE)"
-	@echo "VENDOR_PATH:    $(VENDOR_PATH)"
+	@echo "NAME:             $(NAME)"
+	@echo "VERSION:          $(VERSION)"
+	@echo "PROJECT_DIR:      $(PROJECT_DIR)"
+	@echo "SPECFILE:         $(SPECFILE)"
+	@echo "RPMBUILD_DIR:     $(RPMBUILD_DIR)"
+	@echo "SOURCES_DIR:      $(SOURCES_DIR)"
+	@echo "SRPMS_DIR:        $(SRPMS_DIR)"
+	@echo "RPMS_DIR:         $(RPMS_DIR)"
+	@echo "OUTDIR:           $(OUTDIR)"
+	@echo "SOURCE_ARCHIVE:   $(SOURCE_ARCHIVE)"
+	@echo "VENDOR_PATH:      $(VENDOR_PATH)"
+	@echo "CARGO_TARGET_DIR: $(CARGO_TARGET_DIR)"
 
 clean:
 	rm -f "$(SOURCE_ARCHIVE)" "$(VENDOR_PATH)"
+
+clean-cargo:
+	rm -rf "$(CARGO_TARGET_DIR)"

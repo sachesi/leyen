@@ -3,18 +3,20 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.2
+Version:        2.2.2
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/sachesi/leyen
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source1:        %{name}-%{version}-vendor.tar.zst
 
 BuildRequires:  cargo
 BuildRequires:  rust >= 1.85
 BuildRequires:  pkgconfig(gtk4)
 BuildRequires:  pkgconfig(libadwaita-1)
+BuildRequires:  zstd
 
 Requires:       curl
 Requires:       tar
@@ -32,8 +34,19 @@ installer for Visual C++, .NET, DirectX, and more.
 %prep
 %autosetup
 
+tar --zstd -xf %{SOURCE1}
+
+mkdir -p .cargo
+cat > .cargo/config.toml <<'EOF'
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+
 %build
-cargo build --release
+cargo build --release --offline
 
 %install
 install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
@@ -60,6 +73,10 @@ install -Dpm 0644 assets/usr/share/zsh/site-functions/_leyen \
 %{_datadir}/zsh/site-functions/_leyen
 
 %changelog
+* Sun Apr 26 2026 sachesi <xsachesi@proton.me> - 0.2.2-2
+- Update packaging
+- Update completions
+
 * Sun Apr 26 2026 sachesi <xsachesi@proton.me> - 0.2.2-1
 - UI: hide unavailable MangoHud and GameMode toggles
 - Bump version to 0.2.2

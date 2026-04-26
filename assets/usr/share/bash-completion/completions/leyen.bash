@@ -1,7 +1,19 @@
 # Bash completion for leyen
 
 _leyen_ids() {
-    leyen list 2>/dev/null | awk '/^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }'
+    leyen list 2>/dev/null |
+        awk '/^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }' |
+        sort -u
+}
+
+_leyen_running_ids() {
+    leyen list 2>/dev/null |
+        awk '
+            /^Running[[:space:]]*$/ { running = 1; next }
+            /^[^[:space:]]/ { running = 0 }
+            running && /^[[:space:]]+ly-[0-9][0-9][0-9][0-9][[:space:]]/ { print $1 }
+        ' |
+        sort -u
 }
 
 _leyen() {
@@ -20,15 +32,23 @@ _leyen() {
     fi
 
     case "${prev}" in
-        run|kill)
+        run)
             COMPREPLY=( $(compgen -W "$(_leyen_ids)" -- "${cur}") )
+            return 0
+            ;;
+        kill)
+            COMPREPLY=( $(compgen -W "$(_leyen_running_ids)" -- "${cur}") )
             return 0
             ;;
     esac
 
     case "${COMP_WORDS[1]}" in
-        run|kill)
+        run)
             COMPREPLY=( $(compgen -W "$(_leyen_ids)" -- "${cur}") )
+            return 0
+            ;;
+        kill)
+            COMPREPLY=( $(compgen -W "$(_leyen_running_ids)" -- "${cur}") )
             return 0
             ;;
         help|list|logs|--help|-h)

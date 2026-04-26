@@ -17,6 +17,7 @@ use crate::config::{
 use crate::logging::{leyen_game_log, leyen_log};
 use crate::models::{Game, GameGroup};
 use crate::proton::resolve_proton_path;
+use crate::tools::{gamemode_available, mangohud_available};
 use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 #[derive(Debug, Clone)]
@@ -692,7 +693,7 @@ fn launch_game_managed(
         None => settings.default_proton.clone(),
     };
 
-    if game.force_mangohud || settings.global_mangohud {
+    if mangohud_available() && (game.force_mangohud || settings.global_mangohud) {
         env_vars.push(("MANGOHUD".to_string(), "1".to_string()));
     }
 
@@ -740,7 +741,7 @@ fn launch_game_managed(
             cmd_wrappers.push(token.to_string());
         }
 
-        if game.force_gamemode || settings.global_gamemode {
+        if gamemode_available() && (game.force_gamemode || settings.global_gamemode) {
             cmd_args.push("gamemoderun".to_string());
         }
         cmd_args.extend(cmd_wrappers);
@@ -748,7 +749,7 @@ fn launch_game_managed(
         cmd_args.push(game.exe_path.clone());
         cmd_args.extend(postfix);
     } else {
-        if game.force_gamemode || settings.global_gamemode {
+        if gamemode_available() && (game.force_gamemode || settings.global_gamemode) {
             cmd_args.push("gamemoderun".to_string());
         }
         cmd_args.push(umu.clone());

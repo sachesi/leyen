@@ -3,7 +3,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -60,6 +60,10 @@ install -Dpm 0644 assets/usr/share/zsh/site-functions/_leyen \
 %{_datadir}/zsh/site-functions/_leyen
 
 %changelog
+* Sun Apr 26 2026 sachesi <xsachesi@proton.me> - 0.2.2-1
+- UI: hide unavailable MangoHud and GameMode toggles
+- Bump version to 0.2.2
+
 * Sun Apr 26 2026 sachesi <xsachesi@proton.me> - 0.2.1-1
 - Modify README, add documentation
 - Add pregenerated Bash, Fish, and Zsh completions under assets

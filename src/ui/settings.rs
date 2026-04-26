@@ -5,8 +5,11 @@ use gtk4::gio;
 use std::fs;
 use std::path::PathBuf;
 
+use super::deps_dialog::show_dependencies_dialog;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::config::{load_settings, save_settings};
+use crate::prefix_tools::pick_and_run_in_prefix;
+use crate::proton::resolve_proton_path;
 use crate::umu::get_umu_runtime_dir;
 
 pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
@@ -71,6 +74,53 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
     paths_group.add(&proton_row);
 
     let tools_group = adw::PreferencesGroup::builder()
+        .title("Tools")
+        .description("Manage the default prefix inherited by games and groups.")
+        .build();
+
+    let manage_deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    manage_deps_btn.set_margin_bottom(6);
+    let run_prefix_btn = gtk4::Button::builder().label("Run in prefix").build();
+    run_prefix_btn.set_margin_top(6);
+
+    let parent_for_deps = parent.clone();
+    let overlay_for_deps = overlay.clone();
+    let prefix_row_for_deps = prefix_row.clone();
+    let proton_row_for_deps = proton_row.clone();
+    let available_versions_for_deps = available_versions.clone();
+    manage_deps_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_deps.text().to_string();
+        let proton_choice =
+            if (proton_row_for_deps.selected() as usize) < available_versions_for_deps.len() {
+                available_versions_for_deps[proton_row_for_deps.selected() as usize].clone()
+            } else {
+                "Default".to_string()
+            };
+        let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
+        show_dependencies_dialog(&parent_for_deps, &prefix, &proton, &overlay_for_deps);
+    });
+
+    let overlay_for_run = overlay.clone();
+    let parent_for_run = parent.clone();
+    let prefix_row_for_run = prefix_row.clone();
+    let proton_row_for_run = proton_row.clone();
+    let available_versions_for_run = available_versions.clone();
+    run_prefix_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_run.text().to_string();
+        let proton_choice =
+            if (proton_row_for_run.selected() as usize) < available_versions_for_run.len() {
+                available_versions_for_run[proton_row_for_run.selected() as usize].clone()
+            } else {
+                "Default".to_string()
+            };
+        let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
+        pick_and_run_in_prefix(&parent_for_run, &overlay_for_run, &prefix, &proton);
+    });
+
+    tools_group.add(&manage_deps_btn);
+    tools_group.add(&run_prefix_btn);
+
+    let environment_group = adw::PreferencesGroup::builder()
         .title("Global Environment")
         .build();
 
@@ -99,11 +149,11 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
         .active(settings.global_ntsync)
         .build();
 
-    tools_group.add(&mangohud_row);
-    tools_group.add(&gamemode_row);
-    tools_group.add(&wayland_row);
-    tools_group.add(&wow64_row);
-    tools_group.add(&ntsync_row);
+    environment_group.add(&mangohud_row);
+    environment_group.add(&gamemode_row);
+    environment_group.add(&wayland_row);
+    environment_group.add(&wow64_row);
+    environment_group.add(&ntsync_row);
 
     // ── Logging ────────────────────────────────────────────────────────────
     let logging_group = adw::PreferencesGroup::builder()
@@ -135,6 +185,7 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
 
     page.add(&paths_group);
     page.add(&tools_group);
+    page.add(&environment_group);
     page.add(&logging_group);
 
     // ── Maintenance ────────────────────────────────────────────────────────

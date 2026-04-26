@@ -2,12 +2,26 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::gio;
+use std::cell::Cell;
+use std::rc::Rc;
 
 use crate::config::load_settings;
 use crate::deps::{
-    DEP_CATALOG, DEP_CATEGORY_ORDER, add_installed_dep, get_dep_uninstall_steps, install_dep_async,
-    read_installed_deps, remove_installed_dep, uninstall_dep_async,
+    DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
+    get_installed_dep, install_dep_async, read_installed_deps, read_prefix_dep_state,
+    uninstall_dep_async,
 };
+
+use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
+
+#[derive(Clone)]
+struct DepRowHandle {
+    dep_id: &'static str,
+    install_btn: gtk4::Button,
+    reinstall_btn: gtk4::Button,
+    remove_btn: gtk4::Button,
+    badge: gtk4::Label,
+}
 
 fn dep_category_order(cat: &str) -> usize {
     DEP_CATEGORY_ORDER
@@ -32,6 +46,76 @@ fn escape_dep_markup(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+fn dependent_names(state: &crate::deps::PrefixDependencyState, dep_id: &str) -> Vec<String> {
+    find_installed_dependents(state, dep_id)
+        .into_iter()
+        .map(|dependent_id| {
+            get_dep_profile(&dependent_id)
+                .map(|profile| profile.name.to_string())
+                .unwrap_or(dependent_id)
+        })
+        .collect()
+}
+
+fn sync_dep_row(
+    handle: &DepRowHandle,
+    installed: &std::collections::BTreeSet<String>,
+    dependents: &[String],
+) {
+    let is_installed = installed.contains(handle.dep_id);
+    handle.badge.set_visible(is_installed);
+    handle.install_btn.set_visible(!is_installed);
+    handle.reinstall_btn.set_visible(is_installed);
+    handle.remove_btn.set_visible(is_installed);
+    let can_remove = is_installed && dependents.is_empty();
+    handle.remove_btn.set_sensitive(can_remove);
+    if can_remove {
+        handle
+            .remove_btn
+            .set_tooltip_text(Some("Remove this managed dependency"));
+    } else if is_installed {
+        handle
+            .remove_btn
+            .set_tooltip_text(Some(&format!("Required by: {}", dependents.join(", "))));
+    } else {
+        handle.remove_btn.set_tooltip_text(None);
+    }
+}
+
+fn refresh_dep_rows(
+    prefix_path: &str,
+    title_widget: &adw::WindowTitle,
+    handles: &[DepRowHandle],
+) -> std::collections::BTreeSet<String> {
+    let state = read_prefix_dep_state(prefix_path);
+    let installed = state
+        .installed
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    title_widget.set_subtitle(&installed_subtitle(installed.len()));
+    for handle in handles {
+        let dependents = dependent_names(&state, handle.dep_id);
+        sync_dep_row(handle, &installed, &dependents);
+    }
+    installed
+}
+
+fn set_dialog_busy(
+    busy: bool,
+    close_btn: &gtk4::Button,
+    search_entry: &gtk4::SearchEntry,
+    handles: &[DepRowHandle],
+) {
+    close_btn.set_sensitive(!busy);
+    search_entry.set_sensitive(!busy);
+    for handle in handles {
+        handle.install_btn.set_sensitive(!busy);
+        handle.reinstall_btn.set_sensitive(!busy);
+        handle.remove_btn.set_sensitive(!busy);
+    }
+}
+
 pub fn show_dependencies_dialog(
     parent: &adw::ApplicationWindow,
     prefix_path: &str,
@@ -51,17 +135,16 @@ pub fn show_dependencies_dialog(
     };
 
     let installed = read_installed_deps(&resolved_prefix);
-    let installed_count = installed.len();
 
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .default_width(520)
-        .default_height(640)
+        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .destroy_with_parent(true)
         .build();
 
-    let subtitle = installed_subtitle(installed_count);
+    let subtitle = installed_subtitle(installed.len());
 
     let title_widget = adw::WindowTitle::new("Manage Dependencies", &subtitle);
 
@@ -82,21 +165,12 @@ pub fn show_dependencies_dialog(
         .margin_end(12)
         .build();
 
-    let clamp = adw::Clamp::builder().margin_top(4).margin_bottom(8).build();
-
-    let dep_box = gtk4::Box::builder()
-        .orientation(gtk4::Orientation::Vertical)
-        .spacing(8)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-
-    clamp.set_child(Some(&dep_box));
+    let page = adw::PreferencesPage::builder().build();
 
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
-        .child(&clamp)
+        .child(&page)
         .build();
 
     let content_box = gtk4::Box::builder()
@@ -109,8 +183,23 @@ pub fn show_dependencies_dialog(
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&content_box));
     dialog.set_content(Some(&toolbar_view));
+    let dialog_busy = Rc::new(Cell::new(false));
+    {
+        let dialog_busy = dialog_busy.clone();
+        let overlay = overlay.clone();
+        dialog.connect_close_request(move |_| {
+            if dialog_busy.get() {
+                overlay.add_toast(adw::Toast::new(
+                    "Wait for the dependency operation to finish.",
+                ));
+                gtk4::glib::Propagation::Stop
+            } else {
+                gtk4::glib::Propagation::Proceed
+            }
+        });
+    }
 
-    let mut entries: Vec<&crate::deps::DepCatalogEntry> = DEP_CATALOG.iter().collect();
+    let mut entries: Vec<&crate::deps::DepProfile> = DEP_PROFILES.iter().collect();
     entries.sort_by(|a, b| {
         dep_category_order(a.category)
             .cmp(&dep_category_order(b.category))
@@ -125,6 +214,7 @@ pub fn show_dependencies_dialog(
     }
 
     let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)> = Vec::new();
+    let row_handles = std::rc::Rc::new(std::cell::RefCell::new(Vec::<DepRowHandle>::new()));
 
     for cat in &categories {
         let group = adw::PreferencesGroup::builder().title(*cat).build();
@@ -188,6 +278,13 @@ pub fn show_dependencies_dialog(
             row.add_suffix(&install_btn);
             row.add_suffix(&reinstall_btn);
             row.add_suffix(&remove_btn);
+            row_handles.borrow_mut().push(DepRowHandle {
+                dep_id,
+                install_btn: install_btn.clone(),
+                reinstall_btn: reinstall_btn.clone(),
+                remove_btn: remove_btn.clone(),
+                badge: badge.clone(),
+            });
 
             // ── Install button ─────────────────────────────────────────────
             {
@@ -202,8 +299,14 @@ pub fn show_dependencies_dialog(
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
+                let row_handles2 = row_handles.clone();
+                let close_btn2 = close_btn.clone();
+                let search_entry2 = search_entry.clone();
+                let dialog_busy2 = dialog_busy.clone();
 
                 install_btn.connect_clicked(move |_| {
+                    dialog_busy2.set(true);
+                    set_dialog_busy(true, &close_btn2, &search_entry2, &row_handles2.borrow());
                     install_btn2.set_visible(false);
                     spinner2.set_visible(true);
                     spinner2.start();
@@ -220,32 +323,38 @@ pub fn show_dependencies_dialog(
                     let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
+                    let row_handles3 = row_handles2.clone();
+                    let close_btn3 = close_btn2.clone();
+                    let search_entry3 = search_entry2.clone();
+                    let dialog_busy3 = dialog_busy2.clone();
 
                     let progress_label_p = progress_label2.clone();
                     let on_progress = move |_step: usize, _total: usize, desc: String| {
                         progress_label_p.set_label(&desc);
                     };
 
-                    let on_finish = move |success: bool, err: Option<String>| {
+                    let on_finish = move |success: bool, note_or_error: Option<String>| {
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
                         row3.set_sensitive(true);
+                        refresh_dep_rows(&prefix3, &title3, &row_handles3.borrow());
+                        dialog_busy3.set(false);
+                        set_dialog_busy(false, &close_btn3, &search_entry3, &row_handles3.borrow());
                         if success {
-                            add_installed_dep(&prefix3, dep_id);
                             badge3.set_visible(true);
-                            install_btn3.set_visible(false);
-                            reinstall_btn3.set_visible(true);
-                            remove_btn3.set_visible(true);
-                            let n = read_installed_deps(&prefix3).len();
-                            title3.set_subtitle(&installed_subtitle(n));
-                            overlay3.add_toast(adw::Toast::new(&format!(
-                                "'{}' installed successfully.",
-                                dep_id
-                            )));
+                            let message = note_or_error
+                                .map(|note| {
+                                    format!("'{}' installed successfully. {}", dep_id, note)
+                                })
+                                .unwrap_or_else(|| format!("'{}' installed successfully.", dep_id));
+                            overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(true);
-                            let msg = err.unwrap_or_else(|| "Installation failed.".to_string());
+                            reinstall_btn3.set_visible(false);
+                            remove_btn3.set_visible(false);
+                            let msg =
+                                note_or_error.unwrap_or_else(|| "Installation failed.".to_string());
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -274,8 +383,14 @@ pub fn show_dependencies_dialog(
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
+                let row_handles2 = row_handles.clone();
+                let close_btn2 = close_btn.clone();
+                let search_entry2 = search_entry.clone();
+                let dialog_busy2 = dialog_busy.clone();
 
                 reinstall_btn.connect_clicked(move |_| {
+                    dialog_busy2.set(true);
+                    set_dialog_busy(true, &close_btn2, &search_entry2, &row_handles2.borrow());
                     reinstall_btn2.set_visible(false);
                     remove_btn2.set_visible(false);
                     spinner2.set_visible(true);
@@ -293,34 +408,40 @@ pub fn show_dependencies_dialog(
                     let title3 = title2.clone();
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
+                    let row_handles3 = row_handles2.clone();
+                    let close_btn3 = close_btn2.clone();
+                    let search_entry3 = search_entry2.clone();
+                    let dialog_busy3 = dialog_busy2.clone();
 
                     let progress_label_p = progress_label2.clone();
                     let on_progress = move |_step: usize, _total: usize, desc: String| {
                         progress_label_p.set_label(&desc);
                     };
 
-                    let on_finish = move |success: bool, err: Option<String>| {
+                    let on_finish = move |success: bool, note_or_error: Option<String>| {
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
                         row3.set_sensitive(true);
+                        refresh_dep_rows(&prefix3, &title3, &row_handles3.borrow());
+                        dialog_busy3.set(false);
+                        set_dialog_busy(false, &close_btn3, &search_entry3, &row_handles3.borrow());
                         if success {
-                            add_installed_dep(&prefix3, dep_id);
                             badge3.set_visible(true);
-                            install_btn3.set_visible(false);
-                            reinstall_btn3.set_visible(true);
-                            remove_btn3.set_visible(true);
-                            let n = read_installed_deps(&prefix3).len();
-                            title3.set_subtitle(&installed_subtitle(n));
-                            overlay3.add_toast(adw::Toast::new(&format!(
-                                "'{}' reinstalled successfully.",
-                                dep_id
-                            )));
+                            let message = note_or_error
+                                .map(|note| {
+                                    format!("'{}' reinstalled successfully. {}", dep_id, note)
+                                })
+                                .unwrap_or_else(|| {
+                                    format!("'{}' reinstalled successfully.", dep_id)
+                                });
+                            overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
-                            let msg = err.unwrap_or_else(|| "Reinstall failed.".to_string());
+                            let msg =
+                                note_or_error.unwrap_or_else(|| "Reinstall failed.".to_string());
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -350,21 +471,21 @@ pub fn show_dependencies_dialog(
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
                 let dialog2 = dialog.clone();
+                let row_handles2 = row_handles.clone();
+                let close_btn2 = close_btn.clone();
+                let search_entry2 = search_entry.clone();
+                let dialog_busy2 = dialog_busy.clone();
 
                 remove_btn.connect_clicked(move |_| {
-                    let has_uninstall_steps = !get_dep_uninstall_steps(dep_id).is_empty();
-                    let detail = if has_uninstall_steps {
-                        "This will remove installed files and DLL overrides from the Wine prefix. \
-                         This action cannot be undone."
-                    } else {
-                        "This removes the dependency from leyen's tracking. \
-                         Installed files may remain in the Wine prefix — use \
-                         Wine's Add/Remove Programs for a full uninstall."
-                    };
+                    let detail = get_installed_dep(&prefix2, dep_id)
+                        .map(|installed| installed.removal_detail())
+                        .unwrap_or_else(|| {
+                            "This removes the dependency from Leyen's tracking.".to_string()
+                        });
 
                     let confirm = gtk4::AlertDialog::builder()
                         .message(format!("Remove '{}'?", dep_id))
-                        .detail(detail)
+                        .detail(&detail)
                         .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
                         .cancel_button(0)
                         .default_button(0)
@@ -381,82 +502,91 @@ pub fn show_dependencies_dialog(
                     let prefix3 = prefix2.clone();
                     let proton3 = proton2.clone();
                     let overlay3 = overlay2.clone();
+                    let row_handles3 = row_handles2.clone();
+                    let close_btn3 = close_btn2.clone();
+                    let search_entry3 = search_entry2.clone();
+                    let dialog_busy3 = dialog_busy2.clone();
 
                     confirm.choose(Some(&dialog2), gio::Cancellable::NONE, move |result| {
                         if let Ok(1) = result {
-                            if has_uninstall_steps {
-                                reinstall_btn3.set_visible(false);
-                                remove_btn3.set_visible(false);
-                                spinner3.set_visible(true);
-                                spinner3.start();
-                                progress_label3.set_visible(true);
-                                row3.set_sensitive(false);
+                            dialog_busy3.set(true);
+                            set_dialog_busy(
+                                true,
+                                &close_btn3,
+                                &search_entry3,
+                                &row_handles3.borrow(),
+                            );
+                            reinstall_btn3.set_visible(false);
+                            remove_btn3.set_visible(false);
+                            spinner3.set_visible(true);
+                            spinner3.start();
+                            progress_label3.set_visible(true);
+                            row3.set_sensitive(false);
 
-                                let install_btn4 = install_btn3.clone();
-                                let reinstall_btn4 = reinstall_btn3.clone();
-                                let remove_btn4 = remove_btn3.clone();
-                                let spinner4 = spinner3.clone();
-                                let progress_label4 = progress_label3.clone();
-                                let row4 = row3.clone();
-                                let badge4 = badge3.clone();
-                                let title4 = title3.clone();
-                                let prefix4 = prefix3.clone();
-                                let overlay4 = overlay3.clone();
+                            let install_btn4 = install_btn3.clone();
+                            let reinstall_btn4 = reinstall_btn3.clone();
+                            let remove_btn4 = remove_btn3.clone();
+                            let spinner4 = spinner3.clone();
+                            let progress_label4 = progress_label3.clone();
+                            let row4 = row3.clone();
+                            let badge4 = badge3.clone();
+                            let title4 = title3.clone();
+                            let prefix4 = prefix3.clone();
+                            let overlay4 = overlay3.clone();
+                            let row_handles4 = row_handles3.clone();
+                            let close_btn4 = close_btn3.clone();
+                            let search_entry4 = search_entry3.clone();
+                            let dialog_busy4 = dialog_busy3.clone();
 
-                                let progress_label_p = progress_label3.clone();
-                                let on_progress =
-                                    move |_step: usize, _total: usize, desc: String| {
-                                        progress_label_p.set_label(&desc);
-                                    };
+                            let progress_label_p = progress_label3.clone();
+                            let on_progress = move |_step: usize, _total: usize, desc: String| {
+                                progress_label_p.set_label(&desc);
+                            };
 
-                                let on_finish = move |success: bool, err: Option<String>| {
-                                    spinner4.stop();
-                                    spinner4.set_visible(false);
-                                    progress_label4.set_visible(false);
-                                    row4.set_sensitive(true);
-                                    if success {
-                                        remove_installed_dep(&prefix4, dep_id);
-                                        badge4.set_visible(false);
-                                        install_btn4.set_visible(true);
-                                        reinstall_btn4.set_visible(false);
-                                        remove_btn4.set_visible(false);
-                                        let n = read_installed_deps(&prefix4).len();
-                                        title4.set_subtitle(&installed_subtitle(n));
-                                        overlay4.add_toast(adw::Toast::new(&format!(
-                                            "'{}' uninstalled successfully.",
-                                            dep_id
-                                        )));
-                                    } else {
-                                        reinstall_btn4.set_visible(true);
-                                        remove_btn4.set_visible(true);
-                                        let msg =
-                                            err.unwrap_or_else(|| "Uninstall failed.".to_string());
-                                        overlay4.add_toast(adw::Toast::new(&msg));
-                                    }
-                                };
-
-                                uninstall_dep_async(
-                                    dep_id,
-                                    &prefix3,
-                                    &proton3,
-                                    &overlay3,
-                                    on_progress,
-                                    on_finish,
+                            let on_finish = move |success: bool, note_or_error: Option<String>| {
+                                spinner4.stop();
+                                spinner4.set_visible(false);
+                                progress_label4.set_visible(false);
+                                row4.set_sensitive(true);
+                                refresh_dep_rows(&prefix4, &title4, &row_handles4.borrow());
+                                dialog_busy4.set(false);
+                                set_dialog_busy(
+                                    false,
+                                    &close_btn4,
+                                    &search_entry4,
+                                    &row_handles4.borrow(),
                                 );
-                            } else {
-                                remove_installed_dep(&prefix3, dep_id);
-                                row3.set_sensitive(true);
-                                badge3.set_visible(false);
-                                install_btn3.set_visible(true);
-                                reinstall_btn3.set_visible(false);
-                                remove_btn3.set_visible(false);
-                                let n = read_installed_deps(&prefix3).len();
-                                title3.set_subtitle(&installed_subtitle(n));
-                                overlay3.add_toast(adw::Toast::new(&format!(
-                                    "'{}' removed from tracking.",
-                                    dep_id
-                                )));
-                            }
+                                if success {
+                                    badge4.set_visible(false);
+                                    install_btn4.set_visible(true);
+                                    reinstall_btn4.set_visible(false);
+                                    remove_btn4.set_visible(false);
+                                    let message = note_or_error
+                                        .map(|note| {
+                                            format!("'{}' removed successfully. {}", dep_id, note)
+                                        })
+                                        .unwrap_or_else(|| {
+                                            format!("'{}' removed successfully.", dep_id)
+                                        });
+                                    overlay4.add_toast(adw::Toast::new(&message));
+                                } else {
+                                    install_btn4.set_visible(false);
+                                    reinstall_btn4.set_visible(true);
+                                    remove_btn4.set_visible(true);
+                                    let msg = note_or_error
+                                        .unwrap_or_else(|| "Remove failed.".to_string());
+                                    overlay4.add_toast(adw::Toast::new(&msg));
+                                }
+                            };
+
+                            uninstall_dep_async(
+                                dep_id,
+                                &prefix3,
+                                &proton3,
+                                &overlay3,
+                                on_progress,
+                                on_finish,
+                            );
                         }
                     });
                 });
@@ -466,7 +596,7 @@ pub fn show_dependencies_dialog(
             rows_in_group.push((row, dep_id));
         }
 
-        dep_box.append(&group);
+        page.add(&group);
         groups.push((group, rows_in_group));
     }
 
@@ -496,5 +626,6 @@ pub fn show_dependencies_dialog(
     let dialog_close = dialog.clone();
     close_btn.connect_clicked(move |_| dialog_close.destroy());
 
+    refresh_dep_rows(&resolved_prefix, &title_widget, &row_handles.borrow());
     dialog.present();
 }

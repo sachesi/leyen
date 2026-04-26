@@ -21,6 +21,7 @@ use crate::icons::{
     save_custom_game_icon, save_custom_group_icon,
 };
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
+use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::proton::resolve_proton_path;
 
 use super::deps_dialog::show_dependencies_dialog;
@@ -118,6 +119,82 @@ fn apply_group_icon(
         clear_group_icon(group_id);
         Ok(())
     }
+}
+
+fn group_custom_prefix_games(group: &GameGroup) -> Vec<String> {
+    group
+        .games
+        .iter()
+        .filter(|game| !game.prefix_path.trim().is_empty())
+        .map(|game| game.title.clone())
+        .collect()
+}
+
+fn group_dependency_prefix(group: &GameGroup) -> Option<String> {
+    let prefix = group.defaults.prefix_path.trim();
+    if prefix.is_empty() {
+        None
+    } else {
+        Some(prefix.to_string())
+    }
+}
+
+enum GroupToolState {
+    Available,
+    MixedCustomPrefixes { titles: Vec<String> },
+    ManagedByGlobal,
+}
+
+enum GameToolState {
+    Available,
+    ManagedByGroup { group_title: String },
+    ManagedByGlobal,
+}
+
+fn group_tool_state(group: &GameGroup) -> GroupToolState {
+    let custom_prefix_games = group_custom_prefix_games(group);
+    if !custom_prefix_games.is_empty() {
+        return GroupToolState::MixedCustomPrefixes {
+            titles: custom_prefix_games,
+        };
+    }
+
+    match group_dependency_prefix(group) {
+        Some(_) => GroupToolState::Available,
+        None => GroupToolState::ManagedByGlobal,
+    }
+}
+
+fn game_tool_state(game: &Game, group: Option<&GameGroup>) -> GameToolState {
+    if !game.prefix_path.trim().is_empty() {
+        return GameToolState::Available;
+    }
+
+    if let Some(group) = group
+        && !group.defaults.prefix_path.trim().is_empty()
+    {
+        return GameToolState::ManagedByGroup {
+            group_title: group.title.clone(),
+        };
+    }
+
+    GameToolState::ManagedByGlobal
+}
+
+fn build_tools_notice_row(title: &str, subtitle: &str, icon_name: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .build();
+    row.add_prefix(&gtk4::Image::from_icon_name(icon_name));
+    row
+}
+
+fn selected_combo_value(row: &adw::ComboRow, values: &[String]) -> String {
+    values
+        .get(row.selected() as usize)
+        .cloned()
+        .unwrap_or_else(|| "Default".to_string())
 }
 
 pub fn show_add_library_item_dialog(
@@ -793,8 +870,119 @@ pub fn show_edit_group_dialog(
     defaults_group.add(&group_icon_override_row);
     defaults_group.add(&prefix_override_row);
     defaults_group.add(&proton_row);
+    let tools_group = adw::PreferencesGroup::builder().title("Tools").build();
+    let tools_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .build();
+
+    let available_tools = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    deps_btn.set_margin_bottom(6);
+    let run_btn = gtk4::Button::builder().label("Run in prefix").build();
+    run_btn.set_margin_top(6);
+    available_tools.append(&deps_btn);
+    available_tools.append(&run_btn);
+    tools_stack.add_named(&available_tools, Some("available"));
+
+    let mixed_warning_row =
+        build_tools_notice_row("Group tools unavailable", "", "dialog-warning-symbolic");
+    tools_stack.add_named(&mixed_warning_row, Some("mixed"));
+
+    let global_notice_row = build_tools_notice_row(
+        "Managed by global preferences",
+        "Use Global Settings to manage dependencies or run a program in the default prefix.",
+        "dialog-information-symbolic",
+    );
+    tools_stack.add_named(&global_notice_row, Some("global"));
+    tools_group.add(&tools_stack);
+
+    let dialog_parent = parent.clone();
+    let overlay_clone_deps = overlay.clone();
+    let prefix_row_for_deps = prefix_row.clone();
+    let proton_row_for_deps = proton_row.clone();
+    let available_protons_for_deps = available_protons.clone();
+    let settings_default_proton_for_deps = settings.default_proton.clone();
+    deps_btn.connect_clicked(move |_| {
+        let deps_prefix = prefix_row_for_deps.text().to_string();
+        if deps_prefix.trim().is_empty() {
+            overlay_clone_deps.add_toast(adw::Toast::new("Custom group prefix path is required"));
+            return;
+        }
+        let proton_choice = selected_combo_value(&proton_row_for_deps, &available_protons_for_deps);
+        let resolved_choice = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_deps.clone()
+        } else {
+            proton_choice
+        };
+        let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
+        show_dependencies_dialog(
+            &dialog_parent,
+            deps_prefix.as_str(),
+            &deps_proton,
+            &overlay_clone_deps,
+        );
+    });
+
+    let dialog_parent = parent.clone();
+    let overlay_clone_run = overlay.clone();
+    let prefix_row_for_run = prefix_row.clone();
+    let proton_row_for_run = proton_row.clone();
+    let available_protons_for_run = available_protons.clone();
+    let settings_default_proton_for_run = settings.default_proton.clone();
+    run_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_run.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_run.add_toast(adw::Toast::new("Custom group prefix path is required"));
+            return;
+        }
+        let proton_choice = selected_combo_value(&proton_row_for_run, &available_protons_for_run);
+        let resolved_choice = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_run.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
+        pick_and_run_in_prefix(&dialog_parent, &overlay_clone_run, &prefix, &proton);
+    });
+
+    let custom_prefix_games = match group_tool_state(group) {
+        GroupToolState::MixedCustomPrefixes { titles } => titles,
+        _ => Vec::new(),
+    };
+    let tools_stack_clone = tools_stack.clone();
+    if !custom_prefix_games.is_empty() {
+        mixed_warning_row.set_subtitle(&format!(
+            "These games use their own prefixes: {}.",
+            custom_prefix_games.join(", ")
+        ));
+        tools_stack_clone.set_visible_child_name("mixed");
+    } else if prefix_override_row.enables_expansion() {
+        tools_stack_clone.set_visible_child_name("available");
+    } else {
+        tools_stack_clone.set_visible_child_name("global");
+    }
+    let tools_stack_clone = tools_stack.clone();
+    let mixed_warning_row_clone = mixed_warning_row.clone();
+    let custom_prefix_games_clone = custom_prefix_games.clone();
+    prefix_override_row.connect_enable_expansion_notify(move |row| {
+        if !custom_prefix_games_clone.is_empty() {
+            mixed_warning_row_clone.set_subtitle(&format!(
+                "These games use their own prefixes: {}.",
+                custom_prefix_games_clone.join(", ")
+            ));
+            tools_stack_clone.set_visible_child_name("mixed");
+        } else if row.enables_expansion() {
+            tools_stack_clone.set_visible_child_name("available");
+        } else {
+            tools_stack_clone.set_visible_child_name("global");
+        }
+    });
     page.add(&group_settings);
     page.add(&defaults_group);
+    page.add(&tools_group);
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
@@ -1158,8 +1346,10 @@ pub fn show_edit_game_dialog(
     overrides.add(&ntsync_row);
 
     let tools = adw::PreferencesGroup::builder().title("Tools").build();
-    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
-    deps_btn.set_margin_bottom(6);
+    let tools_stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::Crossfade)
+        .transition_duration(180)
+        .build();
     let menu_btn = gtk4::Button::builder()
         .label(if desktop_entry_exists(&game.leyen_id) {
             "Remove from menu"
@@ -1168,39 +1358,133 @@ pub fn show_edit_game_dialog(
         })
         .build();
     menu_btn.set_margin_top(6);
-    let deps_prefix = if !game.prefix_path.trim().is_empty() {
-        game.prefix_path.clone()
-    } else if let Some(group) = current_parent_group.as_ref() {
-        if !group.defaults.prefix_path.trim().is_empty() {
-            group.defaults.prefix_path.clone()
-        } else {
-            settings.default_prefix_path.clone()
-        }
-    } else {
-        settings.default_prefix_path.clone()
-    };
-    let deps_proton_choice = if game.proton.trim().is_empty() || game.proton == "Default" {
-        current_parent_group
-            .as_ref()
-            .map(|group| group.defaults.proton.trim())
-            .filter(|value| !value.is_empty() && *value != "Default")
-            .unwrap_or(settings.default_proton.as_str())
-            .to_string()
-    } else {
-        game.proton.clone()
-    };
-    let deps_proton = resolve_proton_path(&deps_proton_choice).unwrap_or_default();
-    let overlay_clone_deps = overlay.clone();
+    let available_tools = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .build();
+    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    deps_btn.set_margin_bottom(6);
+    let run_btn = gtk4::Button::builder().label("Run in prefix").build();
+    run_btn.set_margin_top(6);
+    available_tools.append(&deps_btn);
+    available_tools.append(&run_btn);
+    tools_stack.add_named(&available_tools, Some("available"));
+
+    let group_notice_row =
+        build_tools_notice_row("Managed by group prefix", "", "dialog-information-symbolic");
+    tools_stack.add_named(&group_notice_row, Some("group"));
+
+    let global_notice_row = build_tools_notice_row(
+        "Managed by global preferences",
+        "Use Global Settings to manage dependencies or run a program in the default prefix.",
+        "dialog-information-symbolic",
+    );
+    tools_stack.add_named(&global_notice_row, Some("global"));
+    tools.add(&tools_stack);
+
     let dialog_parent = parent.clone();
+    let overlay_clone_deps = overlay.clone();
+    let prefix_row_for_deps = prefix_row.clone();
+    let proton_row_for_deps = proton_row.clone();
+    let proton_override_row_for_deps = proton_override_row.clone();
+    let available_protons_for_deps = available_protons.clone();
+    let current_parent_group_for_deps = current_parent_group.clone();
+    let settings_default_proton_for_deps = settings.default_proton.clone();
     deps_btn.connect_clicked(move |_| {
+        let deps_prefix = prefix_row_for_deps.text().to_string();
+        if deps_prefix.trim().is_empty() {
+            overlay_clone_deps.add_toast(adw::Toast::new("Custom game prefix path is required"));
+            return;
+        }
+        let proton_choice = if grouped_game && !proton_override_row_for_deps.enables_expansion() {
+            current_parent_group_for_deps
+                .as_ref()
+                .map(|group| group.defaults.proton.trim())
+                .filter(|value| !value.is_empty() && *value != "Default")
+                .unwrap_or(settings_default_proton_for_deps.as_str())
+                .to_string()
+        } else {
+            selected_combo_value(&proton_row_for_deps, &available_protons_for_deps)
+        };
+        let resolved_choice = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_deps.clone()
+        } else {
+            proton_choice
+        };
+        let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
         show_dependencies_dialog(
             &dialog_parent,
-            &deps_prefix,
+            deps_prefix.as_str(),
             &deps_proton,
             &overlay_clone_deps,
         );
     });
-    tools.add(&deps_btn);
+
+    let dialog_parent = parent.clone();
+    let overlay_clone_run = overlay.clone();
+    let prefix_row_for_run = prefix_row.clone();
+    let proton_row_for_run = proton_row.clone();
+    let proton_override_row_for_run = proton_override_row.clone();
+    let available_protons_for_run = available_protons.clone();
+    let current_parent_group_for_run = current_parent_group.clone();
+    let settings_default_proton_for_run = settings.default_proton.clone();
+    run_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_run.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_run.add_toast(adw::Toast::new("Custom game prefix path is required"));
+            return;
+        }
+        let proton_choice = if grouped_game && !proton_override_row_for_run.enables_expansion() {
+            current_parent_group_for_run
+                .as_ref()
+                .map(|group| group.defaults.proton.trim())
+                .filter(|value| !value.is_empty() && *value != "Default")
+                .unwrap_or(settings_default_proton_for_run.as_str())
+                .to_string()
+        } else {
+            selected_combo_value(&proton_row_for_run, &available_protons_for_run)
+        };
+        let resolved_choice = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_run.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
+        pick_and_run_in_prefix(&dialog_parent, &overlay_clone_run, &prefix, &proton);
+    });
+
+    match game_tool_state(game, current_parent_group.as_ref()) {
+        GameToolState::Available => {
+            tools_stack.set_visible_child_name("available");
+        }
+        GameToolState::ManagedByGroup { group_title } => {
+            group_notice_row.set_subtitle(&format!(
+                "Use {} settings to manage dependencies or run a program in that prefix.",
+                group_title
+            ));
+            tools_stack.set_visible_child_name("group");
+        }
+        GameToolState::ManagedByGlobal => {
+            tools_stack.set_visible_child_name("global");
+        }
+    }
+    let tools_stack_clone = tools_stack.clone();
+    let group_notice_row_clone = group_notice_row.clone();
+    let current_parent_group_for_tools = current_parent_group.clone();
+    prefix_override_row.connect_enable_expansion_notify(move |row| {
+        if row.enables_expansion() {
+            tools_stack_clone.set_visible_child_name("available");
+        } else if let Some(group) = current_parent_group_for_tools.as_ref()
+            && !group.defaults.prefix_path.trim().is_empty()
+        {
+            group_notice_row_clone.set_subtitle(&format!(
+                "Use {} settings to manage dependencies or run a program in that prefix.",
+                group.title
+            ));
+            tools_stack_clone.set_visible_child_name("group");
+        } else {
+            tools_stack_clone.set_visible_child_name("global");
+        }
+    });
     let overlay_clone_menu = overlay.clone();
     let game_for_menu = game.clone();
     let group_for_menu = current_parent_group.clone();

@@ -12,6 +12,7 @@ mod logging;
 mod models;
 mod prefix_tools;
 mod proton;
+mod tools;
 mod ui;
 mod umu;
 

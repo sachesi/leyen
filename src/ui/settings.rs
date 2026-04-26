@@ -10,6 +10,7 @@ use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::config::{load_settings, save_settings};
 use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::proton::resolve_proton_path;
+use crate::tools::{gamemode_available, mangohud_available};
 use crate::umu::get_umu_runtime_dir;
 
 pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
@@ -127,11 +128,13 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
     let mangohud_row = adw::SwitchRow::builder()
         .title("MangoHud")
         .active(settings.global_mangohud)
+        .visible(mangohud_available())
         .build();
 
     let gamemode_row = adw::SwitchRow::builder()
         .title("GameMode")
         .active(settings.global_gamemode)
+        .visible(gamemode_available())
         .build();
 
     let wayland_row = adw::SwitchRow::builder()
@@ -271,8 +274,8 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             } else {
                 "Default".to_string()
             },
-            global_mangohud: mangohud_row.is_active(),
-            global_gamemode: gamemode_row.is_active(),
+            global_mangohud: mangohud_available() && mangohud_row.is_active(),
+            global_gamemode: gamemode_available() && gamemode_row.is_active(),
             global_wayland: wayland_row.is_active(),
             global_wow64: wow64_row.is_active(),
             global_ntsync: ntsync_row.is_active(),

@@ -7,7 +7,7 @@
 
 Name:           leyen
 Version:        0.2.2
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
 License:        GPL-3.0-or-later
@@ -60,6 +60,18 @@ test -f .cargo/config.toml
 export CARGO_HOME="$PWD/.cargo-home"
 export RUSTFLAGS="%{?build_rustflags}"
 
+# Optional local-only Cargo target cache.
+# The Makefile passes this only for local binary RPM builds:
+#   make rpm
+#   make ba
+#   make rpm-local
+#   make ba-local
+#
+# COPR and SRPM builds do not use it.
+%if 0%{?_cargo_target_dir:1}
+export CARGO_TARGET_DIR="%{_cargo_target_dir}"
+%endif
+
 %if %{with vendored}
 export CARGO_NET_OFFLINE=true
 cargo build --release --frozen --offline
@@ -68,8 +80,13 @@ cargo build --release
 %endif
 
 %install
+%if 0%{?_cargo_target_dir:1}
+install -Dpm 0755 "%{_cargo_target_dir}/release/%{name}" \
+  %{buildroot}%{_bindir}/%{name}
+%else
 install -Dpm 0755 target/release/%{name} \
   %{buildroot}%{_bindir}/%{name}
+%endif
 
 install -Dpm 0644 packaging/usr/share/applications/%{app_id}.desktop \
   %{buildroot}%{_datadir}/applications/%{app_id}.desktop
@@ -106,6 +123,9 @@ test -f %{buildroot}%{_datadir}/zsh/site-functions/_%{name}
 %{_datadir}/zsh/site-functions/_%{name}
 
 %changelog
+* Sun Apr 26 2026 sachesi <xsachesi@pm.me> - 0.2.2-5
+- Add optional local-only Cargo target cache support for faster iterative RPM builds
+
 * Sun Apr 26 2026 sachesi <xsachesi@pm.me> - 0.2.2-4
 - Make vendored mode conditional and default-enabled for COPR offline rebuilds
 - Allow local online builds with --without vendored

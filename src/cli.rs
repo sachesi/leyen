@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
+use clap::{Parser, Subcommand};
 use gtk4::glib;
 
 use crate::config::{find_game_by_leyen_id, load_library};
@@ -13,35 +14,76 @@ use crate::umu::{UMU_DOWNLOADING, check_or_install_umu, is_umu_run_available};
 
 static OPEN_LOGS_ON_START: AtomicBool = AtomicBool::new(false);
 
+#[derive(Parser)]
+#[command(name = "leyen")]
+#[command(about = "A small GTK4/libadwaita launcher for Windows games on Linux", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// List configured games
+    List,
+    /// Launch a game by its Leyen ID
+    Run {
+        /// The Leyen ID of the game to launch (e.g., ly-1234)
+        leyen_id: String,
+    },
+    /// Open the logs window
+    Logs,
+    /// Stop a running game by its Leyen ID
+    Kill {
+        /// The Leyen ID of the game to stop (e.g., ly-1234)
+        leyen_id: String,
+    },
+    /// Internal command to run a game in a detached process
+    #[command(hide = true)]
+    InternalRun { leyen_id: String },
+    /// Internal command to monitor a running game process
+    #[command(hide = true)]
+    InternalMonitor { game_id: String },
+}
+
 pub fn maybe_run_from_args() -> Option<glib::ExitCode> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() {
+    let args = std::env::args().collect::<Vec<_>>();
+    
+    // We use try_parse to handle errors ourselves if needed, 
+    // or just use parse() which will exit on help/error.
+    // However, we want to return None if no args were provided to start the GUI.
+    if args.len() <= 1 {
         return None;
     }
 
-    if args[0] == "logs" {
-        if args.len() > 1 {
-            eprintln!(
-                "`leyen logs` does not take extra arguments\n\n{}",
-                usage_text()
-            );
-            return Some(glib::ExitCode::FAILURE);
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            // If it's a help or version message, clap handles it.
+            // If it's an error, we print it and exit.
+            e.print().unwrap();
+            return Some(if e.use_stderr() {
+                glib::ExitCode::FAILURE
+            } else {
+                glib::ExitCode::SUCCESS
+            });
         }
-        OPEN_LOGS_ON_START.store(true, Relaxed);
-        return None;
-    }
+    };
 
-    let result = match args[0].as_str() {
-        "help" | "--help" | "-h" => {
-            print_usage();
-            Ok(())
+    let Some(command) = cli.command else {
+        return None;
+    };
+
+    let result = match command {
+        Commands::List => list_games(),
+        Commands::Run { leyen_id } => run_game(&leyen_id),
+        Commands::Logs => {
+            OPEN_LOGS_ON_START.store(true, Relaxed);
+            return None; // Return None to continue to GUI start
         }
-        "list" => list_games(&args[1..]),
-        "run" => run_game(&args[1..]),
-        "kill" => kill_game(&args[1..]),
-        "internal-run" => internal_run(&args[1..]),
-        "internal-monitor" => internal_monitor(&args[1..]),
-        other => Err(format!("Unknown command '{other}'\n\n{}", usage_text())),
+        Commands::Kill { leyen_id } => kill_game(&leyen_id),
+        Commands::InternalRun { leyen_id } => internal_run(&leyen_id),
+        Commands::InternalMonitor { game_id } => internal_monitor(&game_id),
     };
 
     Some(match result {
@@ -57,27 +99,7 @@ pub fn take_open_logs_on_start() -> bool {
     OPEN_LOGS_ON_START.swap(false, Relaxed)
 }
 
-fn usage_text() -> &'static str {
-    "Usage:
-  leyen
-  leyen list
-  leyen run <leyen-id>
-  leyen logs
-  leyen kill <leyen-id>"
-}
-
-fn print_usage() {
-    println!("{}", usage_text());
-}
-
-fn list_games(args: &[String]) -> Result<(), String> {
-    if !args.is_empty() {
-        return Err(format!(
-            "`leyen list` does not take extra arguments\n\n{}",
-            usage_text()
-        ));
-    }
-
+fn list_games() -> Result<(), String> {
     let items = load_library();
     let running_map = running_games_index();
 
@@ -177,26 +199,18 @@ fn list_games(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn run_game(args: &[String]) -> Result<(), String> {
-    let [requested_leyen_id] = args else {
-        return Err(format!(
-            "`leyen run` requires exactly one Leyen ID\n\n{}",
-            usage_text()
-        ));
-    };
-
+fn run_game(requested_leyen_id: &str) -> Result<(), String> {
     ensure_umu_available_for_cli()?;
 
     let items = load_library();
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         return Err(format!(
-            "No game found for Leyen ID '{}'. Use `leyen list` to inspect available games.",
-            requested_leyen_id
+            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
         ));
     };
 
     let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve the current executable: {}", e))?;
+        .map_err(|e| format!("Failed to resolve the current executable: {e}"))?;
     Command::new(current_exe)
         .arg("internal-run")
         .arg(&game.leyen_id)
@@ -204,7 +218,7 @@ fn run_game(args: &[String]) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to start detached launch helper: {}", e))?;
+        .map_err(|e| format!("Failed to start detached launch helper: {e}"))?;
 
     match group {
         Some(group) => eprintln!(
@@ -220,16 +234,11 @@ fn run_game(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn internal_run(args: &[String]) -> Result<(), String> {
-    let [requested_leyen_id] = args else {
-        return Err("internal-run requires exactly one Leyen ID".to_string());
-    };
-
+fn internal_run(requested_leyen_id: &str) -> Result<(), String> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         return Err(format!(
-            "No game found for Leyen ID '{}'.",
-            requested_leyen_id
+            "No game found for Leyen ID '{requested_leyen_id}'."
         ));
     };
 
@@ -237,19 +246,11 @@ fn internal_run(args: &[String]) -> Result<(), String> {
     monitor_running_game(&game.id)
 }
 
-fn kill_game(args: &[String]) -> Result<(), String> {
-    let [requested_leyen_id] = args else {
-        return Err(format!(
-            "`leyen kill` requires exactly one Leyen ID\n\n{}",
-            usage_text()
-        ));
-    };
-
+fn kill_game(requested_leyen_id: &str) -> Result<(), String> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         return Err(format!(
-            "No game found for Leyen ID '{}'. Use `leyen list` to inspect available games.",
-            requested_leyen_id
+            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
         ));
     };
 
@@ -265,11 +266,7 @@ fn kill_game(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn internal_monitor(args: &[String]) -> Result<(), String> {
-    let [game_id] = args else {
-        return Err("internal-monitor requires exactly one internal game id".to_string());
-    };
-
+fn internal_monitor(game_id: &str) -> Result<(), String> {
     monitor_running_game(game_id)
 }
 

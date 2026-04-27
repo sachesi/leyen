@@ -27,7 +27,7 @@ fn main() -> glib::ExitCode {
     let _lock = match instance::InstanceLock::acquire() {
         Ok(lock) => lock,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             return glib::ExitCode::FAILURE;
         }
     };

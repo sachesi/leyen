@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use libadwaita as adw;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::config::{
     add_game_playtime, effective_game_id, find_game_and_group, get_config_dir, load_library,
@@ -49,6 +50,26 @@ pub struct RunningGameSnapshot {
     pub elapsed_seconds: u64,
 }
 
+#[derive(Error, Debug)]
+pub enum LaunchError {
+    #[error("Failed to prepare runtime lock directory: {0}")]
+    LockDirectoryError(#[from] std::io::Error),
+    #[error("Failed to open runtime lock '{path}': {source}")]
+    LockOpenError { path: PathBuf, source: std::io::Error },
+    #[error("Failed to lock runtime state '{path}': {source}")]
+    LockAcquireError { path: PathBuf, source: std::io::Error },
+    #[error("Failed to serialize running games state: {0}")]
+    SerializationError(String),
+    #[error("Failed to write running games state '{path}': {source}")]
+    WriteError { path: PathBuf, source: std::io::Error },
+    #[error("Game '{0}' is not running")]
+    GameNotRunning(String),
+    #[error("Prefix error: {0}")]
+    PrefixError(String),
+    #[error("Launch failed: {0}")]
+    Other(String),
+}
+
 enum PrefixLockState {
     Available,
     Busy,
@@ -72,11 +93,10 @@ fn running_registry_lock_path() -> PathBuf {
 
 fn with_running_registry<R>(
     f: impl FnOnce(&mut RunningGamesRegistry) -> (R, bool),
-) -> Result<R, String> {
+) -> Result<R, LaunchError> {
     let lock_path = running_registry_lock_path();
     if let Some(parent) = lock_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to prepare runtime lock directory: {}", e))?;
+        fs::create_dir_all(parent)?;
     }
 
     let lock_file = OpenOptions::new()
@@ -84,20 +104,16 @@ fn with_running_registry<R>(
         .write(true)
         .truncate(false)
         .open(&lock_path)
-        .map_err(|e| {
-            format!(
-                "Failed to open runtime lock '{}': {}",
-                lock_path.display(),
-                e
-            )
+        .map_err(|e| LaunchError::LockOpenError {
+            path: lock_path.clone(),
+            source: e,
         })?;
 
     if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        return Err(format!(
-            "Failed to lock runtime state '{}': {}",
-            lock_path.display(),
-            std::io::Error::last_os_error()
-        ));
+        return Err(LaunchError::LockAcquireError {
+            path: lock_path,
+            source: std::io::Error::last_os_error(),
+        });
     }
 
     let registry_path = running_registry_path();
@@ -110,13 +126,10 @@ fn with_running_registry<R>(
 
     if dirty {
         let data = toml::to_string_pretty(&registry)
-            .map_err(|e| format!("Failed to serialize running games state: {}", e))?;
-        fs::write(&registry_path, data).map_err(|e| {
-            format!(
-                "Failed to write running games state '{}': {}",
-                registry_path.display(),
-                e
-            )
+            .map_err(|e| LaunchError::SerializationError(e.to_string()))?;
+        fs::write(&registry_path, data).map_err(|e| LaunchError::WriteError {
+            path: registry_path,
+            source: e,
         })?;
     }
 
@@ -200,7 +213,7 @@ fn finalize_finished_session(session: &RunningGameSession) {
     }
 }
 
-fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, String> {
+fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = with_running_registry(|registry| {
         let original_sessions = registry.sessions.clone();
         let mut active_sessions = Vec::new();
@@ -226,7 +239,7 @@ fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, String> {
     Ok(active_sessions)
 }
 
-fn try_register_running_session(session: RunningGameSession) -> Result<bool, String> {
+fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
     let _ = synchronize_running_sessions();
     with_running_registry(|registry| {
         if registry
@@ -242,7 +255,7 @@ fn try_register_running_session(session: RunningGameSession) -> Result<bool, Str
     })
 }
 
-fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, String> {
+fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, LaunchError> {
     with_running_registry(|registry| {
         let mut changed = false;
         if let Some(session) = registry
@@ -259,7 +272,7 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Str
     })
 }
 
-fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, String> {
+fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, LaunchError> {
     Ok(synchronize_running_sessions()?
         .into_iter()
         .find(|session| session.game_id == game_id))
@@ -281,7 +294,7 @@ pub fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
         .unwrap_or_default()
 }
 
-pub fn monitor_running_game(game_id: &str) -> Result<(), String> {
+pub fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
     loop {
         let active = synchronize_running_sessions()?;
         if !active.iter().any(|session| session.game_id == game_id) {
@@ -291,7 +304,7 @@ pub fn monitor_running_game(game_id: &str) -> Result<(), String> {
     }
 }
 
-pub fn stop_game(game_id: &str) -> Result<bool, String> {
+pub fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     let Some(mut session) = find_running_session(game_id)? else {
         return Ok(false);
     };
@@ -330,7 +343,7 @@ pub fn stop_game(game_id: &str) -> Result<bool, String> {
         return Ok(true);
     }
 
-    Err(format!(
+    Err(LaunchError::Other(format!(
         "Failed to stop pid {}: {}",
         session.pid,
         if group_error.kind() == std::io::ErrorKind::NotFound {
@@ -338,7 +351,7 @@ pub fn stop_game(game_id: &str) -> Result<bool, String> {
         } else {
             group_error.to_string()
         }
-    ))
+    )))
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -603,11 +616,11 @@ pub fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
                 overlay.add_toast(adw::Toast::new(&notice));
             }
         }
-        Err(err) => overlay.add_toast(adw::Toast::new(&err)),
+        Err(err) => overlay.add_toast(adw::Toast::new(&err.to_string())),
     }
 }
 
-pub fn launch_game_headless(game: &Game) -> Result<LaunchReport, String> {
+pub fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
     launch_game_managed(game, true, true, false)
 }
 
@@ -642,20 +655,22 @@ fn launch_game_managed(
     capture_output: bool,
     reap_child_locally: bool,
     spawn_background_monitor: bool,
-) -> Result<LaunchReport, String> {
+) -> Result<LaunchReport, LaunchError> {
     let mut notices = Vec::new();
 
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
-        return Err("umu-launcher is still downloading, please wait…".to_string());
+        return Err(LaunchError::Other(
+            "umu-launcher is still downloading, please wait…".to_string(),
+        ));
     }
 
     // Block launch if umu-run is simply not available.
     if !is_umu_run_available() {
-        return Err(
+        return Err(LaunchError::Other(
             "umu-launcher is not installed. Please check your internet connection and restart."
                 .to_string(),
-        );
+        ));
     }
 
     let settings = load_settings_with_auto_install(false);
@@ -665,7 +680,7 @@ fn launch_game_managed(
     let launch_game_id = effective_game_id(game);
 
     if is_game_running(&game.id) {
-        return Err("This game is already running".to_string());
+        return Err(LaunchError::Other("This game is already running".to_string()));
     }
 
     let mut env_vars: Vec<(String, String)> = Vec::new();
@@ -684,7 +699,9 @@ fn launch_game_managed(
                 "ERROR",
                 &format!("Proton path for '{}' does not exist: {}", game.title, path),
             );
-            return Err("Selected Proton version was not found".to_string());
+            return Err(LaunchError::Other(
+                "Selected Proton version was not found".to_string(),
+            ));
         }
         Some(path) => {
             env_vars.push(("PROTONPATH".to_string(), path.clone()));
@@ -836,7 +853,7 @@ fn launch_game_managed(
             if !try_register_running_session(session)? {
                 let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
                 let _ = child.wait();
-                return Err("This game is already running".to_string());
+                return Err(LaunchError::Other("This game is already running".to_string()));
             }
 
             let _ = record_game_launch_start(&game.id, started_at_epoch_seconds);
@@ -871,7 +888,7 @@ fn launch_game_managed(
                 "ERROR",
                 &format!("Failed to launch '{}': {}", game.title, e),
             );
-            Err(format!("Failed to launch: {}", e))
+            Err(LaunchError::Other(format!("Failed to launch: {}", e)))
         }
     }
 }

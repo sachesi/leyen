@@ -17,3 +17,5 @@ image = { version = "0.25", default-features = false, features = ["ico", "jpeg",
 pelite = "0.10"
 directories = "6.0.0"
 clap = { version = "4.6.1", features = ["derive"] }
+anyhow = "1.0.102"
+thiserror = "2.0.18"

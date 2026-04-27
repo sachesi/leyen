@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use gtk4::glib;
 
@@ -89,7 +90,7 @@ pub fn maybe_run_from_args() -> Option<glib::ExitCode> {
     Some(match result {
         Ok(()) => glib::ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("{err}");
+            eprintln!("{err:?}");
             glib::ExitCode::FAILURE
         }
     })
@@ -99,7 +100,7 @@ pub fn take_open_logs_on_start() -> bool {
     OPEN_LOGS_ON_START.swap(false, Relaxed)
 }
 
-fn list_games() -> Result<(), String> {
+fn list_games() -> Result<()> {
     let items = load_library();
     let running_map = running_games_index();
 
@@ -199,18 +200,16 @@ fn list_games() -> Result<(), String> {
     Ok(())
 }
 
-fn run_game(requested_leyen_id: &str) -> Result<(), String> {
+fn run_game(requested_leyen_id: &str) -> Result<()> {
     ensure_umu_available_for_cli()?;
 
     let items = load_library();
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
-        return Err(format!(
-            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
-        ));
+        anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
     };
 
     let current_exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve the current executable: {e}"))?;
+        .context("Failed to resolve the current executable")?;
     Command::new(current_exe)
         .arg("internal-run")
         .arg(&game.leyen_id)
@@ -218,7 +217,7 @@ fn run_game(requested_leyen_id: &str) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("Failed to start detached launch helper: {e}"))?;
+        .context("Failed to start detached launch helper")?;
 
     match group {
         Some(group) => eprintln!(
@@ -234,40 +233,35 @@ fn run_game(requested_leyen_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn internal_run(requested_leyen_id: &str) -> Result<(), String> {
+fn internal_run(requested_leyen_id: &str) -> Result<()> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
-        return Err(format!(
-            "No game found for Leyen ID '{requested_leyen_id}'."
-        ));
+        anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'.");
     };
 
-    let _ = launch_game_headless(game)?;
-    monitor_running_game(&game.id)
+    launch_game_headless(game).context("Failed to launch game")?;
+    monitor_running_game(&game.id).context("Failed to monitor game")?;
+    Ok(())
 }
 
-fn kill_game(requested_leyen_id: &str) -> Result<(), String> {
+fn kill_game(requested_leyen_id: &str) -> Result<()> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
-        return Err(format!(
-            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
-        ));
+        anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
     };
 
-    match stop_game(&game.id)? {
+    match stop_game(&game.id).context("Failed to stop game")? {
         true => {
             eprintln!("Stopping '{}' ({})...", game.title, game.leyen_id);
             Ok(())
         }
-        false => Err(format!(
-            "'{}' ({}) is not running",
-            game.title, game.leyen_id
-        )),
+        false => anyhow::bail!("'{}' ({}) is not running", game.title, game.leyen_id),
     }
 }
 
-fn internal_monitor(game_id: &str) -> Result<(), String> {
-    monitor_running_game(game_id)
+fn internal_monitor(game_id: &str) -> Result<()> {
+    monitor_running_game(game_id).context("Failed to monitor game")?;
+    Ok(())
 }
 
 fn index_games(items: &[LibraryItem]) -> HashMap<String, &Game> {
@@ -305,7 +299,7 @@ fn print_list_row(game: &Game, running: bool) {
     );
 }
 
-fn ensure_umu_available_for_cli() -> Result<(), String> {
+fn ensure_umu_available_for_cli() -> Result<()> {
     if is_umu_run_available() {
         return Ok(());
     }
@@ -320,6 +314,6 @@ fn ensure_umu_available_for_cli() -> Result<(), String> {
     if is_umu_run_available() {
         Ok(())
     } else {
-        Err("umu-launcher is not installed and automatic installation failed".to_string())
+        anyhow::bail!("umu-launcher is not installed and automatic installation failed")
     }
 }

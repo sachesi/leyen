@@ -1,4 +1,5 @@
 use std::fs;
+use crate::config::get_data_dir;
 
 static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -14,18 +15,18 @@ pub fn resolve_proton_path(proton: &str) -> Option<String> {
 }
 
 /// If no Proton installation is available, downloads the latest ProtonGE
-/// release from GitHub into `~/.local/share/leyen/proton/` in a background
+/// release from GitHub into the leyen data directory in a background
 /// thread.  Only one download attempt is made per application lifetime.
 pub fn check_or_install_protonge() {
     if PROTONGE_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         return;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let proton_dir = format!("{}/.local/share/leyen/proton", home);
+    let proton_dir = get_data_dir().join("proton");
 
     std::thread::spawn(move || {
         let _ = fs::create_dir_all(&proton_dir);
+        let proton_dir_str = proton_dir.to_string_lossy();
 
         // Resolve the latest release tag via the GitHub redirect
         let tag_output = std::process::Command::new("curl")
@@ -63,7 +64,7 @@ pub fn check_or_install_protonge() {
         }
 
         let tarball = format!("{}.tar.gz", tag);
-        let tarball_path = format!("{}/{}", proton_dir, tarball);
+        let tarball_path = proton_dir.join(&tarball);
         let download_url = format!(
             "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/{}/{}",
             tag, tarball
@@ -83,7 +84,7 @@ pub fn check_or_install_protonge() {
                 "--retry-delay",
                 "1",
                 "-o",
-                &tarball_path,
+                &tarball_path.to_string_lossy(),
                 &download_url,
             ])
             .status()
@@ -92,7 +93,7 @@ pub fn check_or_install_protonge() {
 
         if ok {
             let _ = std::process::Command::new("tar")
-                .args(["-xzf", &tarball_path, "-C", &proton_dir])
+                .args(["-xzf", &tarball_path.to_string_lossy(), "-C", &proton_dir_str])
                 .status();
             let _ = fs::remove_file(&tarball_path);
         }

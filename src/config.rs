@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use directories::ProjectDirs;
 
 use crate::logging::apply_log_settings;
 use crate::models::{
@@ -12,13 +13,25 @@ use crate::proton::check_or_install_protonge;
 const LEYEN_ID_PREFIX: &str = "ly-";
 const LEYEN_ID_DIGITS: usize = 4;
 
+pub fn get_project_dirs() -> ProjectDirs {
+    ProjectDirs::from("com.github.sachesi", "leyen", "leyen")
+        .expect("Could not determine home directory")
+}
+
 pub fn get_config_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let config_dir = PathBuf::from(format!("{}/.config/leyen", home));
+    let config_dir = get_project_dirs().config_dir().to_path_buf();
     if !config_dir.exists() {
         let _ = fs::create_dir_all(&config_dir);
     }
     config_dir
+}
+
+pub fn get_data_dir() -> PathBuf {
+    let data_dir = get_project_dirs().data_dir().to_path_buf();
+    if !data_dir.exists() {
+        let _ = fs::create_dir_all(&data_dir);
+    }
+    data_dir
 }
 
 pub fn get_config_path() -> PathBuf {
@@ -440,9 +453,7 @@ pub fn save_settings(settings: &GlobalSettings) {
 pub fn detect_proton_versions() -> GlobalSettings {
     let mut versions = vec!["Default".to_string()];
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-
-    let leyen_proton = PathBuf::from(format!("{}/.local/share/leyen/proton", home));
+    let leyen_proton = get_data_dir().join("proton");
     if leyen_proton.exists() {
         if let Ok(entries) = fs::read_dir(&leyen_proton) {
             for entry in entries.flatten() {
@@ -455,6 +466,7 @@ pub fn detect_proton_versions() -> GlobalSettings {
         let _ = fs::create_dir_all(&leyen_proton);
     }
 
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
     if steam_compat.exists()
         && let Ok(entries) = fs::read_dir(steam_compat)
@@ -480,14 +492,13 @@ pub fn detect_proton_versions() -> GlobalSettings {
         }
     }
 
-    let default_prefix_path = format!("{}/.local/share/leyen/prefixes/default", home);
-    let default_prefix_dir = PathBuf::from(&default_prefix_path);
-    if !default_prefix_dir.exists() {
-        let _ = fs::create_dir_all(&default_prefix_dir);
+    let default_prefix_path = get_data_dir().join("prefixes").join("default");
+    if !default_prefix_path.exists() {
+        let _ = fs::create_dir_all(&default_prefix_path);
     }
 
     GlobalSettings {
-        default_prefix_path,
+        default_prefix_path: default_prefix_path.to_string_lossy().to_string(),
         default_proton: "Default".to_string(),
         global_mangohud: false,
         global_gamemode: false,

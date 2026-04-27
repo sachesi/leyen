@@ -1,4 +1,6 @@
 use std::fs;
+use directories::ProjectDirs;
+use crate::config::get_data_dir;
 
 pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -10,8 +12,11 @@ pub static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
 
 /// Directory where the umu-launcher zipapp is extracted.
 pub fn get_umu_core_dir() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/.local/share/leyen/core/umu-launcher", home)
+    get_data_dir()
+        .join("core")
+        .join("umu-launcher")
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Directory where umu-run stores the Steam Linux Runtime (steamrt3).
@@ -19,8 +24,14 @@ pub fn get_umu_core_dir() -> String {
 /// the next launch — useful when pressure-vessel-wrap fails due to a
 /// corrupted or incomplete sniper_platform installation.
 pub fn get_umu_runtime_dir() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/.local/share/umu/steamrt3", home)
+    ProjectDirs::from("", "", "umu")
+        .map(|p| p.data_dir().join("steamrt3"))
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            std::path::PathBuf::from(format!("{}/.local/share/umu/steamrt3", home))
+        })
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).

@@ -8,7 +8,7 @@ use crate::logging::apply_log_settings;
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
 };
-use crate::proton::check_or_install_protonge;
+use crate::runtime::proton::check_or_install_protonge;
 
 const LEYEN_ID_PREFIX: &str = "ly-";
 const LEYEN_ID_DIGITS: usize = 4;
@@ -450,108 +450,6 @@ pub fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSetti
     settings
 }
 
-pub fn save_settings(settings: &GlobalSettings) {
-    apply_log_settings(settings);
-    let path = get_settings_path();
-    if let Ok(data) = toml::to_string_pretty(settings) {
-        let _ = fs::write(path, data);
-    }
-}
-
-pub fn detect_proton_versions() -> GlobalSettings {
-    let mut versions = vec!["Default".to_string()];
-
-    let leyen_proton = get_data_dir().join("proton");
-    if leyen_proton.exists() {
-        if let Ok(entries) = fs::read_dir(&leyen_proton) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
-                    versions.push(path.to_string_lossy().to_string());
-                }
-            }
-        }
-    } else {
-        let _ = fs::create_dir_all(&leyen_proton);
-    }
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
-    if steam_compat.exists()
-        && let Ok(entries) = fs::read_dir(steam_compat)
-    {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
-                versions.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    let steam_root = PathBuf::from(format!("{}/.steam/steam/steamapps/common", home));
-    if steam_root.exists()
-        && let Ok(entries) = fs::read_dir(steam_root)
-    {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Some(name) = entry.file_name().to_str()
-                && name.contains("Proton")
-                && path.join("proton").is_file()
-                && path.join("version").is_file()
-            {
-                versions.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    let default_prefix_path = get_data_dir().join("prefixes").join("default");
-    if !default_prefix_path.exists() {
-        let _ = fs::create_dir_all(&default_prefix_path);
-    }
-
-    GlobalSettings {
-        default_prefix_path: default_prefix_path.to_string_lossy().to_string(),
-        default_proton: "Default".to_string(),
-        global_mangohud: false,
-        global_gamemode: false,
-        global_wayland: false,
-        global_wow64: false,
-        global_ntsync: false,
-        available_proton_versions: versions,
-        log_errors: true,
-        log_warnings: false,
-        log_operations: false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_game(name: &str) -> Game {
-        Game {
-            id: format!("internal-{name}"),
-            title: name.to_string(),
-            exe_path: format!("/tmp/{name}.exe"),
-            prefix_path: String::new(),
-            proton: "Default".to_string(),
-            launch_args: String::new(),
-            force_mangohud: false,
-            force_gamemode: false,
-            custom_icon: false,
-            game_wayland: false,
-            game_wow64: false,
-            game_ntsync: false,
-            leyen_id: String::new(),
-            game_id: String::new(),
-            playtime_seconds: 0,
-            last_played_epoch_seconds: 0,
-            last_run_duration_seconds: 0,
-            last_run_status: String::new(),
-        }
-    }
-
     #[test]
     fn valid_leyen_id_matches_expected_shape() {
         assert!(is_valid_leyen_id("ly-2534"));
@@ -583,4 +481,3 @@ mod tests {
         assert_ne!(generated, "ly-1234");
         assert_ne!(generated, "ly-5678");
     }
-}

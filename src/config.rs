@@ -457,8 +457,9 @@ pub fn detect_proton_versions() -> GlobalSettings {
     if leyen_proton.exists() {
         if let Ok(entries) = fs::read_dir(&leyen_proton) {
             for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    versions.push(entry.path().to_string_lossy().to_string());
+                let path = entry.path();
+                if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
+                    versions.push(path.to_string_lossy().to_string());
                 }
             }
         }
@@ -472,8 +473,9 @@ pub fn detect_proton_versions() -> GlobalSettings {
         && let Ok(entries) = fs::read_dir(steam_compat)
     {
         for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                versions.push(entry.path().to_string_lossy().to_string());
+            let path = entry.path();
+            if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
+                versions.push(path.to_string_lossy().to_string());
             }
         }
     }
@@ -483,11 +485,14 @@ pub fn detect_proton_versions() -> GlobalSettings {
         && let Ok(entries) = fs::read_dir(steam_root)
     {
         for entry in entries.flatten() {
-            if entry.path().is_dir()
+            let path = entry.path();
+            if path.is_dir()
                 && let Some(name) = entry.file_name().to_str()
                 && name.contains("Proton")
+                && path.join("proton").is_file()
+                && path.join("version").is_file()
             {
-                versions.push(entry.path().to_string_lossy().to_string());
+                versions.push(path.to_string_lossy().to_string());
             }
         }
     }

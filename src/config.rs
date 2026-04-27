@@ -63,6 +63,14 @@ pub fn save_library(items: &[LibraryItem]) {
     }
 }
 
+pub async fn load_library_async() -> Vec<LibraryItem> {
+    tokio::task::spawn_blocking(load_library).await.unwrap_or_default()
+}
+
+pub async fn save_library_async(items: Vec<LibraryItem>) {
+    tokio::task::spawn_blocking(move || save_library(&items)).await.ok();
+}
+
 pub fn load_games() -> Vec<Game> {
     flatten_games(&load_library())
 }

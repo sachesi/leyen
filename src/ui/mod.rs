@@ -427,29 +427,35 @@ pub fn refresh_library_view(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
 ) {
-    *ui.library_state.borrow_mut() = load_library();
-    populate_root_view(ui, overlay, window);
-    populate_group_view(ui, overlay, window);
+    let ui_clone = ui.clone();
+    let overlay_clone = overlay.clone();
+    let window_clone = window.clone();
+    
+    glib::spawn_future_local(async move {
+        *ui_clone.library_state.borrow_mut() = crate::config::load_library_async().await;
+        populate_root_view(&ui_clone, &overlay_clone, &window_clone);
+        populate_group_view(&ui_clone, &overlay_clone, &window_clone);
 
-    if let Some(group_id) = ui.current_group_id.borrow().clone() {
-        if find_group(&ui.library_state.borrow(), &group_id).is_none() {
-            *ui.current_group_id.borrow_mut() = None;
-            ui.stack.set_visible_child_name("root");
-            ui.back_btn.set_visible(false);
-        } else {
-            ui.stack.set_visible_child_name("group");
-            ui.back_btn.set_visible(true);
+        if let Some(group_id) = ui_clone.current_group_id.borrow().clone() {
+            if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
+                *ui_clone.current_group_id.borrow_mut() = None;
+                ui_clone.stack.set_visible_child_name("root");
+                ui_clone.back_btn.set_visible(false);
+            } else {
+                ui_clone.stack.set_visible_child_name("group");
+                ui_clone.back_btn.set_visible(true);
+            }
         }
-    }
 
-    if ui.current_group_id.borrow().is_none() {
-        ui.stack.set_visible_child_name("root");
-        ui.back_btn.set_visible(false);
-        ui.title.set_title("Leyen");
-        ui.title.set_subtitle("");
-    }
+        if ui_clone.current_group_id.borrow().is_none() {
+            ui_clone.stack.set_visible_child_name("root");
+            ui_clone.back_btn.set_visible(false);
+            ui_clone.title.set_title("Leyen");
+            ui_clone.title.set_subtitle("");
+        }
 
-    update_add_button_mode(ui);
+        update_add_button_mode(&ui_clone);
+    });
 }
 
 fn populate_root_view(

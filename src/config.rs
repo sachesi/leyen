@@ -68,12 +68,14 @@ pub async fn load_library_async() -> Vec<LibraryItem> {
 }
 
 pub async fn save_library_async(items: Vec<LibraryItem>) {
+    let items = items.to_vec();
     tokio::task::spawn_blocking(move || save_library(&items)).await.ok();
 }
 
 pub fn load_games() -> Vec<Game> {
     flatten_games(&load_library())
 }
+
 
 pub fn flatten_games(items: &[LibraryItem]) -> Vec<Game> {
     let mut games = Vec::new();

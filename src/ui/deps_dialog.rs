@@ -5,7 +5,7 @@ use gtk4::gio;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::config::load_settings;
+use crate::config::{get_data_dir, load_settings};
 use crate::deps::{
     DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
     get_installed_dep, install_dep_async, read_installed_deps, read_prefix_dep_state,
@@ -129,8 +129,11 @@ pub fn show_dependencies_dialog(
         if !s.default_prefix_path.is_empty() {
             s.default_prefix_path
         } else {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            format!("{}/.local/share/leyen/prefixes/default", home)
+            get_data_dir()
+                .join("prefixes")
+                .join("default")
+                .to_string_lossy()
+                .to_string()
         }
     };
 

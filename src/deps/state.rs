@@ -5,6 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::config::get_data_dir;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrefixDependencyState {
     #[serde(default)]
@@ -45,8 +47,11 @@ impl InstalledDependency {
 }
 
 pub fn get_deps_cache_dir() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    format!("{}/.local/share/leyen/deps/cache", home)
+    get_data_dir()
+        .join("deps")
+        .join("cache")
+        .to_string_lossy()
+        .to_string()
 }
 
 pub fn get_prefix_deps_dir(prefix_path: &str) -> PathBuf {

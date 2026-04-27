@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use gtk4::glib;
 use libadwaita as adw;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -290,15 +291,16 @@ pub fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
         .unwrap_or_default()
 }
 
-pub fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
+pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
     loop {
         let active = synchronize_running_sessions()?;
         if !active.iter().any(|session| session.game_id == game_id) {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_secs(1));
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
+
 
 pub fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     let Some(mut session) = find_running_session(game_id)? else {
@@ -592,18 +594,22 @@ where
 }
 
 pub fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
-    match launch_game_managed(game, true, true, true) {
-        Ok(report) => {
-            for notice in report.notices {
-                overlay.add_toast(adw::Toast::new(&notice));
+    let game = game.clone();
+    let overlay = overlay.clone();
+    glib::spawn_future_local(async move {
+        match launch_game_managed(&game, true, true, true).await {
+            Ok(report) => {
+                for notice in report.notices {
+                    overlay.add_toast(adw::Toast::new(&notice));
+                }
             }
+            Err(err) => overlay.add_toast(adw::Toast::new(&err.to_string())),
         }
-        Err(err) => overlay.add_toast(adw::Toast::new(&err.to_string())),
-    }
+    });
 }
 
-pub fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
-    launch_game_managed(game, true, true, false)
+pub async fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
+    launch_game_managed(game, true, true, false).await
 }
 
 fn spawn_detached_monitor(game_id: &str) {
@@ -630,7 +636,7 @@ fn spawn_detached_monitor(game_id: &str) {
     }
 }
 
-fn launch_game_managed(
+async fn launch_game_managed(
     game: &Game,
     capture_output: bool,
     reap_child_locally: bool,

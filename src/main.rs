@@ -18,13 +18,14 @@ mod ui;
 
 const APP_ID: &str = "com.github.sachesi.leyen";
 
-fn main() -> glib::ExitCode {
+#[tokio::main]
+async fn main() -> glib::ExitCode {
     if let Err(e) = logging::init() {
         eprintln!("Failed to initialize logging: {e}");
         return glib::ExitCode::FAILURE;
     }
 
-    if let Some(exit_code) = cli::maybe_run_from_args() {
+    if let Some(exit_code) = cli::maybe_run_from_args().await {
         return exit_code;
     }
 

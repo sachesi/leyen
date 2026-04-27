@@ -47,7 +47,7 @@ enum Commands {
     InternalMonitor { game_id: String },
 }
 
-pub fn maybe_run_from_args() -> Option<glib::ExitCode> {
+pub async fn maybe_run_from_args() -> Option<glib::ExitCode> {
     let args = std::env::args().collect::<Vec<_>>();
     
     // We use try_parse to handle errors ourselves if needed, 
@@ -76,15 +76,15 @@ pub fn maybe_run_from_args() -> Option<glib::ExitCode> {
     };
 
     let result = match command {
-        Commands::List => list_games(),
-        Commands::Run { leyen_id } => run_game(&leyen_id),
+        Commands::List => list_games().await,
+        Commands::Run { leyen_id } => run_game(&leyen_id).await,
         Commands::Logs => {
             OPEN_LOGS_ON_START.store(true, Relaxed);
             return None; // Return None to continue to GUI start
         }
-        Commands::Kill { leyen_id } => kill_game(&leyen_id),
-        Commands::InternalRun { leyen_id } => internal_run(&leyen_id),
-        Commands::InternalMonitor { game_id } => internal_monitor(&game_id),
+        Commands::Kill { leyen_id } => kill_game(&leyen_id).await,
+        Commands::InternalRun { leyen_id } => internal_run(&leyen_id).await,
+        Commands::InternalMonitor { game_id } => internal_monitor(&game_id).await,
     };
 
     Some(match result {
@@ -100,7 +100,7 @@ pub fn take_open_logs_on_start() -> bool {
     OPEN_LOGS_ON_START.swap(false, Relaxed)
 }
 
-fn list_games() -> Result<()> {
+async fn list_games() -> Result<()> {
     let items = load_library();
     let running_map = running_games_index();
 
@@ -200,7 +200,7 @@ fn list_games() -> Result<()> {
     Ok(())
 }
 
-fn run_game(requested_leyen_id: &str) -> Result<()> {
+async fn run_game(requested_leyen_id: &str) -> Result<()> {
     ensure_umu_available_for_cli()?;
 
     let items = load_library();
@@ -233,18 +233,19 @@ fn run_game(requested_leyen_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn internal_run(requested_leyen_id: &str) -> Result<()> {
+async fn internal_run(requested_leyen_id: &str) -> Result<()> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'.");
     };
 
-    launch_game_headless(game).context("Failed to launch game")?;
-    monitor_running_game(&game.id).context("Failed to monitor game")?;
+    launch_game_headless(game).await.context("Failed to launch game")?;
+    monitor_running_game(&game.id).await.context("Failed to monitor game")?;
+
     Ok(())
 }
 
-fn kill_game(requested_leyen_id: &str) -> Result<()> {
+async fn kill_game(requested_leyen_id: &str) -> Result<()> {
     let items = load_library();
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
@@ -259,8 +260,8 @@ fn kill_game(requested_leyen_id: &str) -> Result<()> {
     }
 }
 
-fn internal_monitor(game_id: &str) -> Result<()> {
-    monitor_running_game(game_id).context("Failed to monitor game")?;
+async fn internal_monitor(game_id: &str) -> Result<()> {
+    monitor_running_game(game_id).await.context("Failed to monitor game")?;
     Ok(())
 }
 

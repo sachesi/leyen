@@ -169,29 +169,3 @@ pub fn detect_proton_versions() -> GlobalSettings {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample_game(name: &str) -> Game {
-        Game {
-            id: format!("internal-{name}"),
-            title: name.to_string(),
-            exe_path: format!("/tmp/{name}.exe"),
-            prefix_path: String::new(),
-            proton: "Default".to_string(),
-            launch_args: String::new(),
-            force_mangohud: false,
-            custom_icon: false,
-            game_wayland: false,
-            game_wow64: false,
-            game_ntsync: false,
-            leyen_id: String::new(),
-            game_id: String::new(),
-            playtime_seconds: 0,
-            last_played_epoch_seconds: 0,
-            last_run_duration_seconds: 0,
-            last_run_status: String::new(),
-        }
-    }
-}

@@ -9,9 +9,9 @@ use super::deps_dialog::show_dependencies_dialog;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::config::{load_settings, save_settings};
 use crate::prefix_tools::pick_and_run_in_prefix;
-use crate::proton::resolve_proton_path;
+use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
-use crate::umu::get_umu_runtime_dir;
+use crate::runtime::umu::get_umu_runtime_dir;
 
 pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
     let settings = load_settings();

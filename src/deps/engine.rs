@@ -10,7 +10,7 @@ use gtk4::glib;
 use log::{error, info};
 
 use crate::logging::LOG_OPERATIONS;
-use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
 use super::{
@@ -117,7 +117,7 @@ enum CleanupAction {
 
 pub const DEP_ASYNC_POLL_MS: u64 = 50;
 
-fn execute_dep_step(
+pub fn execute_dep_step(
     step: &DepStep,
     prefix_path: &str,
     proton_path: &str,

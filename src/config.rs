@@ -438,16 +438,23 @@ pub fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSetti
     } else {
         GlobalSettings::default()
     };
-    let fresh = detect_proton_versions();
+    let fresh = crate::runtime::detect_proton_versions();
     settings.available_proton_versions = fresh.available_proton_versions;
     if settings.default_prefix_path.is_empty() {
         settings.default_prefix_path = fresh.default_prefix_path;
     }
     if auto_install_proton && settings.available_proton_versions.len() <= 1 {
-        check_or_install_protonge();
+        crate::runtime::check_or_install_protonge();
     }
     save_settings(&settings);
     settings
+}
+
+pub fn save_settings(settings: &GlobalSettings) {
+    let path = get_settings_path();
+    if let Ok(data) = toml::to_string_pretty(settings) {
+        let _ = fs::write(path, data);
+    }
 }
 
     #[test]

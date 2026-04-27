@@ -7,8 +7,9 @@ use std::process::Stdio;
 use std::time::{Duration, UNIX_EPOCH};
 
 use gtk4::glib;
+use log::{error, info};
 
-use crate::logging::{LOG_OPERATIONS, leyen_log};
+use crate::logging::LOG_OPERATIONS;
 use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
@@ -405,14 +406,11 @@ pub fn install_dep_async(
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
     std::thread::spawn(move || {
-        leyen_log(
-            "INFO ",
-            &format!(
-                "[dep:{}] starting install plan ({} profiles, {} steps)",
-                dep_id,
-                install_plan.len(),
-                total_steps
-            ),
+        info!(
+            "[dep:{}] starting install plan ({} profiles, {} steps)",
+            dep_id,
+            install_plan.len(),
+            total_steps
         );
 
         let mut completed_steps = 0usize;
@@ -428,12 +426,9 @@ pub fn install_dep_async(
                     step.description.to_string()
                 };
 
-                leyen_log(
-                    "INFO ",
-                    &format!(
-                        "[dep:{}] step {}/{}: {}",
-                        profile.id, completed_steps, total_steps, description
-                    ),
+                info!(
+                    "[dep:{}] step {}/{}: {}",
+                    profile.id, completed_steps, total_steps, description
                 );
                 queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
                     step: completed_steps,
@@ -444,10 +439,7 @@ pub fn install_dep_async(
                 match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir) {
                     Ok(changes) => recorded.merge(changes),
                     Err(error) => {
-                        leyen_log(
-                            "ERROR",
-                            &format!("[dep:{}] install failed: {}", profile.id, error),
-                        );
+                        error!("[dep:{}] install failed: {}", profile.id, error);
                         queue_bg
                             .lock()
                             .unwrap()
@@ -489,7 +481,7 @@ pub fn install_dep_async(
             None
         };
 
-        leyen_log("INFO ", &format!("[dep:{}] install complete", dep_id));
+        info!("[dep:{}] install complete", dep_id);
         queue_bg
             .lock()
             .unwrap()
@@ -577,13 +569,10 @@ pub fn uninstall_dep_async(
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
     std::thread::spawn(move || {
-        leyen_log(
-            "INFO ",
-            &format!(
-                "[dep:{}] starting removal ({} cleanup actions)",
-                dep_id,
-                actions.len()
-            ),
+        info!(
+            "[dep:{}] starting removal ({} cleanup actions)",
+            dep_id,
+            actions.len()
         );
 
         for (index, (description, action)) in actions.iter().enumerate() {
@@ -606,10 +595,7 @@ pub fn uninstall_dep_async(
             };
 
             if let Err(error) = result {
-                leyen_log(
-                    "ERROR",
-                    &format!("[dep:{}] removal failed: {}", dep_id, error),
-                );
+                error!("[dep:{}] removal failed: {}", dep_id, error);
                 queue_bg
                     .lock()
                     .unwrap()
@@ -638,7 +624,7 @@ pub fn uninstall_dep_async(
             (true, false) => None,
         };
 
-        leyen_log("INFO ", &format!("[dep:{}] removal complete", dep_id));
+        info!("[dep:{}] removal complete", dep_id);
         queue_bg
             .lock()
             .unwrap()

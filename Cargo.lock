@@ -691,6 +691,7 @@ dependencies = [
  "image",
  "libadwaita",
  "libc",
+ "log",
  "pelite",
  "serde",
  "serde_json",

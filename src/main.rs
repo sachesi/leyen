@@ -12,10 +12,9 @@ mod launch;
 mod logging;
 mod models;
 mod prefix_tools;
-mod proton;
+mod runtime;
 mod tools;
 mod ui;
-mod umu;
 
 const APP_ID: &str = "com.github.sachesi.leyen";
 
@@ -37,7 +36,7 @@ fn main() -> glib::ExitCode {
         }
     };
 
-    umu::check_or_install_umu();
+    runtime::check_or_install_umu();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(ui::build_ui);
     app.run()

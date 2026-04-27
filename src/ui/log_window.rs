@@ -51,6 +51,17 @@ fn rebuild_buffer(
 }
 
 pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
+    thread_local! {
+        static ACTIVE_LOG_WINDOW: RefCell<Option<adw::Window>> = RefCell::new(None);
+    }
+
+    if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone()) {
+        if existing.is_visible() {
+            existing.present();
+            return;
+        }
+    }
+
     let window = adw::Window::builder()
         .title("Leyen – Logs")
         .default_width(820)
@@ -58,6 +69,8 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
         .transient_for(parent)
         .modal(false)
         .build();
+
+    ACTIVE_LOG_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
 
     let library = load_library();
     let mut filter_ids: Vec<Option<String>> = vec![None];

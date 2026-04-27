@@ -203,6 +203,8 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     if extracted {
         // Ensure the binary is executable.
         let umu_run = format!("{}/umu/umu-run", dest_dir);
+        let version_file = format!("{}/version", dest_dir);
+        let _ = fs::write(version_file, version);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -215,5 +217,54 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         Ok(())
     } else {
         Err(UmuError::ExtractionError("Extraction failed".to_string()))
+    }
+}
+
+/// Returns the current local version of umu-launcher.
+pub fn get_local_umu_version() -> Option<String> {
+    let core_dir = get_umu_core_dir();
+    let version_file = std::path::Path::new(&core_dir).join("version");
+    fs::read_to_string(version_file).ok().map(|s| s.trim().to_string())
+}
+
+/// Checks if an update for umu-launcher is available.
+pub fn check_for_umu_updates() -> Result<bool, UmuError> {
+    let current_version = get_local_umu_version();
+    
+    let tag_output = std::process::Command::new("curl")
+        .args([
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{url_effective}",
+            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
+        ])
+        .output()
+        .map_err(|e| UmuError::VersionResolveError(e.to_string()))?;
+
+    let latest_version = if tag_output.status.success() {
+        let url = String::from_utf8_lossy(&tag_output.stdout);
+        url.trim()
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string()
+    } else {
+        return Err(UmuError::VersionResolveError(
+            "Failed to fetch latest version tag".to_string(),
+        ));
+    };
+
+    match current_version {
+        Some(version) => Ok(version != latest_version),
+        None => Ok(true),
     }
 }

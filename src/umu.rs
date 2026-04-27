@@ -1,5 +1,6 @@
 use std::fs;
 use directories::ProjectDirs;
+use thiserror::Error;
 use crate::config::get_data_dir;
 
 pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
@@ -9,6 +10,18 @@ pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
 /// The UI polls this to show/hide the download status banner.
 pub static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+
+#[derive(Error, Debug)]
+pub enum UmuError {
+    #[error("Failed to create directory: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Failed to resolve latest version: {0}")]
+    VersionResolveError(String),
+    #[error("Download failed: {0}")]
+    DownloadError(String),
+    #[error("Extraction failed: {0}")]
+    ExtractionError(String),
+}
 
 /// Directory where the umu-launcher zipapp is extracted.
 pub fn get_umu_core_dir() -> String {
@@ -93,7 +106,7 @@ pub fn check_or_install_umu() {
 
     std::thread::spawn(move || {
         let result = download_and_install_umu(&umu_core_dir);
-        if !result {
+        if result.is_err() {
             // Reset so the next application start can retry.
             UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
         }
@@ -102,9 +115,9 @@ pub fn check_or_install_umu() {
 }
 
 /// Downloads the latest umu-launcher zipapp tarball and extracts it into
-/// `dest_dir`.  Returns `true` on success.
-fn download_and_install_umu(dest_dir: &str) -> bool {
-    let _ = fs::create_dir_all(dest_dir);
+/// `dest_dir`.
+fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
+    fs::create_dir_all(dest_dir)?;
 
     // Resolve the latest release tag via the GitHub redirect.
     let tag_output = std::process::Command::new("curl")
@@ -122,23 +135,27 @@ fn download_and_install_umu(dest_dir: &str) -> bool {
             "%{url_effective}",
             "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
         ])
-        .output();
+        .output()
+        .map_err(|e| UmuError::VersionResolveError(e.to_string()))?;
 
-    let version = match tag_output {
-        Ok(o) if o.status.success() => {
-            let url = String::from_utf8_lossy(&o.stdout);
-            url.trim()
-                .trim_end_matches('/')
-                .rsplit('/')
-                .next()
-                .unwrap_or("")
-                .to_string()
-        }
-        _ => return false,
+    let version = if tag_output.status.success() {
+        let url = String::from_utf8_lossy(&tag_output.stdout);
+        url.trim()
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string()
+    } else {
+        return Err(UmuError::VersionResolveError(
+            "Failed to fetch latest version tag".to_string(),
+        ));
     };
 
     if version.is_empty() {
-        return false;
+        return Err(UmuError::VersionResolveError(
+            "Resolved version tag is empty".to_string(),
+        ));
     }
 
     let tarball_name = format!("umu-launcher-{}-zipapp.tar", version);
@@ -166,20 +183,20 @@ fn download_and_install_umu(dest_dir: &str) -> bool {
             &download_url,
         ])
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+        .map_err(|e| UmuError::DownloadError(e.to_string()))?
+        .success();
 
     if !ok {
         let _ = fs::remove_file(&tarball_path);
-        return false;
+        return Err(UmuError::DownloadError("Download failed".to_string()));
     }
 
     // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
     let extracted = std::process::Command::new("tar")
         .args(["-xf", &tarball_path, "-C", dest_dir])
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+        .map_err(|e| UmuError::ExtractionError(e.to_string()))?
+        .success();
 
     let _ = fs::remove_file(&tarball_path);
 
@@ -195,7 +212,8 @@ fn download_and_install_umu(dest_dir: &str) -> bool {
                 let _ = fs::set_permissions(&umu_run, perms);
             }
         }
+        Ok(())
+    } else {
+        Err(UmuError::ExtractionError("Extraction failed".to_string()))
     }
-
-    extracted
 }

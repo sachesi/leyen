@@ -7,6 +7,7 @@ mod config;
 mod deps;
 mod desktop;
 mod icons;
+mod instance;
 mod launch;
 mod logging;
 mod models;
@@ -22,6 +23,14 @@ fn main() -> glib::ExitCode {
     if let Some(exit_code) = cli::maybe_run_from_args() {
         return exit_code;
     }
+
+    let _lock = match instance::InstanceLock::acquire() {
+        Ok(lock) => lock,
+        Err(err) => {
+            eprintln!("{}", err);
+            return glib::ExitCode::FAILURE;
+        }
+    };
 
     umu::check_or_install_umu();
     let app = adw::Application::builder().application_id(APP_ID).build();

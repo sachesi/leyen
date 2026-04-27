@@ -2,7 +2,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use log::{Level, LevelFilter, Metadata, Record};
 use serde::{Deserialize, Serialize};
 
 use crate::config::get_config_dir;
@@ -16,18 +18,72 @@ pub struct LogEntry {
 
 /// Atomic flags mirroring GlobalSettings.log_* so background threads can log
 /// without reading the settings file on every message.
-pub static LOG_ERRORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-pub static LOG_WARNINGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-pub static LOG_OPERATIONS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
+pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
+pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
 
 fn log_path() -> PathBuf {
     get_config_dir().join("logs.jsonl")
 }
 
+struct LeyenLogger;
+
+impl log::Log for LeyenLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        match metadata.level() {
+            Level::Error => LOG_ERRORS.load(Ordering::Relaxed),
+            Level::Warn => LOG_WARNINGS.load(Ordering::Relaxed),
+            _ => LOG_OPERATIONS.load(Ordering::Relaxed),
+        }
+    }
+
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        let target = record.target();
+        let game_id = if target.starts_with("game:") {
+            Some(target[5..].to_string())
+        } else {
+            None
+        };
+
+        let level_str = match record.level() {
+            Level::Error => "ERROR",
+            Level::Warn => "WARN ",
+            Level::Info => "INFO ",
+            Level::Debug => "DEBUG",
+            Level::Trace => "TRACE",
+        };
+
+        let message = record.args().to_string();
+        let line = match &game_id {
+            Some(id) => format!("[LEYEN] [{level_str}] [game:{id}] {message}"),
+            None => format!("[LEYEN] [{level_str}] {message}"),
+        };
+
+        append_log_entry(&LogEntry {
+            line: line.clone(),
+            game_id,
+        });
+
+        eprintln!("{line}");
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: LeyenLogger = LeyenLogger;
+
+pub fn init() -> Result<(), log::SetLoggerError> {
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
+}
+
 fn append_log_entry(entry: &LogEntry) {
     let path = log_path();
     if let Some(parent) = path.parent()
+        && !parent.exists()
         && let Err(e) = fs::create_dir_all(parent)
     {
         eprintln!(
@@ -68,10 +124,9 @@ fn append_log_entry(entry: &LogEntry) {
 }
 
 pub fn apply_log_settings(s: &GlobalSettings) {
-    use std::sync::atomic::Ordering::Relaxed;
-    LOG_ERRORS.store(s.log_errors, Relaxed);
-    LOG_WARNINGS.store(s.log_warnings, Relaxed);
-    LOG_OPERATIONS.store(s.log_operations, Relaxed);
+    LOG_ERRORS.store(s.log_errors, Ordering::Relaxed);
+    LOG_WARNINGS.store(s.log_warnings, Ordering::Relaxed);
+    LOG_OPERATIONS.store(s.log_operations, Ordering::Relaxed);
 }
 
 /// Return a snapshot of every log line captured so far.
@@ -96,37 +151,4 @@ pub fn get_log_entries() -> Vec<LogEntry> {
 pub fn clear_log_buffer() {
     let path = log_path();
     let _ = fs::remove_file(path);
-}
-
-/// Print a formatted leyen log line to stderr **and** append it to the
-/// shared log file so the log window can display it across GUI/CLI processes.
-/// Level: "ERROR" | "WARN " | "INFO "
-pub fn leyen_log(level: &str, message: &str) {
-    log_impl(level, message, None);
-}
-
-pub fn leyen_game_log(game_id: &str, level: &str, message: &str) {
-    log_impl(level, message, Some(game_id));
-}
-
-fn log_impl(level: &str, message: &str, game_id: Option<&str>) {
-    use std::sync::atomic::Ordering::Relaxed;
-    let line = match game_id {
-        Some(game_id) => format!("[LEYEN] [{level}] [game:{game_id}] {message}"),
-        None => format!("[LEYEN] [{level}] {message}"),
-    };
-
-    append_log_entry(&LogEntry {
-        line: line.clone(),
-        game_id: game_id.map(str::to_string),
-    });
-
-    let enabled = match level {
-        "ERROR" => LOG_ERRORS.load(Relaxed),
-        "WARN " => LOG_WARNINGS.load(Relaxed),
-        _ => LOG_OPERATIONS.load(Relaxed),
-    };
-    if enabled {
-        eprintln!("{line}");
-    }
 }

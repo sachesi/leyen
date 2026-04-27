@@ -19,3 +19,4 @@ directories = "6.0.0"
 clap = { version = "4.6.1", features = ["derive"] }
 anyhow = "1.0.102"
 thiserror = "2.0.18"
+log = "0.4.29"

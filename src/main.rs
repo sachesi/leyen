@@ -20,6 +20,11 @@ mod umu;
 const APP_ID: &str = "com.github.sachesi.leyen";
 
 fn main() -> glib::ExitCode {
+    if let Err(e) = logging::init() {
+        eprintln!("Failed to initialize logging: {e}");
+        return glib::ExitCode::FAILURE;
+    }
+
     if let Some(exit_code) = cli::maybe_run_from_args() {
         return exit_code;
     }

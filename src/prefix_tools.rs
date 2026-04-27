@@ -2,11 +2,12 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use libadwaita as adw;
+use log::info;
 
 use gtk4::gio;
 use gtk4::prelude::*;
 
-use crate::logging::{LOG_OPERATIONS, leyen_log};
+use crate::logging::LOG_OPERATIONS;
 use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 pub fn pick_and_run_in_prefix(
@@ -96,13 +97,10 @@ fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> R
     cmd.spawn()
         .map_err(|err| format!("Failed to launch '{}': {}", path.display(), err))?;
 
-    leyen_log(
-        "INFO ",
-        &format!(
-            "Launched '{}' inside prefix '{}'",
-            path.display(),
-            prefix_path
-        ),
+    info!(
+        "Launched '{}' inside prefix '{}'",
+        path.display(),
+        prefix_path
     );
     Ok(())
 }

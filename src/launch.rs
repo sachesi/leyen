@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use libadwaita as adw;
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -15,7 +16,6 @@ use crate::config::{
     add_game_playtime, effective_game_id, find_game_and_group, get_config_dir, load_library,
     load_settings_with_auto_install, record_game_launch_result, record_game_launch_start,
 };
-use crate::logging::{leyen_game_log, leyen_log};
 use crate::models::{Game, GameGroup};
 use crate::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
@@ -195,20 +195,16 @@ fn finalize_finished_session(session: &RunningGameSession) {
     let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds);
     let _ = record_game_launch_result(&session.game_id, elapsed_seconds, status);
 
-    leyen_game_log(
-        &session.game_id,
-        "INFO ",
-        &format!(
-            "Managed session finished after {}s ({})",
-            elapsed_seconds, status
-        ),
+    info!(
+        target: &format!("game:{}", session.game_id),
+        "Managed session finished after {}s ({})",
+        elapsed_seconds, status
     );
 
     if let Some(total) = total_playtime {
-        leyen_game_log(
-            &session.game_id,
-            "INFO ",
-            &format!("Total recorded playtime is now {}s", total),
+        info!(
+            target: &format!("game:{}", session.game_id),
+            "Total recorded playtime is now {}s", total
         );
     }
 }
@@ -315,10 +311,9 @@ pub fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     let pgid = -(session.pid as i32);
     let group_result = unsafe { libc::kill(pgid, libc::SIGKILL) };
     if group_result == 0 {
-        leyen_game_log(
-            game_id,
-            "INFO ",
-            &format!("Sent SIGKILL to process group {}", session.pid),
+        info!(
+            target: &format!("game:{game_id}"),
+            "Sent SIGKILL to process group {}", session.pid
         );
         killed_any = true;
     }
@@ -332,13 +327,10 @@ pub fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
     if killed_any {
         let _ = mark_running_session_termination_requested(game_id);
-        leyen_game_log(
-            game_id,
-            "INFO ",
-            &format!(
-                "Sent SIGKILL to tracked processes for root pid {}",
-                session.pid
-            ),
+        info!(
+            target: &format!("game:{game_id}"),
+            "Sent SIGKILL to tracked processes for root pid {}",
+            session.pid
         );
         return Ok(true);
     }
@@ -399,10 +391,7 @@ fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
     }
 
     if let Err(e) = fs::create_dir_all(prefix_path) {
-        leyen_log(
-            "WARN ",
-            &format!("Failed to create prefix directory '{}': {}", prefix_path, e),
-        );
+        warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
         return PrefixLockState::Unavailable;
     }
 
@@ -423,12 +412,9 @@ fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
             }
         }
         Err(e) => {
-            leyen_log(
-                "WARN ",
-                &format!(
-                    "Failed to inspect runtime prefix usage '{}': {}",
-                    prefix_path, e
-                ),
+            warn!(
+                "Failed to inspect runtime prefix usage '{}': {}",
+                prefix_path, e
             );
             PrefixLockState::Unavailable
         }
@@ -586,21 +572,17 @@ where
         for line in reader.lines() {
             match line {
                 Ok(line) if !line.trim().is_empty() => {
-                    leyen_game_log(
-                        &game_id,
-                        "INFO ",
-                        &format!("[{}:{}] {}", game_title, stream_name, line),
+                    info!(
+                        target: &format!("game:{}", game_id),
+                        "[{}:{}] {}", game_title, stream_name, line
                     );
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    leyen_game_log(
-                        &game_id,
-                        "WARN ",
-                        &format!(
-                            "Failed to read {} output for '{}': {}",
-                            stream_name, game_title, e
-                        ),
+                    warn!(
+                        target: &format!("game:{}", game_id),
+                        "Failed to read {} output for '{}': {}",
+                        stream_name, game_title, e
                     );
                     break;
                 }
@@ -626,10 +608,9 @@ pub fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
 
 fn spawn_detached_monitor(game_id: &str) {
     let Ok(current_exe) = std::env::current_exe() else {
-        leyen_game_log(
-            game_id,
-            "WARN ",
-            "Failed to resolve the current executable for the runtime monitor",
+        warn!(
+            target: &format!("game:{game_id}"),
+            "Failed to resolve the current executable for the runtime monitor"
         );
         return;
     };
@@ -642,10 +623,9 @@ fn spawn_detached_monitor(game_id: &str) {
         .stderr(Stdio::null())
         .spawn()
     {
-        leyen_game_log(
-            game_id,
-            "WARN ",
-            &format!("Failed to start the runtime monitor: {}", e),
+        warn!(
+            target: &format!("game:{game_id}"),
+            "Failed to start the runtime monitor: {}", e
         );
     }
 }
@@ -694,10 +674,9 @@ fn launch_game_managed(
 
     let proton_path = match resolve_launch_proton(game, parent_group, &settings.default_proton) {
         Some(path) if path.starts_with('/') && !Path::new(&path).exists() => {
-            leyen_game_log(
-                &game.id,
-                "ERROR",
-                &format!("Proton path for '{}' does not exist: {}", game.title, path),
+            error!(
+                target: &format!("game:{}", game.id),
+                "Proton path for '{}' does not exist: {}", game.title, path
             );
             return Err(LaunchError::Other(
                 "Selected Proton version was not found".to_string(),
@@ -807,7 +786,7 @@ fn launch_game_managed(
             proton_path.clone()
         },
     );
-    leyen_game_log(&game.id, "INFO ", &launch_summary);
+    info!(target: &format!("game:{}", game.id), "{}", launch_summary);
 
     let mut command = Command::new(&cmd_args[0]);
     command.args(&cmd_args[1..]);
@@ -875,19 +854,15 @@ fn launch_game_managed(
                 });
             }
 
-            leyen_game_log(
-                &game.id,
-                "INFO ",
-                &format!("Spawned '{}' with pid {}", game.title, child_pid),
+            info!(
+                target: &format!("game:{}", game.id),
+                "Spawned '{}' with pid {}", game.title, child_pid
             );
             notices.push(format!("Launching {}...", game.title));
             Ok(LaunchReport { notices })
         }
         Err(e) => {
-            leyen_log(
-                "ERROR",
-                &format!("Failed to launch '{}': {}", game.title, e),
-            );
+            error!("Failed to launch '{}': {}", game.title, e);
             Err(LaunchError::Other(format!("Failed to launch: {}", e)))
         }
     }

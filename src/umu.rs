@@ -1,6 +1,7 @@
 use std::fs;
 use directories::ProjectDirs;
 use thiserror::Error;
+use gtk4::glib;
 use crate::config::get_data_dir;
 
 pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
@@ -104,8 +105,8 @@ pub fn check_or_install_umu() {
 
     let umu_core_dir = get_umu_core_dir();
 
-    std::thread::spawn(move || {
-        let result = download_and_install_umu(&umu_core_dir);
+    glib::spawn_future_local(async move {
+        let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir)).await.unwrap();
         if result.is_err() {
             // Reset so the next application start can retry.
             UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);

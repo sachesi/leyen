@@ -188,6 +188,17 @@ fn update_running_durations(
 }
 
 pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
+    thread_local! {
+        static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = std::cell::RefCell::new(None);
+    }
+
+    if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone()) {
+        if existing.is_visible() {
+            existing.present();
+            return;
+        }
+    }
+
     let window = adw::Window::builder()
         .title("Leyen – Running Games")
         .default_width(560)
@@ -195,6 +206,8 @@ pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
         .transient_for(parent)
         .modal(false)
         .build();
+
+    ACTIVE_RUNNING_GAMES_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
 
     let header = adw::HeaderBar::builder().build();
 

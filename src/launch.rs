@@ -17,9 +17,9 @@ use crate::config::{
     load_settings_with_auto_install, record_game_launch_result, record_game_launch_start,
 };
 use crate::models::{Game, GameGroup};
-use crate::proton::resolve_proton_path;
+use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
-use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 #[derive(Debug, Clone)]
 pub struct LaunchReport {

@@ -9,3 +9,4 @@ pub use state::{
     get_installed_dep, read_installed_deps, read_prefix_dep_state, remove_installed_dep,
     upsert_installed_dep,
 };
+mod tests;

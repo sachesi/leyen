@@ -21,7 +21,7 @@ use crate::config::load_library;
 use crate::icons::{game_icon_file, group_icon_file};
 use crate::launch::{launch_game, running_games_snapshot, running_games_version, stop_game};
 use crate::models::{Game, GameGroup, LibraryItem};
-use crate::umu::{UMU_DOWNLOADING, is_umu_run_available};
+use crate::runtime::umu::{UMU_DOWNLOADING, is_umu_run_available};
 
 use self::game_dialogs::{
     AddLibraryItemKind, show_add_library_item_dialog, show_delete_confirmation,

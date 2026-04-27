@@ -22,7 +22,7 @@ use crate::icons::{
 };
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::prefix_tools::pick_and_run_in_prefix;
-use crate::proton::resolve_proton_path;
+use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
 
 use super::deps_dialog::show_dependencies_dialog;

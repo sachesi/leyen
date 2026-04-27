@@ -11,7 +11,7 @@ use crate::launch::{
     launch_game_headless, monitor_running_game, running_games_snapshot, stop_game,
 };
 use crate::models::{Game, LibraryItem};
-use crate::umu::{UMU_DOWNLOADING, check_or_install_umu, is_umu_run_available};
+use crate::runtime::umu::{UMU_DOWNLOADING, check_or_install_umu, is_umu_run_available};
 
 static OPEN_LOGS_ON_START: AtomicBool = AtomicBool::new(false);
 

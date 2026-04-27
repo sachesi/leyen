@@ -8,7 +8,7 @@ use gtk4::gio;
 use gtk4::prelude::*;
 
 use crate::logging::LOG_OPERATIONS;
-use crate::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
 pub fn pick_and_run_in_prefix(
     parent: &adw::ApplicationWindow,

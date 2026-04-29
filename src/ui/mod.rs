@@ -917,7 +917,7 @@ pub fn build_ui(app: &adw::Application) {
          .library-icon-media {{ border-radius: {1}px; }} \
          .card {{ border-radius: 12px; transition: all 200ms ease; }} \
          .card:hover {{ background-color: alpha(@window_fg_color, 0.05); }} \
-         .running-card {{ border: 1.5px solid alpha(@accent_bg_color, 0.5); box-shadow: 0 0 8px alpha(@accent_bg_color, 0.2); }}",
+         .running-card {{ border: 2px solid @accent_bg_color; }}",
         LIBRARY_ICON_SIZE, LIBRARY_ICON_CORNER_RADIUS
     ));
     if let Some(display) = gtk4::gdk::Display::default() {

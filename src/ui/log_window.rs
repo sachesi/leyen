@@ -36,7 +36,7 @@ async fn rebuild_buffer(
         .filter(|entry| {
             selected_game_id.is_none() || (selected_game_id.as_deref() == entry.game_id.as_deref())
         })
-        .map(|entry| entry.line.clone())
+        .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
         .collect();
 
     buffer.set_text(&lines.join("\n"));

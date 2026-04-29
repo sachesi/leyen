@@ -735,6 +735,7 @@ dependencies = [
  "anyhow",
  "clap",
  "directories",
+ "fastrand",
  "futures",
  "gtk4",
  "image",

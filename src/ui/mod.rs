@@ -17,11 +17,10 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::Cast;
 
-use crate::config::load_library;
 use crate::icons::{game_icon_file, group_icon_file};
-use crate::launch::{launch_game, running_games_snapshot, running_games_version, stop_game};
+use crate::launch::{launch_game, running_games_snapshot, stop_game};
 use crate::models::{Game, GameGroup, LibraryItem};
-use crate::runtime::umu::{UMU_DOWNLOADING, is_umu_run_available};
+use crate::runtime::umu::UMU_DOWNLOADING;
 
 use self::game_dialogs::{
     AddLibraryItemKind, show_add_library_item_dialog, show_delete_confirmation,
@@ -118,8 +117,8 @@ type RunningGameMap = std::collections::HashMap<String, crate::launch::RunningGa
 const LIST_PAGE_PRIMARY: &str = "primary";
 const LIST_PAGE_SECONDARY: &str = "secondary";
 
-fn running_game_map() -> RunningGameMap {
-    running_games_snapshot()
+async fn running_game_map() -> RunningGameMap {
+    running_games_snapshot().await
         .into_iter()
         .map(|snapshot| (snapshot.game_id.clone(), snapshot))
         .collect()
@@ -332,8 +331,8 @@ fn group_running_elapsed_seconds(group: &GameGroup, running_games: &RunningGameM
         .max()
 }
 
-fn update_running_duration_labels(ui: &LibraryUi) {
-    let snapshots = running_game_map();
+async fn update_running_duration_labels(ui: &LibraryUi) {
+    let snapshots = running_game_map().await;
     if ui.current_group_id.borrow().is_some() {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
@@ -371,9 +370,9 @@ fn update_running_duration_labels(ui: &LibraryUi) {
     }
 }
 
-fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
-    if game_is_running(&running_game_map(), &game.id) {
-        match stop_game(&game.id) {
+async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
+    if game_is_running(&running_game_map().await, &game.id) {
+        match stop_game(&game.id).await {
             Ok(true) => {
                 overlay.add_toast(adw::Toast::new(&format!("Stopping {}...", game.title)));
             }
@@ -419,10 +418,13 @@ fn open_group(
     group_id: &str,
 ) {
     *ui.current_group_id.borrow_mut() = Some(group_id.to_string());
-    refresh_library_view(ui, overlay, window);
+    let u = ui.clone(); let o = overlay.clone(); let w = window.clone();
+    glib::spawn_future_local(async move {
+        refresh_library_view(&u, &o, &w).await;
+    });
 }
 
-pub fn refresh_library_view(
+pub async fn refresh_library_view(
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
@@ -432,9 +434,9 @@ pub fn refresh_library_view(
     let window_clone = window.clone();
     
     glib::spawn_future_local(async move {
-        *ui_clone.library_state.borrow_mut() = crate::config::load_library_async().await;
-        populate_root_view(&ui_clone, &overlay_clone, &window_clone);
-        populate_group_view(&ui_clone, &overlay_clone, &window_clone);
+        *ui_clone.library_state.borrow_mut() = crate::config::load_library().await;
+        populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
+        populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
 
         if let Some(group_id) = ui_clone.current_group_id.borrow().clone() {
             if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
@@ -458,7 +460,7 @@ pub fn refresh_library_view(
     });
 }
 
-fn populate_root_view(
+async fn populate_root_view(
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
@@ -478,7 +480,7 @@ fn populate_root_view(
         return;
     }
 
-    let running_games = running_game_map();
+    let running_games = running_game_map().await;
     let mut sorted_items: Vec<LibraryItem> = items.clone();
     sorted_items.sort_by(|left, right| root_library_item_cmp(left, right, &running_games));
 
@@ -515,7 +517,7 @@ fn populate_root_view(
     ui.root_content_stack.set_visible_child_name("list");
 }
 
-fn populate_group_view(
+async fn populate_group_view(
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
@@ -544,7 +546,7 @@ fn populate_group_view(
         return;
     }
 
-    let running_games = running_game_map();
+    let running_games = running_game_map().await;
     let mut games = group.games.clone();
     games.sort_by(|left, right| game_display_cmp(left, right, &running_games));
 
@@ -708,7 +710,7 @@ fn build_group_card(
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
     edit_btn.connect_clicked(move |_| {
-        show_edit_group_dialog(&window_clone, &ui_clone, &overlay_clone, &group_clone);
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let g = group_clone.clone(); glib::spawn_future_local(async move { show_edit_group_dialog(&w, &u, &o, &g).await; });
     });
 
     let ui_clone = ui.clone();
@@ -716,7 +718,7 @@ fn build_group_card(
     let window_clone = window.clone();
     let group_id = group.id.clone();
     delete_btn.connect_clicked(move |_| {
-        show_delete_confirmation(&window_clone, &ui_clone, &overlay_clone, &group_id);
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let gid = group_id.clone(); glib::spawn_future_local(async move { show_delete_confirmation(&w, &u, &o, &gid).await; });
     });
 
     button_box.append(&edit_btn);
@@ -819,7 +821,7 @@ fn build_game_card(
     let game_clone = game.clone();
     let overlay_clone = overlay.clone();
     gesture.connect_pressed(move |_, _, _, _| {
-        handle_game_primary_action(&game_clone, &overlay_clone);
+        let game = game_clone.clone(); let overlay = overlay_clone.clone(); glib::spawn_future_local(async move { handle_game_primary_action(&game, &overlay).await; });
     });
     open_area.add_controller(gesture);
 
@@ -859,7 +861,7 @@ fn build_game_card(
     let game_clone = game.clone();
     let overlay_clone = overlay.clone();
     play_btn.connect_clicked(move |_| {
-        handle_game_primary_action(&game_clone, &overlay_clone);
+        let game = game_clone.clone(); let overlay = overlay_clone.clone(); glib::spawn_future_local(async move { handle_game_primary_action(&game, &overlay).await; });
     });
 
     let game_clone = game.clone();
@@ -867,7 +869,7 @@ fn build_game_card(
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
     edit_btn.connect_clicked(move |_| {
-        show_edit_game_dialog(&window_clone, &ui_clone, &overlay_clone, &game_clone);
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let g = game_clone.clone(); glib::spawn_future_local(async move { show_edit_game_dialog(&w, &u, &o, &g).await; });
     });
 
     let ui_clone = ui.clone();
@@ -875,7 +877,7 @@ fn build_game_card(
     let window_clone = window.clone();
     let game_id = game.id.clone();
     delete_btn.connect_clicked(move |_| {
-        show_delete_confirmation(&window_clone, &ui_clone, &overlay_clone, &game_id);
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let gid = game_id.clone(); glib::spawn_future_local(async move { show_delete_confirmation(&w, &u, &o, &gid).await; });
     });
 
     button_box.append(&edit_btn);
@@ -1085,18 +1087,18 @@ pub fn build_ui(app: &adw::Application) {
         add_button_stack: add_button_stack.clone(),
         back_btn: back_btn.clone(),
         title,
-        library_state: Rc::new(RefCell::new(load_library())),
+        library_state: Rc::new(RefCell::new(Vec::new())),
         current_group_id: Rc::new(RefCell::new(None)),
     };
 
-    refresh_library_view(&ui, &toast_overlay, &window);
+    let ui_c = ui.clone(); let overlay_c = toast_overlay.clone(); let window_c = window.clone(); glib::spawn_future_local(async move { refresh_library_view(&ui_c, &overlay_c, &window_c).await; });
 
     let ui_clone = ui.clone();
     let overlay_clone = toast_overlay.clone();
     let window_clone = window.clone();
     back_btn.connect_clicked(move |_| {
         *ui_clone.current_group_id.borrow_mut() = None;
-        refresh_library_view(&ui_clone, &overlay_clone, &window_clone);
+        let ui = ui_clone.clone(); let overlay = overlay_clone.clone(); let window = window_clone.clone(); glib::spawn_future_local(async move { refresh_library_view(&ui, &overlay, &window).await; });
     });
 
     let add_game_action = gio::SimpleAction::new("add-game", None);
@@ -1104,12 +1106,10 @@ pub fn build_ui(app: &adw::Application) {
     let ui_clone = ui.clone();
     let overlay_clone = toast_overlay.clone();
     add_game_action.connect_activate(move |_, _| {
-        show_add_library_item_dialog(
-            &window_clone,
-            &ui_clone,
-            &overlay_clone,
-            AddLibraryItemKind::Game,
-        );
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        glib::spawn_future_local(async move {
+            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Game).await;
+        });
     });
     window.add_action(&add_game_action);
 
@@ -1117,12 +1117,10 @@ pub fn build_ui(app: &adw::Application) {
     let ui_clone = ui.clone();
     let overlay_clone = toast_overlay.clone();
     add_game_btn.connect_clicked(move |_| {
-        show_add_library_item_dialog(
-            &window_clone,
-            &ui_clone,
-            &overlay_clone,
-            AddLibraryItemKind::Game,
-        );
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        glib::spawn_future_local(async move {
+            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Game).await;
+        });
     });
 
     let add_group_action = gio::SimpleAction::new("add-group", None);
@@ -1130,68 +1128,52 @@ pub fn build_ui(app: &adw::Application) {
     let ui_clone = ui.clone();
     let overlay_clone = toast_overlay.clone();
     add_group_action.connect_activate(move |_, _| {
-        show_add_library_item_dialog(
-            &window_clone,
-            &ui_clone,
-            &overlay_clone,
-            AddLibraryItemKind::Group,
-        );
+        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        glib::spawn_future_local(async move {
+            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Group).await;
+        });
     });
     window.add_action(&add_group_action);
-
-    let running_state_version = std::cell::Cell::new(running_games_version());
+    let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
     let ui_refresh = ui.clone();
     let overlay_refresh = toast_overlay.clone();
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
-        let current_version = running_games_version();
-        if current_version != running_state_version.get() {
-            running_state_version.set(current_version);
-            refresh_library_view(&ui_refresh, &overlay_refresh, &window_refresh);
-        } else if current_version != 0 {
-            update_running_duration_labels(&ui_refresh);
-        }
+        let ui_refresh = ui_refresh.clone();
+        let overlay_refresh = overlay_refresh.clone();
+        let window_refresh = window_refresh.clone();
+        let running_state_version = running_state_version.clone();
+        
+        glib::spawn_future_local(async move {
+            let current_version = crate::launch::running_games_version().await;
+            if current_version != running_state_version.get() {
+                running_state_version.set(current_version);
+                refresh_library_view(&ui_refresh, &overlay_refresh, &window_refresh).await;
+            } else if current_version != 0 {
+                update_running_duration_labels(&ui_refresh).await;
+            }
+        });
         glib::ControlFlow::Continue
     });
-
-    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
-        let banner_clone = download_banner.clone();
-        let overlay_clone = toast_overlay.clone();
-        glib::timeout_add_seconds_local(2, move || {
-            if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
-                return glib::ControlFlow::Continue;
-            }
-            banner_clone.set_revealed(false);
-            if is_umu_run_available() {
-                overlay_clone.add_toast(adw::Toast::new("umu-launcher downloaded. Ready to play!"));
-            } else {
-                overlay_clone.add_toast(adw::Toast::new(
-                    "Failed to download umu-launcher. Check your internet connection.",
-                ));
-            }
-            glib::ControlFlow::Break
-        });
-    }
-
     let prefs_action = gio::SimpleAction::new("show-preferences", None);
     let window_clone = window.clone();
     let overlay_for_settings = toast_overlay.clone();
     prefs_action.connect_activate(move |_, _| {
-        show_global_settings(&window_clone, &overlay_for_settings);
+        let window = window_clone.clone(); let overlay = overlay_for_settings.clone(); glib::spawn_future_local(async move { show_global_settings(&window, &overlay).await; });
     });
     window.add_action(&prefs_action);
 
     let logs_action = gio::SimpleAction::new("show-logs", None);
     let window_clone_logs = window.clone();
     logs_action.connect_activate(move |_, _| {
-        show_log_window(&window_clone_logs, None);
+        let window = window_clone_logs.clone(); glib::spawn_future_local(async move { show_log_window(&window, None).await; });
     });
     window.add_action(&logs_action);
 
     let running_games_action = gio::SimpleAction::new("show-running-games", None);
     let window_clone_running = window.clone();
     running_games_action.connect_activate(move |_, _| {
-        show_running_games_window(&window_clone_running);
+        let window = window_clone_running.clone(); glib::spawn_future_local(async move { show_running_games_window(&window).await; });
     });
     window.add_action(&running_games_action);
 
@@ -1199,6 +1181,6 @@ pub fn build_ui(app: &adw::Application) {
 
     let open_logs_on_start = crate::cli::take_open_logs_on_start();
     if open_logs_on_start {
-        show_log_window(&window, None);
+        glib::spawn_future_local(async move { glib::spawn_future_local(async move { show_log_window(&window, None).await; }); });
     }
 }

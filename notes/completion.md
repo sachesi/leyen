@@ -20,4 +20,4 @@ All planned improvements for the Leyen launcher have been addressed.
 
 ## Future Recommendations
 - Consider revisiting the Blueprint migration (Item 5) for better UI maintenance if the codebase expands.
-- Further async migration of I/O bound operations across the UI module.
+- Implement more unit tests for the dependency engine and icon extraction logic.

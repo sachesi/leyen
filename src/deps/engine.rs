@@ -1,13 +1,14 @@
 use libadwaita as adw;
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use gtk4::glib;
 use log::{error, info};
+use tokio::process::Command as AsyncCommand;
 
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
@@ -117,7 +118,7 @@ enum CleanupAction {
 
 pub const DEP_ASYNC_POLL_MS: u64 = 50;
 
-pub fn execute_dep_step(
+pub async fn execute_dep_step(
     step: &DepStep,
     prefix_path: &str,
     proton_path: &str,
@@ -137,10 +138,12 @@ pub fn execute_dep_step(
                 return Ok(StepChanges::default());
             }
 
-            fs::create_dir_all(cache_dir)
-                .map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
+            let cache_dir = cache_dir.to_string();
+            tokio::task::spawn_blocking(move || {
+                fs::create_dir_all(cache_dir)
+            }).await.unwrap().map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
 
-            let status = std::process::Command::new("curl")
+            let status = AsyncCommand::new("curl")
                 .args([
                     "--proto",
                     "=https",
@@ -158,6 +161,7 @@ pub fn execute_dep_step(
                     url,
                 ])
                 .status()
+                .await
                 .map_err(|err| format!("curl unavailable: {err}"))?;
 
             if !status.success() {
@@ -174,10 +178,11 @@ pub fn execute_dep_step(
             extra_env,
         } => {
             let exe_path = Path::new(cache_dir).join(file_name);
-            let before = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
 
-            let mut cmd = std::process::Command::new(get_umu_run_path());
-            configure_umu_command(&mut cmd, prefix_path, proton_path);
+            let mut cmd = AsyncCommand::new(get_umu_run_path());
+            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
             for pair in extra_env.split_whitespace() {
                 if let Some(eq) = pair.find('=') {
                     cmd.env(&pair[..eq], &pair[eq + 1..]);
@@ -187,40 +192,45 @@ pub fn execute_dep_step(
             for arg in args.split_whitespace() {
                 cmd.arg(arg);
             }
-            maybe_silence_command(&mut cmd);
+            maybe_silence_command_async(&mut cmd);
 
             let status = cmd
                 .status()
+                .await
                 .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
             if !status.success() {
                 return Err(format!("Installer '{}' exited with an error", file_name));
             }
 
-            let after = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
 
         DepStepAction::RunMsi { file_name, args } => {
             let msi_path = Path::new(cache_dir).join(file_name);
-            let before = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
 
-            let mut cmd = std::process::Command::new(get_umu_run_path());
-            configure_umu_command(&mut cmd, prefix_path, proton_path);
+            let mut cmd = AsyncCommand::new(get_umu_run_path());
+            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
             cmd.args(["msiexec.exe", "/i"]);
             cmd.arg(msi_path.as_os_str());
             for arg in args.split_whitespace() {
                 cmd.arg(arg);
             }
-            maybe_silence_command(&mut cmd);
+            maybe_silence_command_async(&mut cmd);
 
             let status = cmd
                 .status()
+                .await
                 .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
             if !status.success() {
                 return Err(format!("MSI install '{}' failed", file_name));
             }
 
-            let after = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
 
@@ -240,7 +250,10 @@ pub fn execute_dep_step(
         } => {
             let archive_path = Path::new(cache_dir).join(archive_name);
             let dest_path = Path::new(cache_dir).join(dest_subdir);
-            fs::create_dir_all(&dest_path).map_err(|err| {
+            let dest_path_clone = dest_path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs::create_dir_all(&dest_path_clone)
+            }).await.unwrap().map_err(|err| {
                 format!(
                     "Failed to create extraction directory '{}': {}",
                     dest_path.display(),
@@ -248,7 +261,7 @@ pub fn execute_dep_step(
                 )
             })?;
 
-            let mut cmd = std::process::Command::new("tar");
+            let mut cmd = AsyncCommand::new("tar");
             if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
                 cmd.args(["-I", "zstd", "-xf"]);
             } else {
@@ -261,6 +274,7 @@ pub fn execute_dep_step(
 
             let status = cmd
                 .status()
+                .await
                 .map_err(|err| format!("tar unavailable: {err}"))?;
             if !status.success() {
                 return Err(format!("Failed to extract '{}'", archive_name));
@@ -279,7 +293,10 @@ pub fn execute_dep_step(
                 .join("drive_c")
                 .join("windows")
                 .join(wine_dir);
-            fs::create_dir_all(&dst_dir).map_err(|err| {
+            let dst_dir_clone = dst_dir.clone();
+            tokio::task::spawn_blocking(move || {
+                fs::create_dir_all(&dst_dir_clone)
+            }).await.unwrap().map_err(|err| {
                 format!(
                     "Failed to create target directory '{}': {}",
                     dst_dir.display(),
@@ -287,45 +304,75 @@ pub fn execute_dep_step(
                 )
             })?;
 
-            let mut changes = StepChanges::default();
-            for dll in split_csv_values(dlls) {
-                let src = src_dir.join(format!("{dll}.dll"));
-                let dst = dst_dir.join(format!("{dll}.dll"));
-                let existed_before = dst.exists();
+            let prefix_path = prefix_path.to_string();
+            let dlls = split_csv_values(dlls);
+            
+            // File operations are generally fast but let's be safe and wrap the copy loop if it's many files.
+            // For now just wrap the whole loop to avoid any blocking on the async thread.
+            let mut changes = tokio::task::spawn_blocking(move || -> Result<StepChanges, String> {
+                let mut changes = StepChanges::default();
+                for dll in dlls {
+                    let src = src_dir.join(format!("{dll}.dll"));
+                    let dst = dst_dir.join(format!("{dll}.dll"));
+                    let existed_before = dst.exists();
 
-                fs::copy(&src, &dst)
-                    .map_err(|err| format!("Failed to copy {}.dll: {}", dll, err))?;
+                    fs::copy(&src, &dst)
+                        .map_err(|err| format!("Failed to copy {}.dll: {}", dll, err))?;
 
-                if existed_before {
-                    changes.touched_existing_files = true;
-                } else if let Some(relative) = path_to_prefix_relative(Path::new(prefix_path), &dst)
-                {
-                    changes.created_files.push(relative);
+                    if existed_before {
+                        changes.touched_existing_files = true;
+                    } else if let Some(relative) = path_to_prefix_relative(Path::new(&prefix_path), &dst)
+                    {
+                        changes.created_files.push(relative);
+                    }
                 }
-            }
+                Ok(changes)
+            }).await.unwrap()?;
 
             changes.created_files = merge_unique_strings(&[], &changes.created_files);
             Ok(changes)
         }
 
         DepStepAction::RunWinetricks { verb } => {
-            let before = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
 
-            let mut cmd = std::process::Command::new(get_umu_run_path());
-            configure_umu_command(&mut cmd, prefix_path, proton_path);
+            let mut cmd = AsyncCommand::new(get_umu_run_path());
+            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
             cmd.args(["winetricks", "-q", verb.as_str()]);
-            maybe_silence_command(&mut cmd);
+            maybe_silence_command_async(&mut cmd);
 
             let status = cmd
                 .status()
+                .await
                 .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))?;
             if !status.success() {
                 return Err(format!("winetricks '{}' failed", verb));
             }
 
-            let after = snapshot_prefix(prefix_path)?;
+            let prefix_path_clone = prefix_path.to_string();
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
+    }
+}
+
+fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton_path: &str) {
+    cmd.env("WINEPREFIX", prefix_path);
+    if !proton_path.is_empty() {
+        cmd.env("PROTONPATH", proton_path);
+    }
+    cmd.env("GAMEID", "leyen-dep-install");
+    cmd.env(
+        "WINEDLLOVERRIDES",
+        "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+    );
+    cmd.env("WINEDEBUG", "fixme-all");
+}
+
+fn maybe_silence_command_async(cmd: &mut AsyncCommand) {
+    if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
 }
 
@@ -342,70 +389,37 @@ pub fn install_dep_async(
         return;
     }
 
-    let state = read_prefix_dep_state(prefix_path);
-    let install_plan = match build_install_plan(dep_id, &state) {
-        Ok(plan) if !plan.is_empty() => plan,
-        Ok(_) => {
-            on_finish(true, Some("Dependency is already installed.".to_string()));
-            return;
-        }
-        Err(message) => {
-            overlay.add_toast(adw::Toast::new(&message));
-            on_finish(false, Some(message));
-            return;
-        }
-    };
-
-    let total_steps = install_plan
-        .iter()
-        .map(|profile| get_dep_steps(profile.id).len())
-        .sum::<usize>();
-    if total_steps == 0 {
-        let message = format!("No install steps defined for '{}'", dep_id);
-        overlay.add_toast(adw::Toast::new(&message));
-        on_finish(false, Some(message));
-        return;
-    }
-
-    let queue = std::sync::Arc::new(std::sync::Mutex::new(VecDeque::<DepInstallMsg>::new()));
-    let queue_bg = queue.clone();
-
-    let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
-    let on_progress = std::rc::Rc::new(on_progress);
-
-    glib::timeout_add_local(Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
-        let mut q = queue.lock().unwrap();
-        while let Some(msg) = q.pop_front() {
-            match msg {
-                DepInstallMsg::Progress {
-                    step,
-                    total,
-                    description,
-                } => {
-                    on_progress(step, total, description);
-                }
-                DepInstallMsg::Done(note) => {
-                    if let Some(finish) = on_finish.borrow_mut().take() {
-                        finish(true, note);
-                    }
-                    return glib::ControlFlow::Break;
-                }
-                DepInstallMsg::Failed(error) => {
-                    if let Some(finish) = on_finish.borrow_mut().take() {
-                        finish(false, Some(error));
-                    }
-                    return glib::ControlFlow::Break;
-                }
-            }
-        }
-        glib::ControlFlow::Continue
-    });
-
     let dep_id = dep_id.to_string();
     let prefix_path = prefix_path.to_string();
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
-    std::thread::spawn(move || {
+
+    glib::spawn_future_local(async move {
+        let prefix_path_for_state = prefix_path.clone();
+        let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state)).await.unwrap();
+        
+        let install_plan = match build_install_plan(&dep_id, &state) {
+            Ok(plan) if !plan.is_empty() => plan,
+            Ok(_) => {
+                on_finish(true, Some("Dependency is already installed.".to_string()));
+                return;
+            }
+            Err(message) => {
+                on_finish(false, Some(message));
+                return;
+            }
+        };
+
+        let total_steps = install_plan
+            .iter()
+            .map(|profile| get_dep_steps(profile.id).len())
+            .sum::<usize>();
+        if total_steps == 0 {
+            let message = format!("No install steps defined for '{}'", dep_id);
+            on_finish(false, Some(message));
+            return;
+        }
+
         info!(
             "[dep:{}] starting install plan ({} profiles, {} steps)",
             dep_id,
@@ -430,20 +444,13 @@ pub fn install_dep_async(
                     "[dep:{}] step {}/{}: {}",
                     profile.id, completed_steps, total_steps, description
                 );
-                queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
-                    step: completed_steps,
-                    total: total_steps,
-                    description,
-                });
+                on_progress(completed_steps, total_steps, description);
 
-                match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir) {
+                match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir).await {
                     Ok(changes) => recorded.merge(changes),
                     Err(error) => {
                         error!("[dep:{}] install failed: {}", profile.id, error);
-                        queue_bg
-                            .lock()
-                            .unwrap()
-                            .push_back(DepInstallMsg::Failed(error));
+                        on_finish(false, Some(error));
                         return;
                     }
                 }
@@ -455,10 +462,7 @@ pub fn install_dep_async(
                 profile.dependencies,
                 &recorded.into_dependency_record(),
             ) {
-                queue_bg
-                    .lock()
-                    .unwrap()
-                    .push_back(DepInstallMsg::Failed(error));
+                on_finish(false, Some(error));
                 return;
             }
         }
@@ -482,10 +486,7 @@ pub fn install_dep_async(
         };
 
         info!("[dep:{}] install complete", dep_id);
-        queue_bg
-            .lock()
-            .unwrap()
-            .push_back(DepInstallMsg::Done(note));
+        on_finish(true, note);
     });
 }
 
@@ -497,118 +498,86 @@ pub fn uninstall_dep_async(
     on_progress: impl Fn(usize, usize, String) + 'static,
     on_finish: impl FnOnce(bool, Option<String>) + 'static,
 ) {
-    let state = read_prefix_dep_state(prefix_path);
-    let installed = match state.installed.get(dep_id).cloned() {
-        Some(installed) => installed,
-        None => {
-            on_finish(true, Some("Dependency is no longer tracked.".to_string()));
-            return;
-        }
-    };
-    let dependents = find_installed_dependents(&state, dep_id);
-    if !dependents.is_empty() {
-        on_finish(
-            false,
-            Some(format!(
-                "Cannot remove '{}': still required by {}.",
-                dep_id,
-                dependents.join(", ")
-            )),
-        );
-        return;
-    }
-
-    let actions = build_cleanup_actions(&installed);
-    let requires_umu = actions.iter().any(|(_, action)| {
-        matches!(
-            action,
-            CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
-        )
-    });
-    if requires_umu && let Err(message) = ensure_umu_ready(overlay) {
-        on_finish(false, Some(message));
-        return;
-    }
-
-    let queue = std::sync::Arc::new(std::sync::Mutex::new(VecDeque::<DepInstallMsg>::new()));
-    let queue_bg = queue.clone();
-
-    let on_finish = std::rc::Rc::new(std::cell::RefCell::new(Some(on_finish)));
-    let on_progress = std::rc::Rc::new(on_progress);
-
-    glib::timeout_add_local(Duration::from_millis(DEP_ASYNC_POLL_MS), move || {
-        let mut q = queue.lock().unwrap();
-        while let Some(msg) = q.pop_front() {
-            match msg {
-                DepInstallMsg::Progress {
-                    step,
-                    total,
-                    description,
-                } => {
-                    on_progress(step, total, description);
-                }
-                DepInstallMsg::Done(note) => {
-                    if let Some(finish) = on_finish.borrow_mut().take() {
-                        finish(true, note);
-                    }
-                    return glib::ControlFlow::Break;
-                }
-                DepInstallMsg::Failed(error) => {
-                    if let Some(finish) = on_finish.borrow_mut().take() {
-                        finish(false, Some(error));
-                    }
-                    return glib::ControlFlow::Break;
-                }
-            }
-        }
-        glib::ControlFlow::Continue
-    });
-
     let dep_id = dep_id.to_string();
     let prefix_path = prefix_path.to_string();
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
-    std::thread::spawn(move || {
+    let overlay = overlay.clone();
+
+    glib::spawn_future_local(async move {
+        let prefix_path_for_state = prefix_path.clone();
+        let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state)).await.unwrap();
+
+        let installed = match state.installed.get(&dep_id).cloned() {
+            Some(installed) => installed,
+            None => {
+                on_finish(true, Some("Dependency is no longer tracked.".to_string()));
+                return;
+            }
+        };
+        let dependents = find_installed_dependents(&state, &dep_id);
+        if !dependents.is_empty() {
+            on_finish(
+                false,
+                Some(format!(
+                    "Cannot remove '{}': still required by {}.",
+                    dep_id,
+                    dependents.join(", ")
+                )),
+            );
+            return;
+        }
+
+        let actions = build_cleanup_actions(&installed);
+
+        let requires_umu = actions.iter().any(|(_, action)| {
+            matches!(
+                action,
+                CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
+            )
+        });
+        if requires_umu && let Err(message) = ensure_umu_ready(&overlay) {
+            on_finish(false, Some(message));
+            return;
+        }
+
         info!(
             "[dep:{}] starting removal ({} cleanup actions)",
             dep_id,
             actions.len()
         );
 
-        for (index, (description, action)) in actions.iter().enumerate() {
-            queue_bg.lock().unwrap().push_back(DepInstallMsg::Progress {
-                step: index + 1,
-                total: actions.len(),
-                description: description.clone(),
-            });
+        let total_actions = actions.len();
+        for (index, (description, action)) in actions.into_iter().enumerate() {
+            on_progress(index + 1, total_actions, description.clone());
 
-            let result = match action {
-                CleanupAction::RemoveDllOverrides(dlls) => {
-                    remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, dlls)
+            let prefix_path = prefix_path.clone();
+            let proton_path = proton_path.clone();
+            let cache_dir = cache_dir.clone();
+
+            let result = tokio::task::spawn_blocking(move || {
+                match action {
+                    CleanupAction::RemoveDllOverrides(dlls) => {
+                        remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
+                    }
+                    CleanupAction::UnregisterDlls(dlls) => {
+                        unregister_dlls(&prefix_path, &proton_path, &dlls)
+                    }
+                    CleanupAction::RemoveCreatedFiles(files) => {
+                        remove_created_files(&prefix_path, &files)
+                    }
                 }
-                CleanupAction::UnregisterDlls(dlls) => {
-                    unregister_dlls(&prefix_path, &proton_path, dlls)
-                }
-                CleanupAction::RemoveCreatedFiles(files) => {
-                    remove_created_files(&prefix_path, files)
-                }
-            };
+            }).await.unwrap();
 
             if let Err(error) = result {
                 error!("[dep:{}] removal failed: {}", dep_id, error);
-                queue_bg
-                    .lock()
-                    .unwrap()
-                    .push_back(DepInstallMsg::Failed(error));
+                on_finish(false, Some(error));
                 return;
             }
         }
 
         if let Err(error) = remove_installed_dep(&prefix_path, &dep_id) {
-            queue_bg
-                .lock()
-                .unwrap()
-                .push_back(DepInstallMsg::Failed(error));
+            on_finish(false, Some(error));
             return;
         }
 
@@ -625,10 +594,7 @@ pub fn uninstall_dep_async(
         };
 
         info!("[dep:{}] removal complete", dep_id);
-        queue_bg
-            .lock()
-            .unwrap()
-            .push_back(DepInstallMsg::Done(note));
+        on_finish(true, note);
     });
 }
 

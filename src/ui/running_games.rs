@@ -7,7 +7,7 @@ use gtk4::glib;
 
 use crate::config::load_games;
 use crate::icons::game_icon_file;
-use crate::launch::{running_games_snapshot, stop_game};
+use crate::launch::running_games_snapshot;
 
 use super::{build_library_icon, log_window::show_log_window};
 
@@ -25,7 +25,7 @@ fn format_duration_brief(total_seconds: u64) -> String {
     }
 }
 
-fn rebuild_running_games(
+async fn rebuild_running_games(
     list_box: &gtk4::Box,
     content_stack: &gtk4::Stack,
     overlay: &adw::ToastOverlay,
@@ -39,14 +39,14 @@ fn rebuild_running_games(
 
     let mut titles = HashMap::new();
     let mut icon_paths = HashMap::new();
-    for game in load_games() {
+    for game in load_games().await {
         if let Some(path) = game_icon_file(&game.id) {
             icon_paths.insert(game.id.clone(), path);
         }
         titles.insert(game.id, game.title);
     }
 
-    let snapshots = running_games_snapshot();
+    let snapshots = running_games_snapshot().await;
     if snapshots.is_empty() {
         content_stack.set_visible_child_name("empty");
         return;
@@ -142,19 +142,26 @@ fn rebuild_running_games(
         let game_id_for_logs = snapshot.game_id.clone();
         let parent_for_logs = parent.clone();
         logs_btn.connect_clicked(move |_| {
-            show_log_window(&parent_for_logs, Some(&game_id_for_logs));
+            let parent = parent_for_logs.clone(); let game_id = game_id_for_logs.clone(); glib::spawn_future_local(async move { show_log_window(&parent, Some(&game_id)).await; });
         });
 
         let overlay_for_stop = overlay.clone();
         let game_id_for_stop = snapshot.game_id.clone();
-        let title_for_stop = title.clone();
-        stop_btn.connect_clicked(move |_| match stop_game(&game_id_for_stop) {
-            Ok(true) => overlay_for_stop
-                .add_toast(adw::Toast::new(&format!("Stopping {}...", title_for_stop))),
-            Ok(false) => overlay_for_stop.add_toast(adw::Toast::new("Game is no longer running")),
-            Err(err) => overlay_for_stop
-                .add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err))),
+        let _title_for_stop = title.clone();
+        stop_btn.connect_clicked(move |_| {
+            let game_id = game_id_for_stop.clone();
+            let overlay = overlay_for_stop.clone();
+            glib::spawn_future_local(async move {
+                match crate::launch::stop_game(&game_id).await {
+                    Ok(true) => {}
+                    Ok(false) => overlay.add_toast(adw::Toast::new("Game is no longer running")),
+                    Err(err) => {
+                        overlay.add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err)));
+                    }
+                }
+            });
         });
+
 
         actions.append(&logs_btn);
         actions.append(&stop_btn);
@@ -168,26 +175,23 @@ fn rebuild_running_games(
 
     content_stack.set_visible_child_name("list");
 }
-
-fn update_running_durations(
+async fn update_running_durations(
     running_duration_labels: &std::rc::Rc<std::cell::RefCell<HashMap<String, gtk4::Label>>>,
 ) {
     let snapshots: HashMap<String, u64> = running_games_snapshot()
+        .await
         .into_iter()
-        .map(|snapshot| (snapshot.game_id, snapshot.elapsed_seconds))
+        .map(|s| (s.game_id.clone(), s.elapsed_seconds))
         .collect();
 
     for (game_id, label) in running_duration_labels.borrow().iter() {
-        if let Some(elapsed_seconds) = snapshots.get(game_id) {
-            label.set_label(&format!(
-                "Running for {}",
-                format_duration_brief(*elapsed_seconds)
-            ));
+        if let Some(elapsed) = snapshots.get(game_id) {
+            label.set_label(&format!("Running for {}", format_duration_brief(*elapsed)));
         }
     }
 }
 
-pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
+pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
         static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = std::cell::RefCell::new(None);
     }
@@ -214,11 +218,12 @@ pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
     let list_box = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .spacing(12)
-        .margin_top(16)
-        .margin_bottom(16)
+        .margin_top(24)
+        .margin_bottom(24)
         .margin_start(16)
         .margin_end(16)
         .build();
+
 
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -249,40 +254,54 @@ pub fn show_running_games_window(parent: &adw::ApplicationWindow) {
     toolbar_view.set_content(Some(&overlay));
     window.set_content(Some(&toolbar_view));
 
-    rebuild_running_games(
-        &list_box,
-        &content_stack,
-        &overlay,
-        parent,
-        &running_duration_labels,
-    );
+    let lbox = list_box.clone(); let cstack = content_stack.clone(); let ov = overlay.clone(); let p = parent.clone(); let rdl = running_duration_labels.clone();
+    glib::spawn_future_local(async move {
+        rebuild_running_games(
+            &lbox,
+            &cstack,
+            &ov,
+            &p,
+            &rdl,
+        ).await;
+    });
     window.present();
 
-    let window_ref = window.clone();
+    let _window_ref = window.clone();
+    let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
     let list_box_ref = list_box.clone();
     let content_stack_ref = content_stack.clone();
     let overlay_ref = overlay.clone();
     let parent_ref = parent.clone();
     let running_duration_labels_ref = running_duration_labels.clone();
-    let mut last_version = crate::launch::running_games_version();
+    let window_ref = window.clone();
+
     glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
 
-        let current_version = crate::launch::running_games_version();
-        if current_version != last_version {
-            last_version = current_version;
-            rebuild_running_games(
-                &list_box_ref,
-                &content_stack_ref,
-                &overlay_ref,
-                &parent_ref,
-                &running_duration_labels_ref,
-            );
-        } else if current_version != 0 {
-            update_running_durations(&running_duration_labels_ref);
-        }
+        let list_box_ref = list_box_ref.clone();
+        let content_stack_ref = content_stack_ref.clone();
+        let overlay_ref = overlay_ref.clone();
+        let parent_ref = parent_ref.clone();
+        let running_duration_labels_ref = running_duration_labels_ref.clone();
+        let running_state_version = running_state_version.clone();
+
+        glib::spawn_future_local(async move {
+            let current_version = crate::launch::running_games_version().await;
+            if current_version != running_state_version.get() {
+                running_state_version.set(current_version);
+                rebuild_running_games(
+                    &list_box_ref,
+                    &content_stack_ref,
+                    &overlay_ref,
+                    &parent_ref,
+                    &running_duration_labels_ref,
+                ).await;
+            } else if current_version != 0 {
+                update_running_durations(&running_duration_labels_ref).await;
+            }
+        });
         glib::ControlFlow::Continue
     });
 }

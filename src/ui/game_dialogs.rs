@@ -5,12 +5,12 @@ use std::rc::Rc;
 use libadwaita as adw;
 
 use adw::prelude::*;
-use gtk4::gio;
+use gtk4::{gio, glib};
 
 use crate::config::{
     find_game_by_leyen_id, find_group, game_parent_group_id, generate_unique_leyen_id, insert_game,
-    load_library, load_settings, normalize_game_id_from_executable, remove_game, remove_group,
-    replace_game, replace_group, save_library, suggest_prefix_path,
+    load_library, load_settings, normalize_game_id_from_executable, remove_game,
+    remove_group, replace_game, replace_group, suggest_prefix_path,
 };
 use crate::desktop::{
     create_game_desktop_entry, desktop_entry_exists, remove_game_desktop_entry,
@@ -78,48 +78,56 @@ fn build_icon_file_dialog(title: &str) -> gtk4::FileDialog {
         .build()
 }
 
-fn apply_game_icon(
-    game_id: &str,
-    exe_path: &str,
+async fn apply_game_icon(
+    game_id: String,
+    exe_path: String,
     custom_icon_enabled: bool,
-    icon_file: &str,
+    icon_file: String,
 ) -> Result<Option<String>, String> {
-    if custom_icon_enabled {
-        let icon_file = icon_file.trim();
-        if icon_file.is_empty() {
-            return Err("Custom icon file is required".to_string());
-        }
-        save_custom_game_icon(game_id, icon_file)?;
-        Ok(None)
-    } else {
-        match extract_game_icon(game_id, exe_path) {
-            Ok(()) => Ok(None),
-            Err(_) => {
-                clear_game_icon(game_id);
-                Ok(Some(
-                    "No icon could be extracted from the executable; using the default symbol."
-                        .to_string(),
-                ))
+    tokio::task::spawn_blocking(move || {
+        if custom_icon_enabled {
+            let icon_file = icon_file.trim();
+            if icon_file.is_empty() {
+                return Err("Custom icon file is required".to_string());
+            }
+            save_custom_game_icon(&game_id, icon_file)?;
+            Ok(None)
+        } else {
+            match extract_game_icon(&game_id, &exe_path) {
+                Ok(()) => Ok(None),
+                Err(_) => {
+                    clear_game_icon(&game_id);
+                    Ok(Some(
+                        "No icon could be extracted from the executable; using the default symbol."
+                            .to_string(),
+                    ))
+                }
             }
         }
-    }
+    })
+    .await
+    .unwrap()
 }
 
-fn apply_group_icon(
-    group_id: &str,
+async fn apply_group_icon(
+    group_id: String,
     custom_icon_enabled: bool,
-    icon_file: &str,
+    icon_file: String,
 ) -> Result<(), String> {
-    if custom_icon_enabled {
-        let icon_file = icon_file.trim();
-        if icon_file.is_empty() {
-            return Err("Custom icon file is required".to_string());
+    tokio::task::spawn_blocking(move || {
+        if custom_icon_enabled {
+            let icon_file = icon_file.trim();
+            if icon_file.is_empty() {
+                return Err("Custom icon file is required".to_string());
+            }
+            save_custom_group_icon(&group_id, icon_file)
+        } else {
+            clear_group_icon(&group_id);
+            Ok(())
         }
-        save_custom_group_icon(group_id, icon_file)
-    } else {
-        clear_group_icon(group_id);
-        Ok(())
-    }
+    })
+    .await
+    .unwrap()
 }
 
 fn group_custom_prefix_games(group: &GameGroup) -> Vec<String> {
@@ -198,14 +206,14 @@ fn selected_combo_value(row: &adw::ComboRow, values: &[String]) -> String {
         .unwrap_or_else(|| "Default".to_string())
 }
 
-pub fn show_add_library_item_dialog(
+pub async fn show_add_library_item_dialog(
     parent: &adw::ApplicationWindow,
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     kind: AddLibraryItemKind,
 ) {
-    let settings = load_settings();
-    let library = load_library();
+    let settings = load_settings().await;
+    let library = crate::config::load_library().await;
     let current_group_id = ui.current_group_id.borrow().clone();
     let inside_group = current_group_id.is_some();
     let current_group = current_group_id
@@ -642,141 +650,166 @@ pub fn show_add_library_item_dialog(
     let current_group_for_desktop = current_group.clone();
     let generated_leyen_id = generated_leyen_id.clone();
     add_btn.connect_clicked(move |_| {
-        let title = title_row.text().to_string();
-        if title.trim().is_empty() {
-            overlay_clone.add_toast(adw::Toast::new("Title is required"));
-            return;
-        }
+        let title_row_val = title_row.clone();
+        let ui_clone = ui_clone.clone();
+        let overlay_clone = overlay_clone.clone();
+        let parent_clone = parent_clone.clone();
+        let dialog_clone = dialog_clone.clone();
+        let current_group_id = current_group_id.clone();
+        let current_group_for_desktop = current_group_for_desktop.clone();
+        let generated_leyen_id = generated_leyen_id.clone();
+        let available_protons = available_protons.clone();
+        let path_row_val = path_row.clone();
+        let game_icon_override_row_val = game_icon_override_row.clone();
+        let game_icon_row_val = game_icon_row.clone();
+        let group_icon_override_row_val = group_icon_override_row.clone();
+        let group_icon_row_val = group_icon_row.clone();
+        let group_prefix_override_row_val = group_prefix_override_row.clone();
+        let group_prefix_row_val = group_prefix_row.clone();
+        let group_proton_row_val = group_proton_row.clone();
+        let prefix_override_row_val = prefix_override_row.clone();
+        let prefix_row_val = prefix_row.clone();
+        let proton_row_val = proton_row.clone();
+        let proton_override_row_val = proton_override_row.clone();
+        let args_entry_val = args_entry.clone();
+        let mangohud_row_val = mangohud_row.clone();
+        let gamemode_row_val = gamemode_row.clone();
+        let wayland_row_val = wayland_row.clone();
+        let wow64_row_val = wow64_row.clone();
+        let ntsync_row_val = ntsync_row.clone();
 
-        let mut items = load_library();
+        glib::spawn_future_local(async move {
+            let title = title_row_val.text().to_string();
+            let mut items = crate::config::load_library().await;
+            let mut icon_notice = None;
 
-        let mut icon_notice = None;
+            if kind == AddLibraryItemKind::Group {
+                let group_id = uuid::Uuid::new_v4().to_string();
+                if let Err(err) = apply_group_icon(
+                    group_id.clone(),
+                    group_icon_override_row_val.enables_expansion(),
+                    group_icon_row_val.text().to_string(),
+                ).await {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
 
-        if kind == AddLibraryItemKind::Group {
-            let group_id = uuid::Uuid::new_v4().to_string();
-            if let Err(err) = apply_group_icon(
-                &group_id,
-                group_icon_override_row.enables_expansion(),
-                group_icon_row.text().as_str(),
-            ) {
-                overlay_clone.add_toast(adw::Toast::new(&err));
-                return;
-            }
-
-            items.push(LibraryItem::Group(GameGroup {
-                id: group_id,
-                title,
-                defaults: GroupLaunchDefaults {
-                    prefix_path: if group_prefix_override_row.enables_expansion() {
-                        group_prefix_row.text().to_string()
-                    } else {
-                        String::new()
+                items.push(LibraryItem::Group(GameGroup {
+                    id: group_id,
+                    title,
+                    defaults: GroupLaunchDefaults {
+                        prefix_path: if group_prefix_override_row_val.enables_expansion() {
+                            group_prefix_row_val.text().to_string()
+                        } else {
+                            String::new()
+                        },
+                        proton: available_protons
+                            .get(group_proton_row_val.selected() as usize)
+                            .cloned()
+                            .unwrap_or_else(|| "Default".to_string()),
                     },
-                    proton: available_protons
-                        .get(group_proton_row.selected() as usize)
-                        .cloned()
-                        .unwrap_or_else(|| "Default".to_string()),
-                },
-                games: Vec::new(),
-            }));
-        } else {
-            let exe = path_row.text().to_string();
-            if exe.trim().is_empty() {
-                overlay_clone.add_toast(adw::Toast::new("Executable path is required"));
-                return;
-            }
-
-            let game_id = uuid::Uuid::new_v4().to_string();
-            let custom_icon = game_icon_override_row.enables_expansion();
-            icon_notice =
-                match apply_game_icon(&game_id, &exe, custom_icon, game_icon_row.text().as_str()) {
-                    Ok(warning) => warning,
-                    Err(err) => {
-                        overlay_clone.add_toast(adw::Toast::new(&err));
-                        return;
-                    }
-                };
-
-            let normalized_game_id = normalize_game_id_from_executable(&exe);
-            let leyen_id = if find_game_by_leyen_id(&items, &generated_leyen_id).is_some() {
-                generate_unique_leyen_id(&items)
+                    games: Vec::new(),
+                }));
             } else {
-                generated_leyen_id.clone()
-            };
-            let game = Game {
-                id: game_id.clone(),
-                title,
-                exe_path: exe,
-                prefix_path: if !prefix_override_row.enables_expansion() {
-                    String::new()
+                let exe = path_row_val.text().to_string();
+                if exe.trim().is_empty() {
+                    overlay_clone.add_toast(adw::Toast::new("Executable path is required"));
+                    return;
+                }
+
+                let game_id = uuid::Uuid::new_v4().to_string();
+                let custom_icon = game_icon_override_row_val.enables_expansion();
+                icon_notice =
+                    match apply_game_icon(game_id.clone(), exe.clone(), custom_icon, game_icon_row_val.text().to_string()).await {
+                        Ok(warning) => warning,
+                        Err(err) => {
+                            overlay_clone.add_toast(adw::Toast::new(&err));
+                            return;
+                        }
+                    };
+
+                let normalized_game_id = normalize_game_id_from_executable(&exe);
+                let leyen_id = if find_game_by_leyen_id(&items, &generated_leyen_id).is_some() {
+                    generate_unique_leyen_id(&items)
                 } else {
-                    prefix_row.text().to_string()
-                },
-                proton: if grouped_game && !proton_override_row.enables_expansion() {
-                    "Default".to_string()
-                } else {
-                    available_protons
-                        .get(proton_row.selected() as usize)
-                        .cloned()
-                        .unwrap_or_else(|| "Default".to_string())
-                },
-                launch_args: args_entry.text().to_string(),
-                force_mangohud: mangohud_available() && mangohud_row.is_active(),
-                force_gamemode: gamemode_available() && gamemode_row.is_active(),
-                game_wayland: wayland_row.is_active(),
-                game_wow64: wow64_row.is_active(),
-                game_ntsync: ntsync_row.is_active(),
-                leyen_id,
-                game_id: normalized_game_id,
-                custom_icon,
-                playtime_seconds: 0,
-                last_played_epoch_seconds: 0,
-                last_run_duration_seconds: 0,
-                last_run_status: String::new(),
-            };
-            let desktop_game = game.clone();
-            if !insert_game(&mut items, current_group_id.as_deref(), game) {
-                clear_game_icon(&game_id);
-                overlay_clone
-                    .add_toast(adw::Toast::new("Failed to add game to the selected group"));
-                return;
+                    generated_leyen_id.clone()
+                };
+                let game = Game {
+                    id: game_id.clone(),
+                    title,
+                    exe_path: exe,
+                    prefix_path: if !prefix_override_row_val.enables_expansion() {
+                        String::new()
+                    } else {
+                        prefix_row_val.text().to_string()
+                    },
+                    proton: if grouped_game && !proton_override_row_val.enables_expansion() {
+                        "Default".to_string()
+                    } else {
+                        available_protons
+                            .get(proton_row_val.selected() as usize)
+                            .cloned()
+                            .unwrap_or_else(|| "Default".to_string())
+                    },
+                    launch_args: args_entry_val.text().to_string(),
+                    force_mangohud: mangohud_available() && mangohud_row_val.is_active(),
+                    force_gamemode: gamemode_available() && gamemode_row_val.is_active(),
+                    game_wayland: wayland_row_val.is_active(),
+                    game_wow64: wow64_row_val.is_active(),
+                    game_ntsync: ntsync_row_val.is_active(),
+                    leyen_id,
+                    game_id: normalized_game_id,
+                    custom_icon,
+                    playtime_seconds: 0,
+                    last_played_epoch_seconds: 0,
+                    last_run_duration_seconds: 0,
+                    last_run_status: String::new(),
+                };
+                let desktop_game = game.clone();
+                if !insert_game(&mut items, current_group_id.as_deref(), game) {
+                    let gid = game_id.clone();
+                    tokio::task::spawn_blocking(move || clear_game_icon(&gid)).await.ok();
+                    overlay_clone
+                        .add_toast(adw::Toast::new("Failed to add game to the selected group"));
+                    return;
+                }
+
+                if let Err(err) =
+                    create_game_desktop_entry(&desktop_game, current_group_for_desktop.as_ref())
+                {
+                    icon_notice = Some(match icon_notice {
+                        Some(existing) => format!("{existing} Failed to create menu entry: {err}"),
+                        None => format!("Failed to create menu entry: {err}"),
+                    });
+                }
             }
 
-            if let Err(err) =
-                create_game_desktop_entry(&desktop_game, current_group_for_desktop.as_ref())
-            {
-                icon_notice = Some(match icon_notice {
-                    Some(existing) => format!("{existing} Failed to create menu entry: {err}"),
-                    None => format!("Failed to create menu entry: {err}"),
-                });
+            crate::config::save_library(items).await;
+            if kind == AddLibraryItemKind::Game && inside_group {
+                ui_clone.stack.set_visible_child_name("group");
+                ui_clone.back_btn.set_visible(true);
             }
-        }
-
-        save_library(&items);
-        if kind == AddLibraryItemKind::Game && inside_group {
-            ui_clone.stack.set_visible_child_name("group");
-            ui_clone.back_btn.set_visible(true);
-        }
-        refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-        let success_message = if let Some(icon_notice) = icon_notice {
-            format!("Item added successfully. {}", icon_notice)
-        } else {
-            "Item added successfully".to_string()
-        };
-        overlay_clone.add_toast(adw::Toast::new(&success_message));
-        dialog_clone.destroy();
+            refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+            let success_message = if let Some(icon_notice) = icon_notice {
+                format!("Item added successfully. {}", icon_notice)
+            } else {
+                "Item added successfully".to_string()
+            };
+            overlay_clone.add_toast(adw::Toast::new(&success_message));
+            dialog_clone.destroy();
+        });
     });
 
     dialog.present();
 }
 
-pub fn show_edit_group_dialog(
+pub async fn show_edit_group_dialog(
     parent: &adw::ApplicationWindow,
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     group: &GameGroup,
 ) {
-    let settings = load_settings();
+    let settings = load_settings().await;
     let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
@@ -921,12 +954,15 @@ pub fn show_edit_group_dialog(
             proton_choice
         };
         let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        show_dependencies_dialog(
-            &dialog_parent,
-            deps_prefix.as_str(),
-            &deps_proton,
-            &overlay_clone_deps,
-        );
+        let p = dialog_parent.clone(); let o = overlay_clone_deps.clone();
+        glib::spawn_future_local(async move {
+            show_dependencies_dialog(
+                &p,
+                deps_prefix.as_str(),
+                &deps_proton,
+                &o,
+            ).await;
+        });
     });
 
     let dialog_parent = parent.clone();
@@ -1084,63 +1120,79 @@ pub fn show_edit_group_dialog(
             return;
         }
 
-        let mut items = load_library();
-        if let Err(err) = apply_group_icon(
-            &group_id,
-            group_icon_override_row.enables_expansion(),
-            group_icon_row.text().as_str(),
-        ) {
-            overlay_clone.add_toast(adw::Toast::new(&err));
-            return;
-        }
+        let ui_clone = ui_clone.clone();
+        let overlay_clone = overlay_clone.clone();
+        let parent_clone = parent_clone.clone();
+        let group_id = group_id.clone();
+        let dialog_clone = dialog_clone.clone();
+        let prefix_override_row_val = prefix_override_row.clone();
+        let prefix_row_val = prefix_row.clone();
+        let proton_row_val = proton_row.clone();
+        let available_protons = available_protons.clone();
+        let group_icon_override_row_val = group_icon_override_row.clone();
+        let group_icon_row_val = group_icon_row.clone();
+        let title_row_val = title_row.clone();
 
-        if replace_group(
-            &mut items,
-            &group_id,
-            title,
-            GroupLaunchDefaults {
-                prefix_path: if prefix_override_row.enables_expansion() {
-                    prefix_row.text().to_string()
-                } else {
-                    String::new()
+        glib::spawn_future_local(async move {
+            let title = title_row_val.text().to_string();
+            let mut items = crate::config::load_library().await;
+            if let Err(err) = apply_group_icon(
+                group_id.clone(),
+                group_icon_override_row_val.enables_expansion(),
+                group_icon_row_val.text().to_string(),
+            ).await {
+                overlay_clone.add_toast(adw::Toast::new(&err));
+                return;
+            }
+
+            if replace_group(
+                &mut items,
+                &group_id,
+                title,
+                GroupLaunchDefaults {
+                    prefix_path: if prefix_override_row_val.enables_expansion() {
+                        prefix_row_val.text().to_string()
+                    } else {
+                        String::new()
+                    },
+                    proton: available_protons
+                        .get(proton_row_val.selected() as usize)
+                        .cloned()
+                        .unwrap_or_else(|| "Default".to_string()),
                 },
-                proton: available_protons
-                    .get(proton_row.selected() as usize)
+            ) {
+                crate::config::save_library(items.clone()).await;
+                let desktop_notice = find_group(&items, &group_id)
                     .cloned()
-                    .unwrap_or_else(|| "Default".to_string()),
-            },
-        ) {
-            save_library(&items);
-            let desktop_notice = find_group(&items, &group_id)
-                .cloned()
-                .and_then(|updated_group| {
-                    update_group_desktop_entries_if_present(&updated_group)
-                        .err()
-                        .map(|err| format!("Failed to update menu entries: {err}"))
-                });
-            refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-            let success_message = if let Some(desktop_notice) = desktop_notice {
-                format!("Group updated successfully. {desktop_notice}")
-            } else {
-                "Group updated successfully".to_string()
-            };
-            overlay_clone.add_toast(adw::Toast::new(&success_message));
-            dialog_clone.destroy();
-        }
+                    .and_then(|updated_group| {
+                        update_group_desktop_entries_if_present(&updated_group)
+                            .err()
+                            .map(|err| format!("Failed to update menu entries: {err}"))
+                    });
+                refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                let success_message = if let Some(desktop_notice) = desktop_notice {
+                    format!("Group updated successfully. {desktop_notice}")
+                } else {
+                    "Group updated successfully".to_string()
+                };
+                overlay_clone.add_toast(adw::Toast::new(&success_message));
+                dialog_clone.destroy();
+            }
+        });
     });
 
     dialog.present();
 }
 
-pub fn show_edit_game_dialog(
+pub async fn show_edit_game_dialog(
     parent: &adw::ApplicationWindow,
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     game: &Game,
 ) {
-    let settings = load_settings();
-    let library = load_library();
-    let current_parent_group_id = game_parent_group_id(&library, &game.id).flatten();
+    let settings = load_settings().await;
+    let library = load_library().await;
+    let current_parent_group_id = game_parent_group_id(&library, &game.id);
     let current_parent_group = current_parent_group_id
         .as_deref()
         .and_then(|group_id| find_group(&library, group_id))
@@ -1416,12 +1468,15 @@ pub fn show_edit_game_dialog(
             proton_choice
         };
         let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        show_dependencies_dialog(
-            &dialog_parent,
-            deps_prefix.as_str(),
-            &deps_proton,
-            &overlay_clone_deps,
-        );
+        let p = dialog_parent.clone(); let o = overlay_clone_deps.clone();
+        glib::spawn_future_local(async move {
+            show_dependencies_dialog(
+                &p,
+                deps_prefix.as_str(),
+                &deps_proton,
+                &o,
+            ).await;
+        });
     });
 
     let dialog_parent = parent.clone();
@@ -1662,86 +1717,114 @@ pub fn show_edit_game_dialog(
             overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
             return;
         }
-        let normalized_game_id = normalize_game_id_from_executable(&exe);
-        let custom_icon = game_icon_override_row.enables_expansion();
-        let icon_notice =
-            match apply_game_icon(&game_id, &exe, custom_icon, game_icon_row.text().as_str()) {
-                Ok(warning) => warning,
-                Err(err) => {
-                    overlay_clone.add_toast(adw::Toast::new(&err));
-                    return;
+
+        let ui_clone = ui_clone.clone();
+        let overlay_clone = overlay_clone.clone();
+        let parent_clone = parent_clone.clone();
+        let game_id = game_id.clone();
+        let original_game = original_game.clone();
+        let dialog_clone = dialog_clone.clone();
+        let prefix_override_row_val = prefix_override_row.clone();
+        let prefix_row_val = prefix_row.clone();
+        let proton_row_val = proton_row.clone();
+        let proton_override_row_val = proton_override_row.clone();
+        let available_protons = available_protons.clone();
+        let args_entry_val = args_entry.clone();
+        let mangohud_row_val = mangohud_row.clone();
+        let gamemode_row_val = gamemode_row.clone();
+        let wayland_row_val = wayland_row.clone();
+        let wow64_row_val = wow64_row.clone();
+        let ntsync_row_val = ntsync_row.clone();
+        let game_icon_row_val = game_icon_row.clone();
+        let game_icon_override_row_val = game_icon_override_row.clone();
+        let current_parent_group = current_parent_group.clone();
+        let title_row_val = title_row.clone();
+        let path_row_val = path_row.clone();
+
+        glib::spawn_future_local(async move {
+            let title = title_row_val.text().to_string();
+            let exe = path_row_val.text().to_string();
+            let mut items = crate::config::load_library().await;
+            let normalized_game_id = normalize_game_id_from_executable(&exe);
+            let custom_icon = game_icon_override_row_val.enables_expansion();
+            let icon_notice =
+                match apply_game_icon(game_id.clone(), exe.clone(), custom_icon, game_icon_row_val.text().to_string()).await {
+                    Ok(warning) => warning,
+                    Err(err) => {
+                        overlay_clone.add_toast(adw::Toast::new(&err));
+                        return;
+                    }
+                };
+
+            let edited_game = Game {
+                id: game_id.clone(),
+                title,
+                exe_path: exe,
+                prefix_path: if !prefix_override_row_val.enables_expansion() {
+                    String::new()
+                } else {
+                    prefix_row_val.text().to_string()
+                },
+                proton: if grouped_game && !proton_override_row_val.enables_expansion() {
+                    "Default".to_string()
+                } else {
+                    available_protons
+                        .get(proton_row_val.selected() as usize)
+                        .cloned()
+                        .unwrap_or_else(|| "Default".to_string())
+                },
+                launch_args: args_entry_val.text().to_string(),
+                force_mangohud: mangohud_available() && mangohud_row_val.is_active(),
+                force_gamemode: gamemode_available() && gamemode_row_val.is_active(),
+                game_wayland: wayland_row_val.is_active(),
+                game_wow64: wow64_row_val.is_active(),
+                game_ntsync: ntsync_row_val.is_active(),
+                leyen_id: original_game.leyen_id.clone(),
+                game_id: normalized_game_id,
+                custom_icon,
+                playtime_seconds: original_game.playtime_seconds,
+                last_played_epoch_seconds: original_game.last_played_epoch_seconds,
+                last_run_duration_seconds: original_game.last_run_duration_seconds,
+                last_run_status: original_game.last_run_status.clone(),
+            };
+
+            if replace_game(&mut items, &edited_game) {
+                crate::config::save_library(items).await;
+                let desktop_notice =
+                    update_game_desktop_entry_if_present(&edited_game, current_parent_group.as_ref())
+                        .err()
+                        .map(|err| format!("Failed to update menu entry: {err}"));
+                refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                let mut notices = Vec::new();
+                if let Some(icon_notice) = icon_notice {
+                    notices.push(icon_notice);
                 }
-            };
-
-        let edited_game = Game {
-            id: game_id.clone(),
-            title,
-            exe_path: exe,
-            prefix_path: if !prefix_override_row.enables_expansion() {
-                String::new()
+                if let Some(desktop_notice) = desktop_notice {
+                    notices.push(desktop_notice);
+                }
+                let success_message = if notices.is_empty() {
+                    "Game updated successfully".to_string()
+                } else {
+                    format!("Game updated successfully. {}", notices.join(" "))
+                };
+                overlay_clone.add_toast(adw::Toast::new(&success_message));
+                dialog_clone.destroy();
             } else {
-                prefix_row.text().to_string()
-            },
-            proton: if grouped_game && !proton_override_row.enables_expansion() {
-                "Default".to_string()
-            } else {
-                available_protons
-                    .get(proton_row.selected() as usize)
-                    .cloned()
-                    .unwrap_or_else(|| "Default".to_string())
-            },
-            launch_args: args_entry.text().to_string(),
-            force_mangohud: mangohud_available() && mangohud_row.is_active(),
-            force_gamemode: gamemode_available() && gamemode_row.is_active(),
-            game_wayland: wayland_row.is_active(),
-            game_wow64: wow64_row.is_active(),
-            game_ntsync: ntsync_row.is_active(),
-            leyen_id: original_game.leyen_id.clone(),
-            game_id: normalized_game_id,
-            custom_icon,
-            playtime_seconds: original_game.playtime_seconds,
-            last_played_epoch_seconds: original_game.last_played_epoch_seconds,
-            last_run_duration_seconds: original_game.last_run_duration_seconds,
-            last_run_status: original_game.last_run_status.clone(),
-        };
-
-        let mut items = load_library();
-        if replace_game(&mut items, &edited_game) {
-            save_library(&items);
-            let desktop_notice =
-                update_game_desktop_entry_if_present(&edited_game, current_parent_group.as_ref())
-                    .err()
-                    .map(|err| format!("Failed to update menu entry: {err}"));
-            refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-            let mut notices = Vec::new();
-            if let Some(icon_notice) = icon_notice {
-                notices.push(icon_notice);
+                overlay_clone.add_toast(adw::Toast::new("Error: Game not found"));
             }
-            if let Some(desktop_notice) = desktop_notice {
-                notices.push(desktop_notice);
-            }
-            let success_message = if notices.is_empty() {
-                "Game updated successfully".to_string()
-            } else {
-                format!("Game updated successfully. {}", notices.join(" "))
-            };
-            overlay_clone.add_toast(adw::Toast::new(&success_message));
-            dialog_clone.destroy();
-        } else {
-            overlay_clone.add_toast(adw::Toast::new("Error: Game not found"));
-        }
+        });
     });
 
     dialog.present();
 }
 
-pub fn show_delete_confirmation(
+pub async fn show_delete_confirmation(
     parent: &adw::ApplicationWindow,
     ui: &LibraryUi,
     overlay: &adw::ToastOverlay,
     item_id: &str,
 ) {
-    let items = load_library();
+    let items = crate::config::load_library().await;
     let label = items
         .iter()
         .find_map(|item| match item {
@@ -1780,37 +1863,47 @@ pub fn show_delete_confirmation(
     let parent_clone = parent.clone();
     dialog.choose(Some(parent), gio::Cancellable::NONE, move |result| {
         if let Ok(1) = result {
-            let mut items = load_library();
-            let mut delete_notice = None;
-            let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
-                clear_game_icon(&game.id);
-                if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
-                    delete_notice = Some(format!("Failed to remove menu entry: {err}"));
-                }
-                Some(game.title)
-            } else if let Some(group) = remove_group(&mut items, &item_id) {
-                clear_group_icon(&group.id);
-                for game in &group.games {
-                    clear_game_icon(&game.id);
+            let ui_clone = ui_clone.clone();
+            let overlay_clone = overlay_clone.clone();
+            let parent_clone = parent_clone.clone();
+            let item_id = item_id.clone();
+            
+            glib::spawn_future_local(async move {
+                let mut items = crate::config::load_library().await;
+                let mut delete_notice = None;
+                let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
+                    let gid = game.id.clone();
+                    tokio::task::spawn_blocking(move || clear_game_icon(&gid)).await.ok();
                     if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
-                        delete_notice = Some(format!("Failed to remove a menu entry: {err}"));
+                        delete_notice = Some(format!("Failed to remove menu entry: {err}"));
                     }
-                }
-                Some(group.title)
-            } else {
-                None
-            };
-
-            if let Some(title) = deleted {
-                save_library(&items);
-                refresh_library_view(&ui_clone, &overlay_clone, &parent_clone);
-                let message = if let Some(delete_notice) = delete_notice {
-                    format!("'{}' deleted successfully. {}", title, delete_notice)
+                    Some(game.title)
+                } else if let Some(group) = remove_group(&mut items, &item_id) {
+                    let gid = group.id.clone();
+                    tokio::task::spawn_blocking(move || clear_group_icon(&gid)).await.ok();
+                    for game in &group.games {
+                        let gid = game.id.clone();
+                        tokio::task::spawn_blocking(move || clear_game_icon(&gid)).await.ok();
+                        if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
+                            delete_notice = Some(format!("Failed to remove a menu entry: {err}"));
+                        }
+                    }
+                    Some(group.title)
                 } else {
-                    format!("'{}' deleted successfully", title)
+                    None
                 };
-                overlay_clone.add_toast(adw::Toast::new(&message));
-            }
+
+                if let Some(title) = deleted {
+                    crate::config::save_library(items).await;
+                    refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                    let message = if let Some(delete_notice) = delete_notice {
+                        format!("'{}' deleted successfully. {}", title, delete_notice)
+                    } else {
+                        format!("'{}' deleted successfully", title)
+                    };
+                    overlay_clone.add_toast(adw::Toast::new(&message));
+                }
+            });
         }
     });
 }

@@ -7,14 +7,14 @@ use std::path::PathBuf;
 
 use super::deps_dialog::show_dependencies_dialog;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
-use crate::config::{load_settings, save_settings};
+ use gtk4::glib;
 use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
 use crate::runtime::umu::get_umu_runtime_dir;
 
-pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
-    let settings = load_settings();
+pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
+    let settings = crate::config::load_settings().await;
 
     let pref_window = adw::PreferencesWindow::builder()
         .transient_for(parent)
@@ -98,7 +98,7 @@ pub fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::Toas
                 "Default".to_string()
             };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
-        show_dependencies_dialog(&parent_for_deps, &prefix, &proton, &overlay_for_deps);
+        let parent = parent_for_deps.clone(); let overlay = overlay_for_deps.clone(); glib::spawn_future_local(async move { show_dependencies_dialog(&parent, &prefix, &proton, &overlay).await; });
     });
 
     let overlay_for_run = overlay.clone();
@@ -235,25 +235,32 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             gio::Cancellable::NONE,
             move |result| {
                 if let Ok(1) = result {
+                    let overlay_clone = overlay_clone.clone();
                     let runtime_dir = get_umu_runtime_dir();
-                    match fs::remove_dir_all(&runtime_dir) {
-                        Ok(_) => {
-                            overlay_clone.add_toast(adw::Toast::new(
-                                "umu runtime reset. Re-run any dependency install to download a fresh copy.",
-                            ));
+                    glib::spawn_future_local(async move {
+                        let result = tokio::task::spawn_blocking(move || {
+                            fs::remove_dir_all(&runtime_dir)
+                        }).await.unwrap();
+
+                        match result {
+                            Ok(_) => {
+                                overlay_clone.add_toast(adw::Toast::new(
+                                    "umu runtime reset. Re-run any dependency install to download a fresh copy.",
+                                ));
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                overlay_clone.add_toast(adw::Toast::new(
+                                    "umu runtime directory not found — nothing to reset.",
+                                ));
+                            }
+                            Err(e) => {
+                                overlay_clone.add_toast(adw::Toast::new(&format!(
+                                    "Failed to reset umu runtime: {}",
+                                    e
+                                )));
+                            }
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                            overlay_clone.add_toast(adw::Toast::new(
-                                "umu runtime directory not found — nothing to reset.",
-                            ));
-                        }
-                        Err(e) => {
-                            overlay_clone.add_toast(adw::Toast::new(&format!(
-                                "Failed to reset umu runtime: {}",
-                                e
-                            )));
-                        }
-                    }
+                    });
                 }
             },
         );
@@ -284,7 +291,9 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             log_warnings: log_warnings_row.is_active(),
             log_operations: log_operations_row.is_active(),
         };
-        save_settings(&updated_settings);
+        glib::spawn_future_local(async move {
+            crate::config::save_settings(updated_settings).await;
+        });
         gtk4::glib::Propagation::Proceed
     });
 

@@ -87,6 +87,13 @@ impl log::Log for LeyenLogger {
 static LOGGER: LeyenLogger = LeyenLogger;
 
 pub fn init() -> Result<(), log::SetLoggerError> {
+    // Clear logs on fresh launch as requested
+    let path = log_path();
+    let _ = fs::remove_file(&path);
+    let mut old_path = path.clone();
+    old_path.set_extension("jsonl.old");
+    let _ = fs::remove_file(old_path);
+
     let (tx, rx) = unbounded::<LogEntry>();
     let _ = LOG_SENDER.set(tx);
 

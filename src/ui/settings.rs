@@ -292,6 +292,7 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             log_operations: log_operations_row.is_active(),
         };
         glib::spawn_future_local(async move {
+            crate::logging::apply_log_settings(&updated_settings);
             crate::config::save_settings(updated_settings).await;
         });
         gtk4::glib::Propagation::Proceed

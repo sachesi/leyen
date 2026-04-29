@@ -1,9 +1,11 @@
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
+use chrono::Local;
+use crossbeam_channel::{Sender, unbounded};
 use log::{Level, LevelFilter, Metadata, Record};
 use serde::{Deserialize, Serialize};
 
@@ -12,15 +14,16 @@ use crate::models::GlobalSettings;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LogEntry {
+    pub timestamp: String,
     pub line: String,
     pub game_id: Option<String>,
 }
 
-/// Atomic flags mirroring GlobalSettings.log_* so background threads can log
-/// without reading the settings file on every message.
 pub static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
 pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
 pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
+
+static LOG_SENDER: OnceLock<Sender<LogEntry>> = OnceLock::new();
 
 fn log_path() -> PathBuf {
     get_config_dir().join("logs.jsonl")
@@ -58,17 +61,24 @@ impl log::Log for LeyenLogger {
         };
 
         let message = record.args().to_string();
+        let module = record.module_path().unwrap_or("unknown");
+        
         let line = match &game_id {
-            Some(id) => format!("[LEYEN] [{level_str}] [game:{id}] {message}"),
-            None => format!("[LEYEN] [{level_str}] {message}"),
+            Some(id) => format!("[{level_str}] [{module}] [game:{id}] {message}"),
+            None => format!("[{level_str}] [{module}] {message}"),
         };
 
-        append_log_entry(&LogEntry {
+        let entry = LogEntry {
+            timestamp: Local::now().to_rfc3339(),
             line: line.clone(),
             game_id,
-        });
+        };
 
-        eprintln!("{line}");
+        if let Some(tx) = LOG_SENDER.get() {
+            let _ = tx.send(entry);
+        }
+
+        eprintln!("[LEYEN] {line}");
     }
 
     fn flush(&self) {}
@@ -77,49 +87,45 @@ impl log::Log for LeyenLogger {
 static LOGGER: LeyenLogger = LeyenLogger;
 
 pub fn init() -> Result<(), log::SetLoggerError> {
+    let (tx, rx) = unbounded::<LogEntry>();
+    let _ = LOG_SENDER.set(tx);
+
+    std::thread::spawn(move || {
+        while let Ok(entry) = rx.recv() {
+            write_log_entry(&entry);
+        }
+    });
+
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
-fn append_log_entry(entry: &LogEntry) {
+const MAX_LOG_SIZE: u64 = 2 * 1024 * 1024; // 2MB
+
+fn write_log_entry(entry: &LogEntry) {
     let path = log_path();
-    if let Some(parent) = path.parent()
-        && !parent.exists()
-        && let Err(e) = fs::create_dir_all(parent)
-    {
-        eprintln!(
-            "Failed to create log directory '{}': {}",
-            parent.display(),
-            e
-        );
-        return;
+    
+    // Check for rotation
+    if let Ok(metadata) = fs::metadata(&path) {
+        if metadata.len() > MAX_LOG_SIZE {
+            let mut old_path = path.clone();
+            old_path.set_extension("jsonl.old");
+            let _ = fs::rename(&path, &old_path);
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            let _ = fs::create_dir_all(parent);
+        }
     }
 
     let mut file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(file) => file,
-        Err(e) => {
-            eprintln!("Failed to open log file '{}': {}", path.display(), e);
-            return;
-        }
+        Err(_) => return,
     };
 
-    let flock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-    if flock_result != 0 {
-        eprintln!(
-            "Failed to lock log file '{}': {}",
-            path.display(),
-            std::io::Error::last_os_error()
-        );
-        return;
-    }
-
-    let write_result = serde_json::to_writer(&mut file, entry)
-        .map_err(|e| std::io::Error::other(e.to_string()))
-        .and_then(|_| writeln!(&mut file));
-
-    let _ = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
-
-    if let Err(e) = write_result {
-        eprintln!("Failed to write log file '{}': {}", path.display(), e);
+    if let Ok(json) = serde_json::to_string(entry) {
+        let _ = writeln!(file, "{}", json);
     }
 }
 
@@ -129,26 +135,38 @@ pub fn apply_log_settings(s: &GlobalSettings) {
     LOG_OPERATIONS.store(s.log_operations, Ordering::Relaxed);
 }
 
-/// Return a snapshot of every log line captured so far.
 pub fn get_log_entries() -> Vec<LogEntry> {
     let path = log_path();
-    let Ok(file) = OpenOptions::new().read(true).open(&path) else {
-        return Vec::new();
-    };
+    let mut entries = Vec::new();
 
-    let reader = BufReader::new(file);
-    reader
-        .lines()
-        .filter_map(|line| match line {
-            Ok(line) if !line.trim().is_empty() => serde_json::from_str::<LogEntry>(&line).ok(),
-            Ok(_) => None,
-            Err(_) => None,
-        })
-        .collect()
+    // Try reading .old first if it exists
+    let mut old_path = path.clone();
+    old_path.set_extension("jsonl.old");
+    if let Ok(file) = fs::File::open(&old_path) {
+        let reader = BufReader::new(file);
+        for line in reader.lines().flatten() {
+            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                entries.push(entry);
+            }
+        }
+    }
+
+    if let Ok(file) = fs::File::open(&path) {
+        let reader = BufReader::new(file);
+        for line in reader.lines().flatten() {
+            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
+                entries.push(entry);
+            }
+        }
+    }
+
+    entries
 }
 
-/// Clear every captured log line from the in-memory buffer.
 pub fn clear_log_buffer() {
     let path = log_path();
-    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(&path);
+    let mut old_path = path.clone();
+    old_path.set_extension("jsonl.old");
+    let _ = fs::remove_file(old_path);
 }

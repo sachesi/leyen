@@ -1,11 +1,10 @@
 use std::cell::{Cell, RefCell};
-
+use std::rc::Rc;
 use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::glib;
 
-use crate::config::load_library;
 use crate::logging::{clear_log_buffer, get_log_entries};
 use crate::models::LibraryItem;
 
@@ -24,18 +23,18 @@ fn scroll_to_bottom(
     buffer.delete_mark(&mark);
 }
 
-fn rebuild_buffer(
+async fn rebuild_buffer(
     buffer: &gtk4::TextBuffer,
-    selected_game_id: Option<&str>,
+    selected_game_id: Option<String>,
     content_stack: &gtk4::Stack,
     scroll: &gtk4::ScrolledWindow,
     text_view: &gtk4::TextView,
 ) -> usize {
-    let entries = get_log_entries();
+    let entries = tokio::task::spawn_blocking(move || get_log_entries()).await.unwrap();
     let lines: Vec<String> = entries
         .iter()
         .filter(|entry| {
-            selected_game_id.is_none_or(|game_id| entry.game_id.as_deref() == Some(game_id))
+            selected_game_id.is_none() || (selected_game_id.as_deref() == entry.game_id.as_deref())
         })
         .map(|entry| entry.line.clone())
         .collect();
@@ -50,7 +49,7 @@ fn rebuild_buffer(
     entries.len()
 }
 
-pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
+pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
         static ACTIVE_LOG_WINDOW: RefCell<Option<adw::Window>> = RefCell::new(None);
     }
@@ -72,7 +71,7 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
 
     ACTIVE_LOG_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
 
-    let library = load_library();
+    let library = crate::config::load_library().await;
     let mut filter_ids: Vec<Option<String>> = vec![None];
     let mut filter_labels: Vec<String> = vec!["All Logs".to_string()];
 
@@ -155,14 +154,14 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
     window.set_content(Some(&toolbar_view));
     window.present();
 
-    let selected_filter = RefCell::new(filter_ids[initial_selection as usize].clone());
-    let rendered_count = Cell::new(rebuild_buffer(
+    let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));
+    let rendered_count = Rc::new(Cell::new(rebuild_buffer(
         &buffer,
-        selected_filter.borrow().as_deref(),
+        selected_filter.borrow().clone(),
         &content_stack,
         &scroll,
         &text_view,
-    ));
+    ).await));
 
     let buffer_for_filter = buffer.clone();
     let content_stack_for_filter = content_stack.clone();
@@ -178,13 +177,13 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
             .cloned()
             .unwrap_or(None);
         *selected_filter_for_dropdown.borrow_mut() = game_id;
-        rendered_count_for_dropdown.set(rebuild_buffer(
-            &buffer_for_filter,
-            selected_filter_for_dropdown.borrow().as_deref(),
-            &content_stack_for_filter,
-            &scroll_for_filter,
-            &text_view_for_filter,
-        ));
+        
+        let b = buffer_for_filter.clone(); let s = selected_filter_for_dropdown.borrow().clone();
+        let cs = content_stack_for_filter.clone(); let sc = scroll_for_filter.clone(); let tv = text_view_for_filter.clone();
+        let rc = rendered_count_for_dropdown.clone();
+        glib::spawn_future_local(async move {
+            rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+        });
     });
 
     let buffer_for_clear = buffer.clone();
@@ -194,14 +193,13 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
     let selected_filter_for_clear = selected_filter.clone();
     let rendered_count_for_clear = rendered_count.clone();
     clear_button.connect_clicked(move |_| {
-        clear_log_buffer();
-        rendered_count_for_clear.set(rebuild_buffer(
-            &buffer_for_clear,
-            selected_filter_for_clear.borrow().as_deref(),
-            &content_stack_for_clear,
-            &scroll_for_clear,
-            &text_view_for_clear,
-        ));
+        let b = buffer_for_clear.clone(); let s = selected_filter_for_clear.borrow().clone();
+        let cs = content_stack_for_clear.clone(); let sc = scroll_for_clear.clone(); let tv = text_view_for_clear.clone();
+        let rc = rendered_count_for_clear.clone();
+        glib::spawn_future_local(async move {
+            tokio::task::spawn_blocking(|| clear_log_buffer()).await.unwrap();
+            rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+        });
     });
 
     let window_ref = window.clone();
@@ -214,16 +212,16 @@ pub fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<
             return glib::ControlFlow::Break;
         }
 
-        let entry_count = get_log_entries().len();
-        if entry_count != rendered_count.get() {
-            rendered_count.set(rebuild_buffer(
-                &buffer_for_tick,
-                selected_filter.borrow().as_deref(),
-                &content_stack_for_tick,
-                &scroll_for_tick,
-                &text_view_for_tick,
-            ));
-        }
+        let b = buffer_for_tick.clone(); let s = selected_filter.borrow().clone();
+        let cs = content_stack_for_tick.clone(); let sc = scroll_for_tick.clone(); let tv = text_view_for_tick.clone();
+        let rc = rendered_count.clone();
+        
+        glib::spawn_future_local(async move {
+            let entry_count = tokio::task::spawn_blocking(|| get_log_entries().len()).await.unwrap();
+            if entry_count != rc.get() {
+                rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+            }
+        });
 
         glib::ControlFlow::Continue
     });

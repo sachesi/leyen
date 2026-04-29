@@ -185,7 +185,7 @@ fn running_sessions_version(sessions: &[RunningGameSession]) -> u64 {
     hasher.finish().max(1)
 }
 
-fn finalize_finished_session(session: &RunningGameSession) {
+async fn finalize_finished_session(session: &RunningGameSession) {
     let elapsed_seconds = current_epoch_seconds().saturating_sub(session.started_at_epoch_seconds);
     let status = if session.termination_requested {
         "Last run: stopped"
@@ -193,8 +193,8 @@ fn finalize_finished_session(session: &RunningGameSession) {
         "Last run: completed"
     };
 
-    let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds);
-    let _ = record_game_launch_result(&session.game_id, elapsed_seconds, status);
+    let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds).await;
+    let _ = record_game_launch_result(&session.game_id, elapsed_seconds, status).await;
 
     info!(
         target: &format!("game:{}", session.game_id),
@@ -210,7 +210,7 @@ fn finalize_finished_session(session: &RunningGameSession) {
     }
 }
 
-fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
+async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = with_running_registry(|registry| {
         let original_sessions = registry.sessions.clone();
         let mut active_sessions = Vec::new();
@@ -230,14 +230,14 @@ fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError
     })?;
 
     for session in &finished_sessions {
-        finalize_finished_session(session);
+        finalize_finished_session(session).await;
     }
 
     Ok(active_sessions)
 }
 
-fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
-    let _ = synchronize_running_sessions();
+async fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
+    let _ = synchronize_running_sessions().await;
     with_running_registry(|registry| {
         if registry
             .sessions
@@ -269,31 +269,31 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
-fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, LaunchError> {
-    Ok(synchronize_running_sessions()?
+async fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, LaunchError> {
+    Ok(synchronize_running_sessions().await?
         .into_iter()
         .find(|session| session.game_id == game_id))
 }
 
-pub fn is_game_running(game_id: &str) -> bool {
-    find_running_session(game_id).ok().flatten().is_some()
+pub async fn is_game_running(game_id: &str) -> bool {
+    find_running_session(game_id).await.ok().flatten().is_some()
 }
 
-pub fn running_games_version() -> u64 {
-    synchronize_running_sessions()
+pub async fn running_games_version() -> u64 {
+    synchronize_running_sessions().await
         .map(|sessions| running_sessions_version(&sessions))
         .unwrap_or(0)
 }
 
-pub fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
-    synchronize_running_sessions()
+pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
+    synchronize_running_sessions().await
         .map(|sessions| running_sessions_to_snapshots(&sessions))
         .unwrap_or_default()
 }
 
 pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
     loop {
-        let active = synchronize_running_sessions()?;
+        let active = synchronize_running_sessions().await?;
         if !active.iter().any(|session| session.game_id == game_id) {
             return Ok(());
         }
@@ -302,8 +302,8 @@ pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
 }
 
 
-pub fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
-    let Some(mut session) = find_running_session(game_id)? else {
+pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
+    let Some(mut session) = find_running_session(game_id).await? else {
         return Ok(false);
     };
 
@@ -387,7 +387,7 @@ fn working_directory_for(exe_path: &str) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
+async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
     if prefix_path.trim().is_empty() {
         return PrefixLockState::Unavailable;
     }
@@ -397,7 +397,7 @@ fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
         return PrefixLockState::Unavailable;
     }
 
-    match synchronize_running_sessions() {
+    match synchronize_running_sessions().await {
         Ok(sessions) => {
             if sessions.iter().any(|session| {
                 session.match_prefix_path.as_deref() == Some(prefix_path)
@@ -659,13 +659,13 @@ async fn launch_game_managed(
         ));
     }
 
-    let settings = load_settings_with_auto_install(false);
-    let library = load_library();
+    let settings = load_settings_with_auto_install(false).await;
+    let library = load_library().await;
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
     let launch_game_id = effective_game_id(game);
 
-    if is_game_running(&game.id) {
+    if is_game_running(&game.id).await {
         return Err(LaunchError::Other("This game is already running".to_string()));
     }
 
@@ -762,7 +762,7 @@ async fn launch_game_managed(
     }
 
     let working_dir = working_directory_for(&game.exe_path);
-    match try_lock_prefix(&prefix_path) {
+    match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
         PrefixLockState::Busy => {
             env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
@@ -835,7 +835,7 @@ async fn launch_game_managed(
                 termination_requested: false,
             };
 
-            if !try_register_running_session(session)? {
+            if !try_register_running_session(session).await? {
                 let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
                 let _ = child.wait();
                 return Err(LaunchError::Other("This game is already running".to_string()));

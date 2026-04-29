@@ -101,8 +101,8 @@ pub fn take_open_logs_on_start() -> bool {
 }
 
 async fn list_games() -> Result<()> {
-    let items = load_library();
-    let running_map = running_games_index();
+    let items = load_library().await;
+    let running_map = running_games_index().await;
 
     if items.is_empty() {
         if running_map.is_empty() {
@@ -203,7 +203,7 @@ async fn list_games() -> Result<()> {
 async fn run_game(requested_leyen_id: &str) -> Result<()> {
     ensure_umu_available_for_cli()?;
 
-    let items = load_library();
+    let items = load_library().await;
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
     };
@@ -234,7 +234,7 @@ async fn run_game(requested_leyen_id: &str) -> Result<()> {
 }
 
 async fn internal_run(requested_leyen_id: &str) -> Result<()> {
-    let items = load_library();
+    let items = load_library().await;
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'.");
     };
@@ -246,12 +246,12 @@ async fn internal_run(requested_leyen_id: &str) -> Result<()> {
 }
 
 async fn kill_game(requested_leyen_id: &str) -> Result<()> {
-    let items = load_library();
+    let items = load_library().await;
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
     };
 
-    match stop_game(&game.id).context("Failed to stop game")? {
+    match stop_game(&game.id).await.context("Failed to stop game")? {
         true => {
             eprintln!("Stopping '{}' ({})...", game.title, game.leyen_id);
             Ok(())
@@ -284,8 +284,8 @@ fn index_games(items: &[LibraryItem]) -> HashMap<String, &Game> {
     indexed
 }
 
-fn running_games_index() -> HashMap<String, crate::launch::RunningGameSnapshot> {
-    running_games_snapshot()
+async fn running_games_index() -> HashMap<String, crate::launch::RunningGameSnapshot> {
+    running_games_snapshot().await
         .into_iter()
         .map(|snapshot| (snapshot.game_id.clone(), snapshot))
         .collect()

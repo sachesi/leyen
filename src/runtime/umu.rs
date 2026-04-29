@@ -48,6 +48,11 @@ pub fn get_umu_runtime_dir() -> String {
         .to_string()
 }
 
+/// Returns true if running on NixOS.
+pub fn is_nixos() -> bool {
+    std::path::Path::new("/etc/NIXOS").exists()
+}
+
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
 pub fn get_local_umu_run_path() -> String {
     format!("{}/umu/umu-run", get_umu_core_dir())
@@ -56,6 +61,12 @@ pub fn get_local_umu_run_path() -> String {
 /// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 pub fn get_umu_run_path() -> String {
+    // On NixOS, we strictly prefer the system-wide binary as local copies
+    // are unlikely to work without patching.
+    if is_nixos() {
+        return "umu-run".to_string();
+    }
+
     if std::process::Command::new("which")
         .arg("umu-run")
         .output()
@@ -85,6 +96,12 @@ pub fn is_umu_run_available() -> bool {
     {
         return true;
     }
+    
+    // On NixOS, we don't consider the local copy a valid alternative
+    if is_nixos() {
+        return false;
+    }
+
     std::path::Path::new(&get_local_umu_run_path()).exists()
 }
 
@@ -93,6 +110,12 @@ pub fn is_umu_run_available() -> bool {
 /// downloads the latest zipapp release from the umu-launcher GitHub repository
 /// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
 pub fn check_or_install_umu() {
+    // If we're on NixOS, we expect umu-run to be provided by the system/flake.
+    // We don't want to download a generic linux zipapp.
+    if is_nixos() {
+        return;
+    }
+
     if is_umu_run_available() {
         return;
     }

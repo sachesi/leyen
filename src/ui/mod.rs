@@ -57,6 +57,8 @@ pub struct LibraryUi {
     pub add_button_stack: gtk4::Stack,
     pub back_btn: gtk4::Button,
     pub title: adw::WindowTitle,
+    pub search_bar: gtk4::SearchBar,
+    pub search_entry: gtk4::SearchEntry,
     pub library_state: Rc<RefCell<Vec<LibraryItem>>>,
     pub current_group_id: Rc<RefCell<Option<String>>>,
 }
@@ -433,8 +435,22 @@ pub async fn refresh_library_view(
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
     
+    let search_text = ui.search_entry.text().to_string().to_lowercase();
+    
     glib::spawn_future_local(async move {
-        *ui_clone.library_state.borrow_mut() = crate::config::load_library().await;
+        let mut items = crate::config::load_library().await;
+        
+        if !search_text.is_empty() {
+            items.retain(|item| match item {
+                LibraryItem::Game(game) => game.title.to_lowercase().contains(&search_text),
+                LibraryItem::Group(group) => {
+                    group.title.to_lowercase().contains(&search_text) || 
+                    group.games.iter().any(|g| g.title.to_lowercase().contains(&search_text))
+                }
+            });
+        }
+        
+        *ui_clone.library_state.borrow_mut() = items;
         populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
         populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
 
@@ -742,10 +758,13 @@ fn build_game_card(
     let game_running = game_is_running(running_games, &game.id);
     let card = gtk4::Frame::builder()
         .hexpand(true)
-        .margin_top(4)
-        .margin_bottom(4)
+        .margin_top(6)
+        .margin_bottom(6)
         .build();
     card.add_css_class("card");
+    if game_running {
+        card.add_css_class("running-card");
+    }
 
     let content = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Horizontal)
@@ -895,7 +914,10 @@ pub fn build_ui(app: &adw::Application) {
     css.load_from_string(&format!(
         "image.edit-icon {{ min-width: 0px; min-height: 0px; margin: 0px; padding: 0px; opacity: 0; }} \
          .library-icon-frame {{ min-width: {0}px; min-height: {0}px; border-radius: {1}px; padding: 0px; margin: 0px; background: transparent; }} \
-         .library-icon-media {{ border-radius: {1}px; }}",
+         .library-icon-media {{ border-radius: {1}px; }} \
+         .card {{ border-radius: 12px; transition: all 200ms ease; }} \
+         .card:hover {{ background-color: alpha(@window_fg_color, 0.05); }} \
+         .running-card {{ border: 1.5px solid alpha(@accent_bg_color, 0.5); box-shadow: 0 0 8px alpha(@accent_bg_color, 0.2); }}",
         LIBRARY_ICON_SIZE, LIBRARY_ICON_CORNER_RADIUS
     ));
     if let Some(display) = gtk4::gdk::Display::default() {
@@ -942,11 +964,32 @@ pub fn build_ui(app: &adw::Application) {
         .menu_model(&menu_model)
         .tooltip_text("Main Menu")
         .build();
+    let search_btn = gtk4::ToggleButton::builder()
+        .icon_name("edit-find-symbolic")
+        .tooltip_text("Search")
+        .build();
+
+    let search_entry = gtk4::SearchEntry::builder()
+        .hexpand(true)
+        .placeholder_text("Search games...")
+        .build();
+
+    let search_bar = gtk4::SearchBar::builder()
+        .child(&search_entry)
+        .build();
+
     header.pack_end(&menu_btn);
     header.pack_end(&add_button_stack);
+    header.pack_end(&search_btn);
+
+    search_bar.bind_property("search-mode-enabled", &search_btn, "active")
+        .sync_create()
+        .bidirectional()
+        .build();
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
+    toolbar_view.add_top_bar(&search_bar);
 
     let root_list_box_primary = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
@@ -1087,9 +1130,21 @@ pub fn build_ui(app: &adw::Application) {
         add_button_stack: add_button_stack.clone(),
         back_btn: back_btn.clone(),
         title,
+        search_bar: search_bar.clone(),
+        search_entry: search_entry.clone(),
         library_state: Rc::new(RefCell::new(Vec::new())),
         current_group_id: Rc::new(RefCell::new(None)),
     };
+
+    search_bar.set_key_capture_widget(Some(&window));
+
+    let ui_c = ui.clone();
+    let overlay_c = toast_overlay.clone();
+    let window_c = window.clone();
+    search_entry.connect_search_changed(move |_| {
+        let u = ui_c.clone(); let o = overlay_c.clone(); let w = window_c.clone();
+        glib::spawn_future_local(async move { refresh_library_view(&u, &o, &w).await; });
+    });
 
     let ui_c = ui.clone(); let overlay_c = toast_overlay.clone(); let window_c = window.clone(); glib::spawn_future_local(async move { refresh_library_view(&ui_c, &overlay_c, &window_c).await; });
 

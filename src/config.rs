@@ -1,14 +1,11 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use directories::ProjectDirs;
 
-use crate::logging::apply_log_settings;
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
 };
-use crate::runtime::proton::check_or_install_protonge;
 
 const LEYEN_ID_PREFIX: &str = "ly-";
 const LEYEN_ID_DIGITS: usize = 4;
@@ -42,57 +39,140 @@ pub fn get_settings_path() -> PathBuf {
     get_config_dir().join("settings.toml")
 }
 
-pub fn load_library() -> Vec<LibraryItem> {
+pub async fn load_library() -> Vec<LibraryItem> {
     let path = get_config_path();
-    let Ok(data) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
+    tokio::task::spawn_blocking(move || {
+        let Ok(data) = fs::read_to_string(path) else {
+            return Vec::new();
+        };
 
-    toml::from_str::<GamesConfig>(&data)
-        .map(|config| config.items)
-        .unwrap_or_default()
+        toml::from_str::<GamesConfig>(&data)
+            .map(|config| config.items)
+            .unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default()
 }
 
-pub fn save_library(items: &[LibraryItem]) {
+pub async fn save_library(items: Vec<LibraryItem>) {
     let path = get_config_path();
-    let config = GamesConfig {
-        items: items.to_vec(),
-    };
-    if let Ok(data) = toml::to_string_pretty(&config) {
-        let _ = fs::write(path, data);
-    }
+    tokio::task::spawn_blocking(move || {
+        let config = GamesConfig { items };
+        if let Ok(data) = toml::to_string_pretty(&config) {
+            let _ = fs::write(path, data);
+        }
+    })
+    .await
+    .ok();
 }
 
-pub async fn load_library_async() -> Vec<LibraryItem> {
-    tokio::task::spawn_blocking(load_library).await.unwrap_or_default()
+pub async fn load_games() -> Vec<Game> {
+    flatten_games(&load_library().await)
 }
-
-pub async fn save_library_async(items: Vec<LibraryItem>) {
-    let items = items.to_vec();
-    tokio::task::spawn_blocking(move || save_library(&items)).await.ok();
-}
-
-pub fn load_games() -> Vec<Game> {
-    flatten_games(&load_library())
-}
-
 
 pub fn flatten_games(items: &[LibraryItem]) -> Vec<Game> {
     let mut games = Vec::new();
     for item in items {
         match item {
             LibraryItem::Game(game) => games.push(game.clone()),
-            LibraryItem::Group(group) => games.extend(group.games.clone()),
+            LibraryItem::Group(group) => {
+                for game in &group.games {
+                    games.push(game.clone());
+                }
+            }
         }
     }
     games
 }
 
-pub fn find_group<'a>(items: &'a [LibraryItem], group_id: &str) -> Option<&'a GameGroup> {
-    items.iter().find_map(|item| match item {
-        LibraryItem::Group(group) if group.id == group_id => Some(group),
-        _ => None,
-    })
+pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSettings {
+    let path = get_settings_path();
+    let settings = tokio::task::spawn_blocking(move || {
+        let mut settings: GlobalSettings = if let Ok(data) = fs::read_to_string(&path) {
+            toml::from_str(&data).unwrap_or_default()
+        } else {
+            GlobalSettings::default()
+        };
+
+        let fresh = crate::runtime::detect_proton_versions();
+        settings.available_proton_versions = fresh.available_proton_versions;
+        if settings.default_prefix_path.is_empty() {
+            settings.default_prefix_path = fresh.default_prefix_path;
+        }
+        settings
+    }).await.unwrap();
+
+    if auto_install_proton && settings.available_proton_versions.len() <= 1 {
+        crate::runtime::check_or_install_protonge();
+    }
+    save_settings(settings.clone()).await;
+    settings
+}
+
+pub async fn load_settings() -> GlobalSettings {
+    load_settings_with_auto_install(false).await
+}
+
+pub async fn save_settings(settings: GlobalSettings) {
+    let path = get_settings_path();
+    tokio::task::spawn_blocking(move || {
+        if let Ok(data) = toml::to_string_pretty(&settings) {
+            let _ = fs::write(path, data);
+        }
+    }).await.ok();
+}
+
+pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {
+    let mut items = load_library().await;
+    let total;
+    if let Some(game) = find_game_mut(&mut items, game_id) {
+        game.playtime_seconds += seconds;
+        total = game.playtime_seconds;
+    } else {
+        return None;
+    }
+    save_library(items).await;
+    Some(total)
+}
+
+pub async fn record_game_launch_start(game_id: &str, epoch_seconds: u64) -> bool {
+    let mut items = load_library().await;
+    if let Some(game) = find_game_mut(&mut items, game_id) {
+        game.last_played_epoch_seconds = epoch_seconds;
+    } else {
+        return false;
+    }
+    save_library(items).await;
+    true
+}
+
+pub async fn record_game_launch_result(game_id: &str, duration_seconds: u64, status: &str) -> bool {
+    let mut items = load_library().await;
+    if let Some(game) = find_game_mut(&mut items, game_id) {
+        game.last_run_duration_seconds = duration_seconds;
+        game.last_run_status = status.to_string();
+    } else {
+        return false;
+    }
+    save_library(items).await;
+    true
+}
+
+fn find_game_mut<'a>(items: &'a mut [LibraryItem], game_id: &str) -> Option<&'a mut Game> {
+    for item in items {
+        match item {
+            LibraryItem::Game(game) if game.id == game_id => return Some(game),
+            LibraryItem::Group(group) => {
+                for game in &mut group.games {
+                    if game.id == game_id {
+                        return Some(game);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 pub fn find_game_and_group<'a>(
@@ -103,14 +183,15 @@ pub fn find_game_and_group<'a>(
         match item {
             LibraryItem::Game(game) if game.id == game_id => return Some((game, None)),
             LibraryItem::Group(group) => {
-                if let Some(game) = group.games.iter().find(|game| game.id == game_id) {
-                    return Some((game, Some(group)));
+                for game in &group.games {
+                    if game.id == game_id {
+                        return Some((game, Some(group)));
+                    }
                 }
             }
             _ => {}
         }
     }
-
     None
 }
 
@@ -118,164 +199,60 @@ pub fn find_game_by_leyen_id<'a>(
     items: &'a [LibraryItem],
     leyen_id: &str,
 ) -> Option<(&'a Game, Option<&'a GameGroup>)> {
-    let requested = leyen_id.trim();
-
     for item in items {
         match item {
-            LibraryItem::Game(game) if game.leyen_id.eq_ignore_ascii_case(requested) => {
-                return Some((game, None));
-            }
-            LibraryItem::Group(group) => {
-                if let Some(game) = group
-                    .games
-                    .iter()
-                    .find(|game| game.leyen_id.eq_ignore_ascii_case(requested))
-                {
-                    return Some((game, Some(group)));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    None
-}
-
-pub fn format_launch_slug(title: &str) -> String {
-    let mut slug = String::new();
-    let mut needs_separator = false;
-
-    for ch in title.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            if needs_separator && !slug.is_empty() {
-                slug.push('-');
-            }
-            slug.push(ch.to_ascii_lowercase());
-            needs_separator = false;
-        } else if !slug.is_empty() {
-            needs_separator = true;
-        }
-    }
-
-    if slug.is_empty() {
-        "game".to_string()
-    } else {
-        slug
-    }
-}
-
-pub fn normalize_game_id_from_executable(exe_path: &str) -> String {
-    let exe_path = exe_path.trim();
-    if exe_path.is_empty() {
-        return String::new();
-    }
-
-    Path::new(exe_path)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| exe_path.to_lowercase())
-}
-
-pub fn is_valid_leyen_id(leyen_id: &str) -> bool {
-    let Some(digits) = leyen_id.trim().strip_prefix(LEYEN_ID_PREFIX) else {
-        return false;
-    };
-
-    digits.len() == LEYEN_ID_DIGITS && digits.chars().all(|digit| digit.is_ascii_digit())
-}
-
-pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
-    let mut used_ids = collect_leyen_ids(items);
-    generate_unique_leyen_id_with_used(&mut used_ids)
-}
-
-pub fn effective_game_id(game: &Game) -> String {
-    let normalized = normalize_game_id_from_executable(&game.exe_path);
-    if !normalized.is_empty() {
-        normalized
-    } else if !game.game_id.trim().is_empty() {
-        game.game_id.trim().to_string()
-    } else {
-        format_launch_slug(&game.title)
-    }
-}
-
-pub fn suggest_prefix_path(base_prefix: &str, title: &str) -> String {
-    let base_prefix = base_prefix.trim();
-    if base_prefix.is_empty() {
-        return String::new();
-    }
-
-    let slug = format_launch_slug(title);
-    if slug.is_empty() {
-        return base_prefix.to_string();
-    }
-
-    let base_path = Path::new(base_prefix);
-    match base_path.file_name().and_then(|value| value.to_str()) {
-        Some("default") => base_path
-            .parent()
-            .map(|parent| parent.join(slug).to_string_lossy().to_string())
-            .unwrap_or_else(|| base_prefix.to_string()),
-        _ => base_prefix.to_string(),
-    }
-}
-
-pub fn game_parent_group_id(items: &[LibraryItem], game_id: &str) -> Option<Option<String>> {
-    for item in items {
-        match item {
-            LibraryItem::Game(game) if game.id == game_id => return Some(None),
-            LibraryItem::Group(group) if group.games.iter().any(|game| game.id == game_id) => {
-                return Some(Some(group.id.clone()));
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn collect_leyen_ids(items: &[LibraryItem]) -> HashSet<String> {
-    let mut used_ids = HashSet::new();
-
-    for item in items {
-        match item {
-            LibraryItem::Game(game) => {
-                if is_valid_leyen_id(&game.leyen_id) {
-                    used_ids.insert(game.leyen_id.clone());
-                }
-            }
+            LibraryItem::Game(game) if game.leyen_id == leyen_id => return Some((game, None)),
             LibraryItem::Group(group) => {
                 for game in &group.games {
-                    if is_valid_leyen_id(&game.leyen_id) {
-                        used_ids.insert(game.leyen_id.clone());
+                    if game.leyen_id == leyen_id {
+                        return Some((game, Some(group)));
                     }
                 }
             }
+            _ => {}
         }
     }
-
-    used_ids
+    None
 }
 
-fn generate_unique_leyen_id_with_used(used_ids: &mut HashSet<String>) -> String {
-    for _ in 0..20_000 {
-        let candidate = format!(
-            "{LEYEN_ID_PREFIX}{:04}",
-            uuid::Uuid::new_v4().as_u128() % 10_000
-        );
-        if used_ids.insert(candidate.clone()) {
-            return candidate;
+pub fn find_group<'a>(items: &'a [LibraryItem], group_id: &str) -> Option<&'a GameGroup> {
+    items.iter().find_map(|item| {
+        if let LibraryItem::Group(group) = item
+            && group.id == group_id
+        {
+            Some(group)
+        } else {
+            None
         }
-    }
+    })
+}
 
-    for value in 0..10_000 {
-        let candidate = format!("{LEYEN_ID_PREFIX}{value:04}");
-        if used_ids.insert(candidate.clone()) {
-            return candidate;
+pub fn game_parent_group_id(items: &[LibraryItem], game_id: &str) -> Option<String> {
+    items.iter().find_map(|item| {
+        if let LibraryItem::Group(group) = item {
+            if group.games.iter().any(|g| g.id == game_id) {
+                return Some(group.id.clone());
+            }
         }
-    }
+        None
+    })
+}
 
-    unreachable!("exhausted all available Leyen IDs");
+pub fn insert_game(items: &mut Vec<LibraryItem>, group_id: Option<&str>, game: Game) -> bool {
+    if let Some(gid) = group_id {
+        for item in items {
+            if let LibraryItem::Group(group) = item
+                && group.id == gid
+            {
+                group.games.push(game);
+                return true;
+            }
+        }
+        false
+    } else {
+        items.push(LibraryItem::Game(game));
+        true
+    }
 }
 
 pub fn replace_game(items: &mut [LibraryItem], updated_game: &Game) -> bool {
@@ -286,13 +263,11 @@ pub fn replace_game(items: &mut [LibraryItem], updated_game: &Game) -> bool {
                 return true;
             }
             LibraryItem::Group(group) => {
-                if let Some(game) = group
-                    .games
-                    .iter_mut()
-                    .find(|game| game.id == updated_game.id)
-                {
-                    *game = updated_game.clone();
-                    return true;
+                for game in &mut group.games {
+                    if game.id == updated_game.id {
+                        *game = updated_game.clone();
+                        return true;
+                    }
                 }
             }
             _ => {}
@@ -301,163 +276,119 @@ pub fn replace_game(items: &mut [LibraryItem], updated_game: &Game) -> bool {
     false
 }
 
-pub fn insert_game(
-    items: &mut Vec<LibraryItem>,
-    parent_group_id: Option<&str>,
-    game: Game,
-) -> bool {
-    match parent_group_id {
-        Some(group_id) => {
-            let Some(group) = items.iter_mut().find_map(|item| match item {
-                LibraryItem::Group(group) if group.id == group_id => Some(group),
-                _ => None,
-            }) else {
-                return false;
-            };
-            group.games.push(game);
-            true
-        }
-        None => {
-            items.push(LibraryItem::Game(game));
-            true
-        }
-    }
-}
-
-pub fn remove_game(items: &mut Vec<LibraryItem>, game_id: &str) -> Option<Game> {
-    if let Some(pos) = items
-        .iter()
-        .position(|item| matches!(item, LibraryItem::Game(game) if game.id == game_id))
-    {
-        return match items.remove(pos) {
-            LibraryItem::Game(game) => Some(game),
-            LibraryItem::Group(_) => None,
-        };
-    }
-
-    for item in items {
-        if let LibraryItem::Group(group) = item
-            && let Some(pos) = group.games.iter().position(|game| game.id == game_id)
-        {
-            return Some(group.games.remove(pos));
-        }
-    }
-
-    None
-}
-
 pub fn replace_group(
     items: &mut [LibraryItem],
     group_id: &str,
-    title: String,
-    defaults: GroupLaunchDefaults,
+    new_title: String,
+    new_defaults: GroupLaunchDefaults,
 ) -> bool {
-    let Some(group) = items.iter_mut().find_map(|item| match item {
-        LibraryItem::Group(group) if group.id == group_id => Some(group),
-        _ => None,
-    }) else {
-        return false;
-    };
-    group.title = title;
-    group.defaults = defaults;
-    true
-}
-
-pub fn remove_group(items: &mut Vec<LibraryItem>, group_id: &str) -> Option<GameGroup> {
-    let pos = items
-        .iter()
-        .position(|item| matches!(item, LibraryItem::Group(group) if group.id == group_id))?;
-    match items.remove(pos) {
-        LibraryItem::Group(group) => Some(group),
-        LibraryItem::Game(_) => None,
-    }
-}
-
-pub fn add_game_playtime(game_id: &str, additional_seconds: u64) -> Option<u64> {
-    let mut items = load_library();
-    let total = {
-        let game = find_game_mut(&mut items, game_id)?;
-
-        if additional_seconds > 0 {
-            game.playtime_seconds = game.playtime_seconds.saturating_add(additional_seconds);
-        }
-
-        game.playtime_seconds
-    };
-
-    if additional_seconds > 0 {
-        save_library(&items);
-    }
-
-    Some(total)
-}
-
-pub fn record_game_launch_start(game_id: &str, started_at_epoch_seconds: u64) -> bool {
-    let mut items = load_library();
-    let Some(game) = find_game_mut(&mut items, game_id) else {
-        return false;
-    };
-
-    game.last_played_epoch_seconds = started_at_epoch_seconds;
-    game.last_run_status = "Running".to_string();
-    save_library(&items);
-    true
-}
-
-pub fn record_game_launch_result(game_id: &str, run_seconds: u64, status: &str) -> Option<u64> {
-    let mut items = load_library();
-    let game = find_game_mut(&mut items, game_id)?;
-    game.last_run_duration_seconds = run_seconds;
-    game.last_run_status = status.to_string();
-    let total = game.playtime_seconds;
-    save_library(&items);
-    Some(total)
-}
-
-fn find_game_mut<'a>(items: &'a mut [LibraryItem], game_id: &str) -> Option<&'a mut Game> {
     for item in items {
-        match item {
-            LibraryItem::Game(game) if game.id == game_id => return Some(game),
-            LibraryItem::Group(group) => {
-                if let Some(game) = group.games.iter_mut().find(|game| game.id == game_id) {
-                    return Some(game);
-                }
+        if let LibraryItem::Group(group) = item
+            && group.id == group_id
+        {
+            group.title = new_title;
+            group.defaults = new_defaults;
+            return true;
+        }
+    }
+    false
+}
+
+pub fn remove_game(items: &mut Vec<LibraryItem>, game_id: &str) -> Option<Game> {
+    if let Some(pos) = items.iter().position(|item| {
+        if let LibraryItem::Game(game) = item {
+            game.id == game_id
+        } else {
+            false
+        }
+    }) {
+        if let LibraryItem::Game(game) = items.remove(pos) {
+            return Some(game);
+        }
+    }
+
+    for item in items {
+        if let LibraryItem::Group(group) = item {
+            if let Some(pos) = group.games.iter().position(|g| g.id == game_id) {
+                return Some(group.games.remove(pos));
             }
-            _ => {}
         }
     }
     None
 }
 
-pub fn load_settings() -> GlobalSettings {
-    load_settings_with_auto_install(true)
+pub fn remove_group(items: &mut Vec<LibraryItem>, group_id: &str) -> Option<GameGroup> {
+    if let Some(pos) = items.iter().position(|item| {
+        if let LibraryItem::Group(group) = item {
+            group.id == group_id
+        } else {
+            false
+        }
+    }) {
+        if let LibraryItem::Group(group) = items.remove(pos) {
+            return Some(group);
+        }
+    }
+    None
 }
 
-pub fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSettings {
-    let path = get_settings_path();
-    let mut settings: GlobalSettings = if let Ok(data) = fs::read_to_string(&path) {
-        toml::from_str(&data).unwrap_or_default()
+pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
+    let existing_ids: HashSet<String> = flatten_games(items)
+        .into_iter()
+        .map(|g| g.leyen_id)
+        .collect();
+
+    loop {
+        let id = format!(
+            "{}{:0width$}",
+            LEYEN_ID_PREFIX,
+            fastrand::u32(1..10u32.pow(LEYEN_ID_DIGITS as u32)),
+            width = LEYEN_ID_DIGITS
+        );
+        if !existing_ids.contains(&id) {
+            return id;
+        }
+    }
+}
+
+pub fn is_valid_leyen_id(id: &str) -> bool {
+    id.starts_with(LEYEN_ID_PREFIX)
+        && id.len() == LEYEN_ID_PREFIX.len() + LEYEN_ID_DIGITS
+        && id[LEYEN_ID_PREFIX.len()..].chars().all(|c| c.is_ascii_digit())
+}
+
+pub fn effective_game_id(game: &Game) -> String {
+    if game.game_id.trim().is_empty() {
+        game.leyen_id.clone()
     } else {
-        GlobalSettings::default()
-    };
-    let fresh = crate::runtime::detect_proton_versions();
-    settings.available_proton_versions = fresh.available_proton_versions;
-    if settings.default_prefix_path.is_empty() {
-        settings.default_prefix_path = fresh.default_prefix_path;
+        game.game_id.clone()
     }
-    if auto_install_proton && settings.available_proton_versions.len() <= 1 {
-        crate::runtime::check_or_install_protonge();
-    }
-    save_settings(&settings);
-    settings
 }
 
-pub fn save_settings(settings: &GlobalSettings) {
-    let path = get_settings_path();
-    if let Ok(data) = toml::to_string_pretty(settings) {
-        let _ = fs::write(path, data);
-    }
+pub fn normalize_game_id_from_executable(exe_path: &str) -> String {
+    Path::new(exe_path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_lowercase().replace(' ', "-"))
+        .unwrap_or_else(|| "unknown-game".to_string())
 }
+
+pub fn suggest_prefix_path(default_prefix: &str, title: &str) -> String {
+    if default_prefix.is_empty() {
+        return String::new();
+    }
+    let sanitized_title = title.to_lowercase().replace(' ', "-");
+    let mut path = PathBuf::from(default_prefix);
+    if let Some(parent) = path.parent() {
+        path = parent.join(sanitized_title);
+    } else {
+        path = PathBuf::from(sanitized_title);
+    }
+    path.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn valid_leyen_id_matches_expected_shape() {
@@ -469,19 +400,19 @@ pub fn save_settings(settings: &GlobalSettings) {
 
     #[test]
     fn generate_unique_leyen_id_avoids_existing_ids() {
-        let mut root = sample_game("root");
-        root.leyen_id = "ly-1234".to_string();
-
-        let mut grouped = sample_game("grouped");
-        grouped.leyen_id = "ly-5678".to_string();
-
         let items = vec![
-            LibraryItem::Game(root),
+            LibraryItem::Game(Game {
+                leyen_id: "ly-1234".to_string(),
+                ..Game::default()
+            }),
             LibraryItem::Group(GameGroup {
                 id: "group-1".to_string(),
-                title: "Group".to_string(),
+                title: "Group 1".to_string(),
                 defaults: GroupLaunchDefaults::default(),
-                games: vec![grouped],
+                games: vec![Game {
+                    leyen_id: "ly-5678".to_string(),
+                    ..Game::default()
+                }],
             }),
         ];
 
@@ -490,3 +421,4 @@ pub fn save_settings(settings: &GlobalSettings) {
         assert_ne!(generated, "ly-1234");
         assert_ne!(generated, "ly-5678");
     }
+}

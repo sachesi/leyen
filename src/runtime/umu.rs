@@ -50,7 +50,20 @@ pub fn get_umu_runtime_dir() -> String {
 
 /// Returns true if running on NixOS.
 pub fn is_nixos() -> bool {
-    std::path::Path::new("/etc/NIXOS").exists()
+    if std::path::Path::new("/etc/NIXOS").exists() {
+        return true;
+    }
+    
+    // Fallback: check /etc/os-release for ID=nixos
+    if let Ok(content) = fs::read_to_string("/etc/os-release") {
+        for line in content.lines() {
+            if line == "ID=nixos" || line == "ID=\"nixos\"" {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).

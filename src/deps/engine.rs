@@ -9,6 +9,8 @@ use std::time::UNIX_EPOCH;
 use gtk4::glib;
 use log::{error, info};
 use tokio::process::Command as AsyncCommand;
+use sha2::{Sha256, Digest};
+use std::io::Read;
 
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
@@ -25,6 +27,7 @@ pub enum DepStepAction {
     DownloadFile {
         url: &'static str,
         file_name: &'static str,
+        sha256: Option<&'static str>,
     },
     RunExe {
         file_name: &'static str,
@@ -54,6 +57,20 @@ pub enum DepStepAction {
     RunWinetricks {
         verb: String,
     },
+    Verify {
+        description: &'static str,
+        action: VerifyAction,
+    },
+}
+
+#[derive(Clone)]
+pub enum VerifyAction {
+    RegistryKeyExists {
+        path: &'static str,
+    },
+    FileExistsInPrefix {
+        relative_path: &'static str,
+    },
 }
 
 #[derive(Clone)]
@@ -72,12 +89,12 @@ pub enum DepInstallMsg {
     Failed(String),
 }
 
-#[derive(Default)]
-struct StepChanges {
-    created_files: Vec<String>,
-    touched_existing_files: bool,
-    dll_overrides: Vec<String>,
-    registered_dlls: Vec<String>,
+#[derive(Default, Debug)]
+pub struct StepChanges {
+    pub created_files: Vec<String>,
+    pub touched_existing_files: bool,
+    pub dll_overrides: Vec<String>,
+    pub registered_dlls: Vec<String>,
 }
 
 impl StepChanges {
@@ -125,7 +142,7 @@ pub async fn execute_dep_step(
     cache_dir: &str,
 ) -> Result<StepChanges, String> {
     match &step.action {
-        DepStepAction::DownloadFile { url, file_name } => {
+        DepStepAction::DownloadFile { url, file_name, sha256 } => {
             if !url.starts_with("https://") {
                 return Err(format!(
                     "Refusing to download '{}' from a non-HTTPS source",
@@ -134,39 +151,61 @@ pub async fn execute_dep_step(
             }
 
             let dest = Path::new(cache_dir).join(file_name);
-            if dest.exists() {
-                return Ok(StepChanges::default());
+            if !dest.exists() {
+                let cache_dir_clone = cache_dir.to_string();
+                tokio::task::spawn_blocking(move || {
+                    fs::create_dir_all(cache_dir_clone)
+                }).await.unwrap().map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
+
+                let status = AsyncCommand::new("curl")
+                    .args([
+                        "--proto",
+                        "=https",
+                        "--tlsv1.2",
+                        "--silent",
+                        "--show-error",
+                        "--fail",
+                        "--location",
+                        "--retry",
+                        "3",
+                        "--retry-delay",
+                        "1",
+                        "-o",
+                        dest.to_string_lossy().as_ref(),
+                        url,
+                    ])
+                    .status()
+                    .await
+                    .map_err(|err| format!("curl unavailable: {err}"))?;
+
+                if !status.success() {
+                    let _ = fs::remove_file(&dest);
+                    return Err(format!("Download failed for {}", file_name));
+                }
             }
 
-            let cache_dir = cache_dir.to_string();
-            tokio::task::spawn_blocking(move || {
-                fs::create_dir_all(cache_dir)
-            }).await.unwrap().map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
-
-            let status = AsyncCommand::new("curl")
-                .args([
-                    "--proto",
-                    "=https",
-                    "--tlsv1.2",
-                    "--silent",
-                    "--show-error",
-                    "--fail",
-                    "--location",
-                    "--retry",
-                    "3",
-                    "--retry-delay",
-                    "1",
-                    "-o",
-                    dest.to_string_lossy().as_ref(),
-                    url,
-                ])
-                .status()
-                .await
-                .map_err(|err| format!("curl unavailable: {err}"))?;
-
-            if !status.success() {
-                let _ = fs::remove_file(&dest);
-                return Err(format!("Download failed for {}", file_name));
+            if let Some(expected_sha) = *sha256 {
+                let dest_clone = dest.clone();
+                let expected_sha = expected_sha.to_string();
+                let file_name = *file_name;
+                tokio::task::spawn_blocking(move || -> Result<(), String> {
+                    let mut file = fs::File::open(&dest_clone).map_err(|err| format!("Failed to open downloaded file: {err}"))?;
+                    let mut hasher = Sha256::new();
+                    let mut buffer = [0u8; 8192];
+                    while let Ok(n) = file.read(&mut buffer) {
+                        if n == 0 { break; }
+                        hasher.update(&buffer[..n]);
+                    }
+                    let actual_sha = hex::encode(hasher.finalize());
+                    if actual_sha != expected_sha {
+                        let _ = fs::remove_file(&dest_clone);
+                        return Err(format!(
+                            "Checksum mismatch for {}: expected {}, got {}",
+                            file_name, expected_sha, actual_sha
+                        ));
+                    }
+                    Ok(())
+                }).await.unwrap()?;
             }
 
             Ok(StepChanges::default())
@@ -198,8 +237,18 @@ pub async fn execute_dep_step(
                 .status()
                 .await
                 .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
-            if !status.success() {
-                return Err(format!("Installer '{}' exited with an error", file_name));
+            
+            let exit_code = status.code();
+            if !status.success() && exit_code != Some(3010) {
+                return Err(format!(
+                    "Installer '{}' exited with error code {}",
+                    file_name,
+                    exit_code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string())
+                ));
+            }
+
+            if exit_code == Some(3010) {
+                info!("[dep] Installer '{}' requested a reboot (3010) — continuing.", file_name);
             }
 
             let prefix_path_clone = prefix_path.to_string();
@@ -225,8 +274,14 @@ pub async fn execute_dep_step(
                 .status()
                 .await
                 .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
-            if !status.success() {
-                return Err(format!("MSI install '{}' failed", file_name));
+            
+            let exit_code = status.code();
+            if !status.success() && exit_code != Some(3010) {
+                return Err(format!("MSI install '{}' failed (code {:?})", file_name, exit_code));
+            }
+            
+            if exit_code == Some(3010) {
+                info!("[dep] MSI installer '{}' requested a reboot (3010) — continuing.", file_name);
             }
 
             let prefix_path_clone = prefix_path.to_string();
@@ -353,6 +408,28 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
             Ok(diff_snapshots(&before, &after))
+        }
+
+        DepStepAction::Verify { description, action } => {
+            info!("[dep] Verifying: {}", description);
+            let verified = match action {
+                VerifyAction::RegistryKeyExists { path } => {
+                    let prefix_path = prefix_path.to_string();
+                    let proton_path = proton_path.to_string();
+                    let path = path.to_string();
+                    tokio::task::spawn_blocking(move || {
+                        super::verify::check_registry_key_exists(&prefix_path, &proton_path, &path)
+                    }).await.unwrap()?
+                }
+                VerifyAction::FileExistsInPrefix { relative_path } => {
+                    super::verify::check_file_exists_in_prefix(prefix_path, relative_path)
+                }
+            };
+
+            if !verified {
+                return Err(format!("Verification failed: {}", description));
+            }
+            Ok(StepChanges::default())
         }
     }
 }

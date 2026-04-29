@@ -54,6 +54,7 @@ Currently, multiple instances of the "Logs" and "Running Games" windows can be o
 - **Proposed Change**: Ensure that only one instance of each utility window can be active at a time. If the user tries to open it again, focus the existing window instead of creating a new one.
 - **Status**: Completed. Implemented `thread_local!` single-instance tracking for utility windows.
 
-## 12. Dependency Manager Verification - [TODO]
+## 12. Dependency Manager Verification - [DONE]
 Leyen includes a custom dependency manager for installing Windows redistributables and Wine components.
 - **Proposed Change**: Conduct a thorough audit of the dependency manager's logic for correctness, including error handling during downloads, installation verification, and proper state tracking in the Wine prefix.
+- **Status**: Completed. Implemented SHA256 checksum verification, post-install registry verification, and reboot code (3010) handling.

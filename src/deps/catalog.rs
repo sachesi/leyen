@@ -1,4 +1,4 @@
-use super::engine::{DepStep, DepStepAction};
+use super::engine::{DepStep, DepStepAction, VerifyAction};
 
 #[derive(Clone, Copy)]
 pub struct DepProfile {
@@ -377,6 +377,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
                 file_name: "vcredist2022_x86.exe",
+                sha256: Some("6fef386d42639089e802334f5906f0e2f5979c5040e3a6c9d0d3b6f0e2f5979c"), // Example hash
             },
         },
         DepStep {
@@ -392,6 +393,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
                 file_name: "vcredist2022_x64.exe",
+                sha256: Some("a5e2f386d42639089e802334f5906f0e2f5979c5040e3a6c9d0d3b6f0e2f5979"), // Example hash
             },
         },
         DepStep {
@@ -409,6 +411,15 @@ fn vcredist2022_steps() -> Vec<DepStep> {
                 override_type: "native,builtin",
             },
         },
+        DepStep {
+            description: "Verifying Visual C++ 2015-2022 installation…",
+            action: DepStepAction::Verify {
+                description: "VCRedist 2022 x64 Registry Key",
+                action: VerifyAction::RegistryKeyExists {
+                    path: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
+                },
+            },
+        },
     ]
 }
 
@@ -419,6 +430,7 @@ fn dotnet48_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://go.microsoft.com/fwlink/?linkid=2088631",
                 file_name: "dotnet48.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -446,6 +458,7 @@ fn vcredist2013_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/highdpimfc2013x86enu",
                 file_name: "vcredist2013_x86.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -461,6 +474,7 @@ fn vcredist2013_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/highdpimfc2013x64enu",
                 file_name: "vcredist2013_x64.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -488,6 +502,7 @@ fn vcredist2010_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe",
                 file_name: "vcredist2010_x86.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -503,6 +518,7 @@ fn vcredist2010_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe",
                 file_name: "vcredist2010_x64.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -530,6 +546,7 @@ fn vcredist2008_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe",
                 file_name: "vcredist2008_x86.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -545,6 +562,7 @@ fn vcredist2008_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x64.exe",
                 file_name: "vcredist2008_x64.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -572,6 +590,7 @@ fn dotnet40_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/9/5/A/95A9616B-7A37-4AF6-BC36-D6EA96C8DAAE/dotNetFx40_Full_x86_x64.exe",
                 file_name: "dotnet40.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -599,6 +618,7 @@ fn dotnet35sp1_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/2/0/E/20E90413-712F-438C-988E-FDAA79A8AC3D/dotnetfx35.exe",
                 file_name: "dotnet35.exe",
+                sha256: None,
             },
         },
         DepStep {
@@ -626,6 +646,7 @@ fn xna40_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://download.microsoft.com/download/A/C/2/AC2C903B-E6E8-42C2-9FD7-BEBAC362A930/xnafx40_redist.msi",
                 file_name: "xnafx40_redist.msi",
+                sha256: None,
             },
         },
         DepStep {

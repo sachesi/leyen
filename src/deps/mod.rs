@@ -1,6 +1,7 @@
 mod catalog;
 mod engine;
 mod state;
+pub mod verify;
 
 pub use catalog::{DEP_CATEGORY_ORDER, DEP_PROFILES, DepProfile, get_dep_profile};
 pub use engine::{install_dep_async, uninstall_dep_async};

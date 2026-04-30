@@ -467,17 +467,17 @@ pub fn install_dep_async(
     let profile = get_dep_profile(dep_id);
     let needs_winetricks = profile.map(|p| get_dep_steps(p.id).iter().any(|s| matches!(s.action, DepStepAction::RunWinetricks { .. }))).unwrap_or(false);
 
-    if let Err(message) = ensure_umu_ready(overlay, needs_winetricks) {
-        on_finish(false, Some(message));
-        return;
-    }
-
     let dep_id = dep_id.to_string();
     let prefix_path = prefix_path.to_string();
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
+    let overlay = overlay.clone();
 
     glib::spawn_future_local(async move {
+        if let Err(message) = ensure_umu_ready(&overlay, needs_winetricks).await {
+            on_finish(false, Some(message));
+            return;
+        }
         let prefix_path_for_state = prefix_path.clone();
         let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state)).await.unwrap();
         
@@ -619,9 +619,11 @@ pub fn uninstall_dep_async(
                 CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
             )
         });
-        if requires_umu && let Err(message) = ensure_umu_ready(&overlay, false) {
-            on_finish(false, Some(message));
-            return;
+        if requires_umu {
+            if let Err(message) = ensure_umu_ready(&overlay, false).await {
+                on_finish(false, Some(message));
+                return;
+            }
         }
 
         info!(
@@ -681,7 +683,7 @@ pub fn uninstall_dep_async(
     });
 }
 
-fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -> Result<(), String> {
+async fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -> Result<(), String> {
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
@@ -689,14 +691,14 @@ fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -> Resu
         return Err("umu-launcher not ready".to_string());
     }
 
-    if !is_umu_run_available() {
+    if !tokio::task::spawn_blocking(is_umu_run_available).await.unwrap() {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
         return Err("umu-launcher not available".to_string());
     }
 
-    if check_winetricks && !is_winetricks_available() {
+    if check_winetricks && !tokio::task::spawn_blocking(is_winetricks_available).await.unwrap() {
         overlay.add_toast(adw::Toast::new(
             "winetricks is not installed. Please install it using your package manager.",
         ));

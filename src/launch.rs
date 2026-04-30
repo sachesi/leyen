@@ -211,23 +211,27 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 }
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
-    let (active_sessions, finished_sessions) = with_running_registry(|registry| {
-        let original_sessions = registry.sessions.clone();
-        let mut active_sessions = Vec::new();
-        let mut finished_sessions = Vec::new();
+    let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
+        with_running_registry(|registry| {
+            let original_sessions = registry.sessions.clone();
+            let mut active_sessions = Vec::new();
+            let mut finished_sessions = Vec::new();
 
-        for mut session in registry.sessions.drain(..) {
-            if refresh_known_pids(&mut session).is_empty() {
-                finished_sessions.push(session);
-            } else {
-                active_sessions.push(session);
+            for mut session in registry.sessions.drain(..) {
+                if refresh_known_pids(&mut session).is_empty() {
+                    finished_sessions.push(session);
+                } else {
+                    active_sessions.push(session);
+                }
             }
-        }
 
-        let dirty = active_sessions != original_sessions;
-        registry.sessions = active_sessions.clone();
-        ((active_sessions, finished_sessions), dirty)
-    })?;
+            let dirty = active_sessions != original_sessions;
+            registry.sessions = active_sessions.clone();
+            ((active_sessions, finished_sessions), dirty)
+        })
+    })
+    .await
+    .unwrap()?;
 
     for session in &finished_sessions {
         finalize_finished_session(session).await;
@@ -238,18 +242,22 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
 
 async fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
     let _ = synchronize_running_sessions().await;
-    with_running_registry(|registry| {
-        if registry
-            .sessions
-            .iter()
-            .any(|existing| existing.game_id == session.game_id)
-        {
-            return (false, false);
-        }
+    tokio::task::spawn_blocking(move || {
+        with_running_registry(|registry| {
+            if registry
+                .sessions
+                .iter()
+                .any(|existing| existing.game_id == session.game_id)
+            {
+                return (false, false);
+            }
 
-        registry.sessions.push(session);
-        (true, true)
+            registry.sessions.push(session);
+            (true, true)
+        })
     })
+    .await
+    .unwrap()
 }
 
 fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, LaunchError> {
@@ -653,7 +661,7 @@ async fn launch_game_managed(
     }
 
     // Block launch if umu-run is simply not available.
-    if !is_umu_run_available() {
+    if !tokio::task::spawn_blocking(is_umu_run_available).await.unwrap() {
         return Err(LaunchError::Other(
             "umu-launcher is not installed. Please check your internet connection and restart."
                 .to_string(),

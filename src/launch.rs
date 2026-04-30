@@ -794,6 +794,20 @@ async fn launch_game_managed(
         },
     );
     info!(target: &format!("game:{}", game.id), "{}", launch_summary);
+    let full_cmd = format!(
+        "{} {}",
+        env_vars
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, shlex::quote(v)))
+            .collect::<Vec<_>>()
+            .join(" "),
+        cmd_args
+            .iter()
+            .map(|a| shlex::quote(a).to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    info!(target: &format!("game:{}", game.id), "Command: {}", full_cmd);
 
     let mut command = Command::new(&cmd_args[0]);
     command.args(&cmd_args[1..]);

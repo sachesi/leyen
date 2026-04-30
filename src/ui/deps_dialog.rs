@@ -191,14 +191,18 @@ pub async fn show_dependencies_dialog(
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&content_box));
-    dialog.set_content(Some(&toolbar_view));
+
+    let overlay = adw::ToastOverlay::new();
+    overlay.set_child(Some(&toolbar_view));
+    dialog.set_content(Some(&overlay));
+
     let dialog_busy = Rc::new(Cell::new(false));
     {
         let dialog_busy = dialog_busy.clone();
-        let overlay = overlay.clone();
+        let overlay_for_close = overlay.clone();
         dialog.connect_close_request(move |_| {
             if dialog_busy.get() {
-                overlay.add_toast(adw::Toast::new(
+                overlay_for_close.add_toast(adw::Toast::new(
                     "Wait for the dependency operation to finish.",
                 ));
                 gtk4::glib::Propagation::Stop

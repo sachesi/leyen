@@ -380,13 +380,6 @@ fn resolve_launch_proton(
     resolve_proton_path(selected)
 }
 
-fn resolve_bool_setting(
-    game_val: Option<bool>,
-    group_val: Option<bool>,
-    global_val: bool,
-) -> bool {
-    game_val.or(group_val).unwrap_or(global_val)
-}
 
 fn working_directory_for(exe_path: &str) -> Option<PathBuf> {
     let exe = Path::new(exe_path);
@@ -703,13 +696,13 @@ async fn launch_game_managed(
         None => settings.default_proton.clone(),
     };
 
-    if mangohud_available() && resolve_bool_setting(game.mangohud, parent_group.and_then(|g| g.defaults.mangohud), settings.global_mangohud) {
+    if mangohud_available() && game.mangohud {
         env_vars.push(("MANGOHUD".to_string(), "1".to_string()));
     }
 
     env_vars.push((
         "PROTON_ENABLE_WAYLAND".to_string(),
-        if resolve_bool_setting(game.wayland, parent_group.and_then(|g| g.defaults.wayland), settings.global_wayland) {
+        if game.wayland {
             "1".to_string()
         } else {
             "0".to_string()
@@ -718,14 +711,14 @@ async fn launch_game_managed(
 
     env_vars.push((
         "PROTON_USE_WOW64".to_string(),
-        if resolve_bool_setting(game.wow64, parent_group.and_then(|g| g.defaults.wow64), settings.global_wow64) {
+        if game.wow64 {
             "1".to_string()
         } else {
             "0".to_string()
         },
     ));
 
-    let ntsync_val = if resolve_bool_setting(game.ntsync, parent_group.and_then(|g| g.defaults.ntsync), settings.global_ntsync) {
+    let ntsync_val = if game.ntsync {
         "1"
     } else {
         "0"
@@ -751,7 +744,7 @@ async fn launch_game_managed(
             cmd_wrappers.push(token.to_string());
         }
 
-        if gamemode_available() && resolve_bool_setting(game.gamemode, parent_group.and_then(|g| g.defaults.gamemode), settings.global_gamemode) {
+        if gamemode_available() && game.gamemode {
             cmd_args.push("gamemoderun".to_string());
         }
         cmd_args.extend(cmd_wrappers);
@@ -759,7 +752,7 @@ async fn launch_game_managed(
         cmd_args.push(game.exe_path.clone());
         cmd_args.extend(postfix);
     } else {
-        if gamemode_available() && resolve_bool_setting(game.gamemode, parent_group.and_then(|g| g.defaults.gamemode), settings.global_gamemode) {
+        if gamemode_available() && game.gamemode {
             cmd_args.push("gamemoderun".to_string());
         }
         cmd_args.push(umu.clone());

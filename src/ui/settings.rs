@@ -139,7 +139,11 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
                 "Default".to_string()
             };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
-        pick_and_run_in_prefix(&parent_for_run, &overlay_for_run, &prefix, &proton);
+        let parent = parent_for_run.clone();
+        let overlay = overlay_for_run.clone();
+        glib::spawn_future_local(async move {
+            pick_and_run_in_prefix(&parent, &overlay, &prefix, &proton).await;
+        });
     });
 
     tools_group.add(&manage_deps_btn);
@@ -241,7 +245,18 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
     let pref_window_for_reset = pref_window.clone();
     let overlay_for_reset = overlay.clone();
     reset_btn.connect_clicked(move |_| {
-        let confirm = gtk4::AlertDialog::builder()
+        let pref_window_for_reset = pref_window_for_reset.clone();
+        let overlay_for_reset = overlay_for_reset.clone();
+        glib::spawn_future_local(async move {
+            let snapshots = crate::launch::running_games_snapshot().await;
+            if !snapshots.is_empty() {
+                overlay_for_reset.add_toast(adw::Toast::new(
+                    "Cannot reset runtime while games are running. Close all games first.",
+                ));
+                return;
+            }
+
+            let confirm = gtk4::AlertDialog::builder()
             .message("Reset umu Runtime?")
             .detail(
                 "This deletes the Steam Linux Runtime (steamrt3) directory. \
@@ -289,6 +304,7 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
             },
         );
     });
+});
 
     runtime_repair_row.add_row(&reset_row);
     maintenance_group.add(&runtime_repair_row);

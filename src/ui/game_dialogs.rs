@@ -61,6 +61,31 @@ fn build_proton_choices(
     )
 }
 
+fn build_tristate_row(title: &str, initial_value: Option<bool>) -> adw::ComboRow {
+    let model = gtk4::StringList::new(&["Inherit", "Enabled", "Disabled"]);
+    let row = adw::ComboRow::builder()
+        .title(title)
+        .model(&model)
+        .build();
+    
+    let index = match initial_value {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
+    };
+    row.set_selected(index);
+    row
+}
+
+fn get_tristate_value(row: &adw::ComboRow) -> Option<bool> {
+    match row.selected() {
+        0 => None,
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
+
 fn build_icon_file_filter() -> gtk4::FileFilter {
     let filter = gtk4::FileFilter::new();
     filter.set_name(Some("Supported images"));
@@ -337,19 +362,13 @@ pub async fn show_add_library_item_dialog(
         .activatable_widget(&args_entry)
         .build();
     args_row.add_suffix(&args_entry);
-    let mangohud_row = adw::SwitchRow::builder()
-        .title("Force MangoHud")
-        .active(settings.global_mangohud)
-        .visible(mangohud_available())
-        .build();
-    let gamemode_row = adw::SwitchRow::builder()
-        .title("Force GameMode")
-        .active(settings.global_gamemode)
-        .visible(gamemode_available())
-        .build();
-    let wayland_row = adw::SwitchRow::builder().title("Wayland").build();
-    let wow64_row = adw::SwitchRow::builder().title("WoW64").build();
-    let ntsync_row = adw::SwitchRow::builder().title("NTSync").build();
+    let mangohud_row = build_tristate_row("MangoHud", None);
+    mangohud_row.set_visible(mangohud_available());
+    let gamemode_row = build_tristate_row("GameMode", None);
+    gamemode_row.set_visible(gamemode_available());
+    let wayland_row = build_tristate_row("Wayland", None);
+    let wow64_row = build_tristate_row("WoW64", None);
+    let ntsync_row = build_tristate_row("NTSync", None);
 
     let game_group = adw::PreferencesGroup::builder().title("Item").build();
     game_group.add(&title_row);
@@ -428,6 +447,20 @@ pub async fn show_add_library_item_dialog(
     group_defaults_group.add(&group_icon_override_row);
     group_defaults_group.add(&group_prefix_override_row);
     group_defaults_group.add(&group_proton_row);
+
+    let group_mangohud_row = build_tristate_row("MangoHud", None);
+    group_mangohud_row.set_visible(mangohud_available());
+    let group_gamemode_row = build_tristate_row("GameMode", None);
+    group_gamemode_row.set_visible(gamemode_available());
+    let group_wayland_row = build_tristate_row("Wayland", None);
+    let group_wow64_row = build_tristate_row("WoW64", None);
+    let group_ntsync_row = build_tristate_row("NTSync", None);
+
+    group_defaults_group.add(&group_mangohud_row);
+    group_defaults_group.add(&group_gamemode_row);
+    group_defaults_group.add(&group_wayland_row);
+    group_defaults_group.add(&group_wow64_row);
+    group_defaults_group.add(&group_ntsync_row);
 
     page.add(&game_group);
     if inside_group && kind == AddLibraryItemKind::Game {
@@ -677,6 +710,11 @@ pub async fn show_add_library_item_dialog(
         let wayland_row_val = wayland_row.clone();
         let wow64_row_val = wow64_row.clone();
         let ntsync_row_val = ntsync_row.clone();
+        let group_mangohud_row_val = group_mangohud_row.clone();
+        let group_gamemode_row_val = group_gamemode_row.clone();
+        let group_wayland_row_val = group_wayland_row.clone();
+        let group_wow64_row_val = group_wow64_row.clone();
+        let group_ntsync_row_val = group_ntsync_row.clone();
 
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
@@ -707,6 +745,11 @@ pub async fn show_add_library_item_dialog(
                             .get(group_proton_row_val.selected() as usize)
                             .cloned()
                             .unwrap_or_else(|| "Default".to_string()),
+                        mangohud: get_tristate_value(&group_mangohud_row_val),
+                        gamemode: get_tristate_value(&group_gamemode_row_val),
+                        wayland: get_tristate_value(&group_wayland_row_val),
+                        wow64: get_tristate_value(&group_wow64_row_val),
+                        ntsync: get_tristate_value(&group_ntsync_row_val),
                     },
                     games: Vec::new(),
                 }));
@@ -752,11 +795,11 @@ pub async fn show_add_library_item_dialog(
                             .unwrap_or_else(|| "Default".to_string())
                     },
                     launch_args: args_entry_val.text().to_string(),
-                    force_mangohud: mangohud_available() && mangohud_row_val.is_active(),
-                    force_gamemode: gamemode_available() && gamemode_row_val.is_active(),
-                    game_wayland: wayland_row_val.is_active(),
-                    game_wow64: wow64_row_val.is_active(),
-                    game_ntsync: ntsync_row_val.is_active(),
+                    mangohud: get_tristate_value(&mangohud_row_val),
+                    gamemode: get_tristate_value(&gamemode_row_val),
+                    wayland: get_tristate_value(&wayland_row_val),
+                    wow64: get_tristate_value(&wow64_row_val),
+                    ntsync: get_tristate_value(&ntsync_row_val),
                     leyen_id,
                     game_id: normalized_game_id,
                     custom_icon,
@@ -906,6 +949,20 @@ pub async fn show_edit_group_dialog(
     defaults_group.add(&group_icon_override_row);
     defaults_group.add(&prefix_override_row);
     defaults_group.add(&proton_row);
+
+    let mangohud_row = build_tristate_row("MangoHud", group.defaults.mangohud);
+    mangohud_row.set_visible(mangohud_available());
+    let gamemode_row = build_tristate_row("GameMode", group.defaults.gamemode);
+    gamemode_row.set_visible(gamemode_available());
+    let wayland_row = build_tristate_row("Wayland", group.defaults.wayland);
+    let wow64_row = build_tristate_row("WoW64", group.defaults.wow64);
+    let ntsync_row = build_tristate_row("NTSync", group.defaults.ntsync);
+
+    defaults_group.add(&mangohud_row);
+    defaults_group.add(&gamemode_row);
+    defaults_group.add(&wayland_row);
+    defaults_group.add(&wow64_row);
+    defaults_group.add(&ntsync_row);
     let tools_group = adw::PreferencesGroup::builder().title("Tools").build();
     let tools_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
@@ -1132,6 +1189,11 @@ pub async fn show_edit_group_dialog(
         let group_icon_override_row_val = group_icon_override_row.clone();
         let group_icon_row_val = group_icon_row.clone();
         let title_row_val = title_row.clone();
+        let mangohud_row_val = mangohud_row.clone();
+        let gamemode_row_val = gamemode_row.clone();
+        let wayland_row_val = wayland_row.clone();
+        let wow64_row_val = wow64_row.clone();
+        let ntsync_row_val = ntsync_row.clone();
 
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
@@ -1159,6 +1221,11 @@ pub async fn show_edit_group_dialog(
                         .get(proton_row_val.selected() as usize)
                         .cloned()
                         .unwrap_or_else(|| "Default".to_string()),
+                    mangohud: get_tristate_value(&mangohud_row_val),
+                    gamemode: get_tristate_value(&gamemode_row_val),
+                    wayland: get_tristate_value(&wayland_row_val),
+                    wow64: get_tristate_value(&wow64_row_val),
+                    ntsync: get_tristate_value(&ntsync_row_val),
                 },
             ) {
                 crate::config::save_library(items.clone()).await;
@@ -1346,28 +1413,13 @@ pub async fn show_edit_game_dialog(
         .activatable_widget(&args_entry)
         .build();
     args_row.add_suffix(&args_entry);
-    let mangohud_row = adw::SwitchRow::builder()
-        .title("Force MangoHud")
-        .active(game.force_mangohud)
-        .visible(mangohud_available())
-        .build();
-    let gamemode_row = adw::SwitchRow::builder()
-        .title("Force GameMode")
-        .active(game.force_gamemode)
-        .visible(gamemode_available())
-        .build();
-    let wayland_row = adw::SwitchRow::builder()
-        .title("Wayland")
-        .active(game.game_wayland)
-        .build();
-    let wow64_row = adw::SwitchRow::builder()
-        .title("WoW64")
-        .active(game.game_wow64)
-        .build();
-    let ntsync_row = adw::SwitchRow::builder()
-        .title("NTSync")
-        .active(game.game_ntsync)
-        .build();
+    let mangohud_row = build_tristate_row("MangoHud", game.mangohud);
+    mangohud_row.set_visible(mangohud_available());
+    let gamemode_row = build_tristate_row("GameMode", game.gamemode);
+    gamemode_row.set_visible(gamemode_available());
+    let wayland_row = build_tristate_row("Wayland", game.wayland);
+    let wow64_row = build_tristate_row("WoW64", game.wow64);
+    let ntsync_row = build_tristate_row("NTSync", game.ntsync);
 
     let page = adw::PreferencesPage::builder().build();
     let game_group = adw::PreferencesGroup::builder().title("Game").build();
@@ -1774,11 +1826,11 @@ pub async fn show_edit_game_dialog(
                         .unwrap_or_else(|| "Default".to_string())
                 },
                 launch_args: args_entry_val.text().to_string(),
-                force_mangohud: mangohud_available() && mangohud_row_val.is_active(),
-                force_gamemode: gamemode_available() && gamemode_row_val.is_active(),
-                game_wayland: wayland_row_val.is_active(),
-                game_wow64: wow64_row_val.is_active(),
-                game_ntsync: ntsync_row_val.is_active(),
+                mangohud: get_tristate_value(&mangohud_row_val),
+                gamemode: get_tristate_value(&gamemode_row_val),
+                wayland: get_tristate_value(&wayland_row_val),
+                wow64: get_tristate_value(&wow64_row_val),
+                ntsync: get_tristate_value(&ntsync_row_val),
                 leyen_id: original_game.leyen_id.clone(),
                 game_id: normalized_game_id,
                 custom_icon,

@@ -8,12 +8,12 @@ pub struct Game {
     pub prefix_path: String,
     pub proton: String,
     pub launch_args: String,
-    pub force_mangohud: bool,
-    pub force_gamemode: bool,
+    pub mangohud: Option<bool>,
+    pub gamemode: Option<bool>,
+    pub wayland: Option<bool>,
+    pub wow64: Option<bool>,
+    pub ntsync: Option<bool>,
     pub custom_icon: bool,
-    pub game_wayland: bool,
-    pub game_wow64: bool,
-    pub game_ntsync: bool,
     pub leyen_id: String,
     pub game_id: String,
     pub playtime_seconds: u64,
@@ -26,6 +26,11 @@ pub struct Game {
 pub struct GroupLaunchDefaults {
     pub prefix_path: String,
     pub proton: String,
+    pub mangohud: Option<bool>,
+    pub gamemode: Option<bool>,
+    pub wayland: Option<bool>,
+    pub wow64: Option<bool>,
+    pub ntsync: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

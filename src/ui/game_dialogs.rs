@@ -1041,7 +1041,11 @@ pub async fn show_edit_group_dialog(
             proton_choice
         };
         let proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        pick_and_run_in_prefix(&dialog_parent, &overlay_clone_run, &prefix, &proton);
+        let p = dialog_parent.clone();
+        let o = overlay_clone_run.clone();
+        glib::spawn_future_local(async move {
+            pick_and_run_in_prefix(&p, &o, &prefix, &proton).await;
+        });
     });
 
     let custom_prefix_games = match group_tool_state(group) {
@@ -1561,7 +1565,11 @@ pub async fn show_edit_game_dialog(
             proton_choice
         };
         let proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        pick_and_run_in_prefix(&dialog_parent, &overlay_clone_run, &prefix, &proton);
+        let p = dialog_parent.clone();
+        let o = overlay_clone_run.clone();
+        glib::spawn_future_local(async move {
+            pick_and_run_in_prefix(&p, &o, &prefix, &proton).await;
+        });
     });
 
     match game_tool_state(game, current_parent_group.as_ref()) {

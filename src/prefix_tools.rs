@@ -10,12 +10,20 @@ use gtk4::prelude::*;
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
-pub fn pick_and_run_in_prefix(
+pub async fn pick_and_run_in_prefix(
     parent: &adw::ApplicationWindow,
     overlay: &adw::ToastOverlay,
     prefix_path: &str,
     proton_path: &str,
 ) {
+    let snapshots = crate::launch::running_games_snapshot().await;
+    if !snapshots.is_empty() {
+        overlay.add_toast(adw::Toast::new(
+            "Blocked: Cannot run programs in prefix while games are running.",
+        ));
+        return;
+    }
+
     let prefix_path = prefix_path.trim().to_string();
     let proton_path = proton_path.trim().to_string();
 

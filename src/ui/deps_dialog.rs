@@ -119,6 +119,14 @@ pub async fn show_dependencies_dialog(
     proton_path: &str,
     overlay: &adw::ToastOverlay,
 ) {
+    let snapshots = crate::launch::running_games_snapshot().await;
+    if !snapshots.is_empty() {
+        overlay.add_toast(adw::Toast::new(
+            "Dependency manager is blocked while games are running. Close all games first.",
+        ));
+        return;
+    }
+
     let resolved_prefix = if !prefix_path.is_empty() {
         prefix_path.to_string()
     } else {

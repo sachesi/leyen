@@ -38,6 +38,30 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
         .text(&settings.default_prefix_path)
         .build();
 
+    let prefix_browse_btn = gtk4::Button::builder()
+        .icon_name("folder-open-symbolic")
+        .tooltip_text("Browse for prefix folder")
+        .css_classes(["flat"])
+        .valign(gtk4::Align::Center)
+        .build();
+    prefix_row.add_suffix(&prefix_browse_btn);
+
+    let prefix_row_clone = prefix_row.clone();
+    let pref_window_clone = pref_window.clone();
+    prefix_browse_btn.connect_clicked(move |_| {
+        let prefix_row_clone = prefix_row_clone.clone();
+        let file_dialog = gtk4::FileDialog::builder()
+            .title("Select Prefix Folder")
+            .build();
+        file_dialog.select_folder(Some(&pref_window_clone), gio::Cancellable::NONE, move |result| {
+            if let Ok(file) = result
+                && let Some(path) = file.path()
+            {
+                prefix_row_clone.set_text(&path.to_string_lossy());
+            }
+        });
+    });
+
     // Build Proton dropdown – display basenames, store full paths via index
     let available_versions = settings.available_proton_versions.clone();
     let display_names: Vec<String> = available_versions

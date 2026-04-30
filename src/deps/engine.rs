@@ -13,7 +13,10 @@ use sha2::{Sha256, Digest};
 use std::io::Read;
 
 use crate::logging::LOG_OPERATIONS;
-use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{
+    UMU_DOWNLOADING, get_umu_run_path, get_winetricks_path, is_umu_run_available,
+    is_winetricks_available,
+};
 
 use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
 use super::{
@@ -394,7 +397,7 @@ pub async fn execute_dep_step(
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-            cmd.args(["winetricks", "-q", verb.as_str()]);
+            cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
             maybe_silence_command_async(&mut cmd);
 
             let status = cmd
@@ -461,7 +464,10 @@ pub fn install_dep_async(
     on_progress: impl Fn(usize, usize, String) + 'static,
     on_finish: impl FnOnce(bool, Option<String>) + 'static,
 ) {
-    if let Err(message) = ensure_umu_ready(overlay) {
+    let profile = get_dep_profile(dep_id);
+    let needs_winetricks = profile.map(|p| get_dep_steps(p.id).iter().any(|s| matches!(s.action, DepStepAction::RunWinetricks { .. }))).unwrap_or(false);
+
+    if let Err(message) = ensure_umu_ready(overlay, needs_winetricks) {
         on_finish(false, Some(message));
         return;
     }
@@ -613,7 +619,7 @@ pub fn uninstall_dep_async(
                 CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
             )
         });
-        if requires_umu && let Err(message) = ensure_umu_ready(&overlay) {
+        if requires_umu && let Err(message) = ensure_umu_ready(&overlay, false) {
             on_finish(false, Some(message));
             return;
         }
@@ -675,7 +681,7 @@ pub fn uninstall_dep_async(
     });
 }
 
-fn ensure_umu_ready(overlay: &adw::ToastOverlay) -> Result<(), String> {
+fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -> Result<(), String> {
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
@@ -688,6 +694,13 @@ fn ensure_umu_ready(overlay: &adw::ToastOverlay) -> Result<(), String> {
             "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
         return Err("umu-launcher not available".to_string());
+    }
+
+    if check_winetricks && !is_winetricks_available() {
+        overlay.add_toast(adw::Toast::new(
+            "winetricks is not installed. Please install it using your package manager.",
+        ));
+        return Err("winetricks not available".to_string());
     }
 
     Ok(())

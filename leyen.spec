@@ -6,7 +6,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.3
+Version:        0.2.4
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 

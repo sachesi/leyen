@@ -13,21 +13,25 @@ use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, mangohud_available};
 use crate::runtime::umu::get_umu_runtime_dir;
 
-pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw::ToastOverlay) {
+pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let settings = crate::config::load_settings().await;
 
-    let pref_window = adw::PreferencesWindow::builder()
+    let dialog = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .search_enabled(true)
         .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
         .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
+        .destroy_with_parent(true)
         .build();
 
-    let page = adw::PreferencesPage::builder()
-        .title("General")
-        .icon_name("emblem-system-symbolic")
+    let header = adw::HeaderBar::builder()
+        .title_widget(&adw::WindowTitle::new("Global Settings", ""))
         .build();
+
+    let close_btn = gtk4::Button::builder().label("Close").build();
+    header.pack_start(&close_btn);
+
+    let page = adw::PreferencesPage::builder().build();
 
     let paths_group = adw::PreferencesGroup::builder()
         .title("Default Paths")
@@ -47,13 +51,13 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let prefix_row_clone = prefix_row.clone();
-    let pref_window_clone = pref_window.clone();
+    let dialog_clone = dialog.clone();
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
             .title("Select Prefix Folder")
             .build();
-        file_dialog.select_folder(Some(&pref_window_clone), gio::Cancellable::NONE, move |result| {
+        file_dialog.select_folder(Some(&dialog_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
@@ -105,8 +109,10 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
 
     let manage_deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
     manage_deps_btn.set_margin_bottom(6);
-    let run_prefix_btn = gtk4::Button::builder().label("Run in prefix").build();
+    let run_prefix_btn = gtk4::Button::builder().label("Run in default prefix").build();
     run_prefix_btn.set_margin_top(6);
+
+    let overlay = adw::ToastOverlay::new();
 
     let parent_for_deps = parent.clone();
     let overlay_for_deps = overlay.clone();
@@ -122,7 +128,11 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
                 "Default".to_string()
             };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
-        let parent = parent_for_deps.clone(); let overlay = overlay_for_deps.clone(); glib::spawn_future_local(async move { show_dependencies_dialog(&parent, &prefix, &proton, &overlay).await; });
+        let parent = parent_for_deps.clone();
+        let overlay = overlay_for_deps.clone();
+        glib::spawn_future_local(async move {
+            show_dependencies_dialog(&parent, &prefix, &proton, &overlay).await;
+        });
     });
 
     let overlay_for_run = overlay.clone();
@@ -200,13 +210,13 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
 
     let log_warnings_row = adw::SwitchRow::builder()
         .title("Warnings")
-        .subtitle("Show warning messages")
+        .subtitle("Show warning messages (e.g. game not found)")
         .active(settings.log_warnings)
         .build();
 
     let log_operations_row = adw::SwitchRow::builder()
         .title("Operations")
-        .subtitle("Show game launch and component installation activity")
+        .subtitle("Show info about background operations")
         .active(settings.log_operations)
         .build();
 
@@ -214,39 +224,33 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
     logging_group.add(&log_warnings_row);
     logging_group.add(&log_operations_row);
 
-    page.add(&paths_group);
-    page.add(&tools_group);
-    page.add(&environment_group);
-    page.add(&logging_group);
-
-    // ── Maintenance ────────────────────────────────────────────────────────
+    // ── Maintenance ─────────────────────────────────────────────────────────
     let maintenance_group = adw::PreferencesGroup::builder()
         .title("Maintenance")
-        .description("Use these actions to fix runtime issues.")
         .build();
 
     let runtime_repair_row = adw::ExpanderRow::builder()
-        .title("Runtime Repair")
-        .subtitle("Open repair actions for the local umu runtime.")
+        .title("Repair Runtime")
+        .subtitle("Reset internal umu-launcher components if dependency installation fails.")
+        .build();
+
+    let reset_row = adw::ActionRow::builder()
+        .title("Reset umu Runtime")
+        .subtitle("Deletes steamrt3 directory. It will be re-downloaded on next dependency install.")
         .build();
 
     let reset_btn = gtk4::Button::builder()
-        .label("Reset umu Runtime")
+        .label("Reset")
+        .valign(gtk4::Align::Center)
         .css_classes(["destructive-action"])
-        .halign(gtk4::Align::Start)
-        .build();
-    let reset_row = adw::ActionRow::builder()
-        .title("Reset umu Runtime")
-        .subtitle("Delete the local Steam Linux Runtime so umu can download a fresh copy.")
-        .activatable_widget(&reset_btn)
         .build();
     reset_row.add_suffix(&reset_btn);
 
-    let pref_window_for_reset = pref_window.clone();
     let overlay_for_reset = overlay.clone();
+    let dialog_for_reset = dialog.clone();
     reset_btn.connect_clicked(move |_| {
-        let pref_window_for_reset = pref_window_for_reset.clone();
         let overlay_for_reset = overlay_for_reset.clone();
+        let dialog_for_reset = dialog_for_reset.clone();
         glib::spawn_future_local(async move {
             let snapshots = crate::launch::running_games_snapshot().await;
             if !snapshots.is_empty() {
@@ -257,63 +261,82 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow, overlay: &adw
             }
 
             let confirm = gtk4::AlertDialog::builder()
-            .message("Reset umu Runtime?")
-            .detail(
-                "This deletes the Steam Linux Runtime (steamrt3) directory. \
-umu-launcher will re-download a clean copy the next time a dependency is installed.\n\n\
-Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
-            )
-            .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
-            .cancel_button(0)
-            .default_button(0)
-            .build();
+                .message("Reset umu Runtime?")
+                .detail(
+                    "This deletes the Steam Linux Runtime (steamrt3) directory. \
+                     umu-launcher will re-download a clean copy the next time a dependency is installed.\n\n\
+                     Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
+                )
+                .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
+                .cancel_button(0)
+                .default_button(0)
+                .build();
 
-        let overlay_clone = overlay_for_reset.clone();
-        confirm.choose(
-            Some(&pref_window_for_reset),
-            gio::Cancellable::NONE,
-            move |result| {
-                if let Ok(1) = result {
-                    let overlay_clone = overlay_clone.clone();
-                    let runtime_dir = get_umu_runtime_dir();
-                    glib::spawn_future_local(async move {
-                        let result = tokio::task::spawn_blocking(move || {
-                            fs::remove_dir_all(&runtime_dir)
-                        }).await.unwrap();
+            let overlay_clone = overlay_for_reset.clone();
+            confirm.choose(
+                Some(&dialog_for_reset),
+                gio::Cancellable::NONE,
+                move |result| {
+                    if let Ok(1) = result {
+                        let overlay_clone = overlay_clone.clone();
+                        let runtime_dir = get_umu_runtime_dir();
+                        glib::spawn_future_local(async move {
+                            let result = tokio::task::spawn_blocking(move || {
+                                fs::remove_dir_all(&runtime_dir)
+                            }).await.unwrap();
 
-                        match result {
-                            Ok(_) => {
-                                overlay_clone.add_toast(adw::Toast::new(
-                                    "umu runtime reset. Re-run any dependency install to download a fresh copy.",
-                                ));
+                            match result {
+                                Ok(_) => {
+                                    overlay_clone.add_toast(adw::Toast::new(
+                                        "umu runtime reset. Re-run any dependency install to download a fresh copy.",
+                                    ));
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                    overlay_clone.add_toast(adw::Toast::new(
+                                        "umu runtime directory not found — nothing to reset.",
+                                    ));
+                                }
+                                Err(e) => {
+                                    overlay_clone.add_toast(adw::Toast::new(&format!(
+                                        "Failed to reset umu runtime: {}",
+                                        e
+                                    )));
+                                }
                             }
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                                overlay_clone.add_toast(adw::Toast::new(
-                                    "umu runtime directory not found — nothing to reset.",
-                                ));
-                            }
-                            Err(e) => {
-                                overlay_clone.add_toast(adw::Toast::new(&format!(
-                                    "Failed to reset umu runtime: {}",
-                                    e
-                                )));
-                            }
-                        }
-                    });
-                }
-            },
-        );
+                        });
+                    }
+                },
+            );
+        });
     });
-});
 
     runtime_repair_row.add_row(&reset_row);
     maintenance_group.add(&runtime_repair_row);
+
+    page.add(&paths_group);
+    page.add(&tools_group);
+    page.add(&environment_group);
+    page.add(&logging_group);
     page.add(&maintenance_group);
 
-    pref_window.add(&page);
+    let scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&page)
+        .build();
+
+    let toolbar_view = adw::ToolbarView::builder().build();
+    toolbar_view.add_top_bar(&header);
+    toolbar_view.set_content(Some(&scroll));
+
+    overlay.set_child(Some(&toolbar_view));
+    dialog.set_content(Some(&overlay));
+
+    let dialog_clone = dialog.clone();
+    close_btn.connect_clicked(move |_| dialog_clone.close());
 
     // Save settings when window is closed
-    pref_window.connect_close_request(move |_| {
+    dialog.connect_close_request(move |_| {
         let updated_settings = crate::models::GlobalSettings {
             default_prefix_path: prefix_row.text().to_string(),
             default_proton: if (proton_row.selected() as usize) < available_versions.len() {
@@ -338,5 +361,5 @@ Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.
         gtk4::glib::Propagation::Proceed
     });
 
-    pref_window.present();
+    dialog.present();
 }

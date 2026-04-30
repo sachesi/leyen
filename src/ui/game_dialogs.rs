@@ -217,7 +217,6 @@ fn selected_combo_value(row: &adw::ComboRow, values: &[String]) -> String {
 pub async fn show_add_library_item_dialog(
     parent: &adw::ApplicationWindow,
     ui: &LibraryUi,
-    overlay: &adw::ToastOverlay,
     kind: AddLibraryItemKind,
 ) {
     let settings = load_settings().await;
@@ -647,7 +646,10 @@ pub async fn show_add_library_item_dialog(
         .child(&page)
         .build();
     toolbar_view.set_content(Some(&scroll));
-    dialog.set_content(Some(&toolbar_view));
+
+    let overlay = adw::ToastOverlay::new();
+    overlay.set_child(Some(&toolbar_view));
+    dialog.set_content(Some(&overlay));
 
     let dialog_clone = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
@@ -1058,7 +1060,10 @@ pub async fn show_edit_group_dialog(
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&page));
-    dialog.set_content(Some(&toolbar_view));
+
+    let overlay = adw::ToastOverlay::new();
+    overlay.set_child(Some(&toolbar_view));
+    dialog.set_content(Some(&overlay));
 
     let prefix_row_clone = prefix_row.clone();
     let prefix_override_row_clone = prefix_override_row.clone();
@@ -1727,7 +1732,10 @@ pub async fn show_edit_game_dialog(
         .child(&page)
         .build();
     toolbar_view.set_content(Some(&scroll));
-    dialog.set_content(Some(&toolbar_view));
+
+    let overlay = adw::ToastOverlay::new();
+    overlay.set_child(Some(&toolbar_view));
+    dialog.set_content(Some(&overlay));
 
     let dialog_clone = dialog.clone();
     cancel_btn.connect_clicked(move |_| dialog_clone.destroy());

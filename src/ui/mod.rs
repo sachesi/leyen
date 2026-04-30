@@ -285,7 +285,7 @@ pub fn build_ui(app: &adw::Application) {
     add_game_action.connect_activate(move |_, _| {
         let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
         glib::spawn_future_local(async move {
-            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Game).await;
+            show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Game).await;
         });
     });
     window.add_action(&add_game_action);
@@ -296,7 +296,7 @@ pub fn build_ui(app: &adw::Application) {
     add_game_btn.connect_clicked(move |_| {
         let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
         glib::spawn_future_local(async move {
-            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Game).await;
+            show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Game).await;
         });
     });
 
@@ -307,7 +307,7 @@ pub fn build_ui(app: &adw::Application) {
     add_group_action.connect_activate(move |_, _| {
         let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
         glib::spawn_future_local(async move {
-            show_add_library_item_dialog(&w, &u, &o, AddLibraryItemKind::Group).await;
+            show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Group).await;
         });
     });
     window.add_action(&add_group_action);
@@ -334,9 +334,8 @@ pub fn build_ui(app: &adw::Application) {
     });
     let prefs_action = gio::SimpleAction::new("show-preferences", None);
     let window_clone = window.clone();
-    let overlay_for_settings = toast_overlay.clone();
     prefs_action.connect_activate(move |_, _| {
-        let window = window_clone.clone(); let overlay = overlay_for_settings.clone(); glib::spawn_future_local(async move { show_global_settings(&window, &overlay).await; });
+        let window = window_clone.clone(); glib::spawn_future_local(async move { show_global_settings(&window).await; });
     });
     window.add_action(&prefs_action);
 

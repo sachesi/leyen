@@ -9,7 +9,8 @@ use crate::config::load_games;
 use crate::icons::game_icon_file;
 use crate::launch::running_games_snapshot;
 
-use super::{build_library_icon, log_window::show_log_window};
+use super::log_window::show_log_window;
+use crate::ui::components::icon::build_library_icon;
 
 fn format_duration_brief(total_seconds: u64) -> String {
     let hours = total_seconds / 3600;
@@ -77,6 +78,7 @@ async fn rebuild_running_games(
             icon_paths.get(&snapshot.game_id).cloned(),
             "application-x-executable-symbolic",
             gtk4::Align::Center,
+            true,
         );
 
         let info = gtk4::Box::builder()

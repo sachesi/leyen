@@ -426,14 +426,6 @@ pub async fn show_add_library_item_dialog(
     group_defaults_group.add(&group_prefix_override_row);
     group_defaults_group.add(&group_proton_row);
 
-    let group_mangohud_row = build_env_row("MangoHud", settings.global_mangohud);
-    group_mangohud_row.set_visible(mangohud_available());
-    let group_gamemode_row = build_env_row("GameMode", settings.global_gamemode);
-    group_gamemode_row.set_visible(gamemode_available());
-    let group_wayland_row = build_env_row("Wayland", settings.global_wayland);
-    let group_wow64_row = build_env_row("WoW64", settings.global_wow64);
-    let group_ntsync_row = build_env_row("NTSync", settings.global_ntsync);
-
     let env_group = adw::PreferencesGroup::builder()
         .title("Environment")
         .build();
@@ -443,15 +435,6 @@ pub async fn show_add_library_item_dialog(
     env_group.add(&wow64_row);
     env_group.add(&ntsync_row);
 
-    let group_env_group = adw::PreferencesGroup::builder()
-        .title("Environment")
-        .build();
-    group_env_group.add(&group_mangohud_row);
-    group_env_group.add(&group_gamemode_row);
-    group_env_group.add(&group_wayland_row);
-    group_env_group.add(&group_wow64_row);
-    group_env_group.add(&group_ntsync_row);
-
     page.add(&game_group);
     if inside_group && kind == AddLibraryItemKind::Game {
         page.add(&context_group);
@@ -459,12 +442,10 @@ pub async fn show_add_library_item_dialog(
     page.add(&game_details_group);
     page.add(&env_group);
     page.add(&group_defaults_group);
-    page.add(&group_env_group);
 
     game_details_group.set_visible(kind == AddLibraryItemKind::Game);
     env_group.set_visible(kind == AddLibraryItemKind::Game);
     group_defaults_group.set_visible(kind == AddLibraryItemKind::Group);
-    group_env_group.set_visible(kind == AddLibraryItemKind::Group);
 
     if grouped_game {
         proton_row.set_selected(0);
@@ -705,18 +686,28 @@ pub async fn show_add_library_item_dialog(
         let wayland_row_val = wayland_row.clone();
         let wow64_row_val = wow64_row.clone();
         let ntsync_row_val = ntsync_row.clone();
-        let group_mangohud_row_val = group_mangohud_row.clone();
-        let group_gamemode_row_val = group_gamemode_row.clone();
-        let group_wayland_row_val = group_wayland_row.clone();
-        let group_wow64_row_val = group_wow64_row.clone();
-        let group_ntsync_row_val = group_ntsync_row.clone();
 
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
+            if title.trim().is_empty() {
+                overlay_clone.add_toast(adw::Toast::new("Title is required"));
+                return;
+            }
+
             let mut items = crate::config::load_library().await;
             let mut icon_notice = None;
 
             if kind == AddLibraryItemKind::Group {
+                let proton = available_protons
+                    .get(group_proton_row_val.selected() as usize)
+                    .cloned()
+                    .unwrap_or_else(|| "Default".to_string());
+
+                if proton != "Default" && !std::path::Path::new(&proton).exists() {
+                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    return;
+                }
+
                 let group_id = uuid::Uuid::new_v4().to_string();
                 if let Err(err) = apply_group_icon(
                     group_id.clone(),
@@ -736,19 +727,24 @@ pub async fn show_add_library_item_dialog(
                         } else {
                             String::new()
                         },
-                        proton: available_protons
-                            .get(group_proton_row_val.selected() as usize)
-                            .cloned()
-                            .unwrap_or_else(|| "Default".to_string()),
-                        mangohud: group_mangohud_row_val.is_active(),
-                        gamemode: group_gamemode_row_val.is_active(),
-                        wayland: group_wayland_row_val.is_active(),
-                        wow64: group_wow64_row_val.is_active(),
-                        ntsync: group_ntsync_row_val.is_active(),
+                        proton,
                     },
                     games: Vec::new(),
                 }));
             } else {
+                let proton = if grouped_game && !proton_override_row_val.enables_expansion() {
+                    "Default".to_string()
+                } else {
+                    available_protons
+                        .get(proton_row_val.selected() as usize)
+                        .cloned()
+                        .unwrap_or_else(|| "Default".to_string())
+                };
+
+                if proton != "Default" && !std::path::Path::new(&proton).exists() {
+                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    return;
+                }
                 let exe = path_row_val.text().to_string();
                 if exe.trim().is_empty() {
                     overlay_clone.add_toast(adw::Toast::new("Executable path is required"));
@@ -781,14 +777,7 @@ pub async fn show_add_library_item_dialog(
                     } else {
                         prefix_row_val.text().to_string()
                     },
-                    proton: if grouped_game && !proton_override_row_val.enables_expansion() {
-                        "Default".to_string()
-                    } else {
-                        available_protons
-                            .get(proton_row_val.selected() as usize)
-                            .cloned()
-                            .unwrap_or_else(|| "Default".to_string())
-                    },
+                    proton,
                     launch_args: args_entry_val.text().to_string(),
                     mangohud: mangohud_row_val.is_active(),
                     gamemode: gamemode_row_val.is_active(),
@@ -945,22 +934,6 @@ pub async fn show_edit_group_dialog(
     defaults_group.add(&prefix_override_row);
     defaults_group.add(&proton_row);
 
-    let mangohud_row = build_env_row("MangoHud", group.defaults.mangohud);
-    mangohud_row.set_visible(mangohud_available());
-    let gamemode_row = build_env_row("GameMode", group.defaults.gamemode);
-    gamemode_row.set_visible(gamemode_available());
-    let wayland_row = build_env_row("Wayland", group.defaults.wayland);
-    let wow64_row = build_env_row("WoW64", group.defaults.wow64);
-    let ntsync_row = build_env_row("NTSync", group.defaults.ntsync);
-
-    let overrides_group = adw::PreferencesGroup::builder()
-        .title("Overrides")
-        .build();
-    overrides_group.add(&mangohud_row);
-    overrides_group.add(&gamemode_row);
-    overrides_group.add(&wayland_row);
-    overrides_group.add(&wow64_row);
-    overrides_group.add(&ntsync_row);
     let tools_group = adw::PreferencesGroup::builder().title("Tools").build();
     let tools_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
@@ -1080,7 +1053,6 @@ pub async fn show_edit_group_dialog(
     });
     page.add(&group_settings);
     page.add(&defaults_group);
-    page.add(&overrides_group);
     page.add(&tools_group);
 
     let toolbar_view = adw::ToolbarView::builder().build();
@@ -1192,14 +1164,19 @@ pub async fn show_edit_group_dialog(
         let group_icon_override_row_val = group_icon_override_row.clone();
         let group_icon_row_val = group_icon_row.clone();
         let title_row_val = title_row.clone();
-        let mangohud_row_val = mangohud_row.clone();
-        let gamemode_row_val = gamemode_row.clone();
-        let wayland_row_val = wayland_row.clone();
-        let wow64_row_val = wow64_row.clone();
-        let ntsync_row_val = ntsync_row.clone();
 
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
+            let proton = available_protons
+                .get(proton_row_val.selected() as usize)
+                .cloned()
+                .unwrap_or_else(|| "Default".to_string());
+
+            if proton != "Default" && !std::path::Path::new(&proton).exists() {
+                overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                return;
+            }
+
             let mut items = crate::config::load_library().await;
             if let Err(err) = apply_group_icon(
                 group_id.clone(),
@@ -1220,15 +1197,7 @@ pub async fn show_edit_group_dialog(
                     } else {
                         String::new()
                     },
-                    proton: available_protons
-                        .get(proton_row_val.selected() as usize)
-                        .cloned()
-                        .unwrap_or_else(|| "Default".to_string()),
-                    mangohud: mangohud_row_val.is_active(),
-                    gamemode: gamemode_row_val.is_active(),
-                    wayland: wayland_row_val.is_active(),
-                    wow64: wow64_row_val.is_active(),
-                    ntsync: ntsync_row_val.is_active(),
+                    proton,
                 },
             ) {
                 crate::config::save_library(items.clone()).await;
@@ -1437,25 +1406,25 @@ pub async fn show_edit_game_dialog(
         context_group.add(&group_row);
         page.add(&context_group);
     }
-    let env_group = adw::PreferencesGroup::builder()
+    let settings_group = adw::PreferencesGroup::builder()
         .title("Settings")
         .build();
-    env_group.add(&leyen_id_row);
-    env_group.add(&game_id_row);
-    env_group.add(&game_icon_override_row);
-    env_group.add(&prefix_override_row);
+    settings_group.add(&leyen_id_row);
+    settings_group.add(&game_id_row);
+    settings_group.add(&game_icon_override_row);
+    settings_group.add(&prefix_override_row);
     if grouped_game {
-        env_group.add(&proton_override_row);
+        settings_group.add(&proton_override_row);
     } else {
-        env_group.add(&proton_row);
+        settings_group.add(&proton_row);
     }
-    let overrides = adw::PreferencesGroup::builder().title("Overrides").build();
-    overrides.add(&args_row);
-    overrides.add(&mangohud_row);
-    overrides.add(&gamemode_row);
-    overrides.add(&wayland_row);
-    overrides.add(&wow64_row);
-    overrides.add(&ntsync_row);
+    settings_group.add(&args_row);
+    let env_group = adw::PreferencesGroup::builder().title("Environment").build();
+    env_group.add(&mangohud_row);
+    env_group.add(&gamemode_row);
+    env_group.add(&wayland_row);
+    env_group.add(&wow64_row);
+    env_group.add(&ntsync_row);
 
     let tools = adw::PreferencesGroup::builder().title("Tools").build();
     let tools_stack = gtk4::Stack::builder()
@@ -1633,8 +1602,8 @@ pub async fn show_edit_game_dialog(
     tools.add(&menu_btn);
 
     page.add(&game_group);
+    page.add(&settings_group);
     page.add(&env_group);
-    page.add(&overrides);
     page.add(&tools);
 
     let prefix_row_clone = prefix_row.clone();
@@ -1803,6 +1772,21 @@ pub async fn show_edit_game_dialog(
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
             let exe = path_row_val.text().to_string();
+
+            let proton = if grouped_game && !proton_override_row_val.enables_expansion() {
+                "Default".to_string()
+            } else {
+                available_protons
+                    .get(proton_row_val.selected() as usize)
+                    .cloned()
+                    .unwrap_or_else(|| "Default".to_string())
+            };
+
+            if proton != "Default" && !std::path::Path::new(&proton).exists() {
+                overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                return;
+            }
+
             let mut items = crate::config::load_library().await;
             let normalized_game_id = normalize_game_id_from_executable(&exe);
             let custom_icon = game_icon_override_row_val.enables_expansion();
@@ -1824,14 +1808,7 @@ pub async fn show_edit_game_dialog(
                 } else {
                     prefix_row_val.text().to_string()
                 },
-                proton: if grouped_game && !proton_override_row_val.enables_expansion() {
-                    "Default".to_string()
-                } else {
-                    available_protons
-                        .get(proton_row_val.selected() as usize)
-                        .cloned()
-                        .unwrap_or_else(|| "Default".to_string())
-                },
+                proton,
                 launch_args: args_entry_val.text().to_string(),
                 mangohud: mangohud_row_val.is_active(),
                 gamemode: gamemode_row_val.is_active(),

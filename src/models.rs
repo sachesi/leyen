@@ -26,11 +26,6 @@ pub struct Game {
 pub struct GroupLaunchDefaults {
     pub prefix_path: String,
     pub proton: String,
-    pub mangohud: bool,
-    pub gamemode: bool,
-    pub wayland: bool,
-    pub wow64: bool,
-    pub ntsync: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -118,7 +118,36 @@ pub fn is_umu_run_available() -> bool {
     std::path::Path::new(&get_local_umu_run_path()).exists()
 }
 
-/// Checks whether `umu-run` is available.  If it is not found in the system
+/// Returns the command / path to use when invoking `winetricks`.
+/// Prefers the system-wide binary.
+pub fn get_winetricks_path() -> String {
+    if is_nixos() {
+        return "winetricks".to_string();
+    }
+
+    if std::process::Command::new("which")
+        .arg("winetricks")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "winetricks".to_string();
+    }
+
+    "winetricks".to_string()
+}
+
+/// Returns `true` when `winetricks` is actually available.
+pub fn is_winetricks_available() -> bool {
+    std::process::Command::new("which")
+        .arg("winetricks")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Checks whether `umu-run` is available.
+/// If it is not found in the system
 /// PATH or in the local leyen data directory, spawns a background thread that
 /// downloads the latest zipapp release from the umu-launcher GitHub repository
 /// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.

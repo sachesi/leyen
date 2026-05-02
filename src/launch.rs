@@ -177,7 +177,6 @@ fn running_sessions_version(sessions: &[RunningGameSession]) -> u64 {
     for session in &ordered {
         session.game_id.hash(&mut hasher);
         session.pid.hash(&mut hasher);
-        session.known_pids.hash(&mut hasher);
         session.started_at_epoch_seconds.hash(&mut hasher);
         session.termination_requested.hash(&mut hasher);
     }
@@ -277,6 +276,33 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
+use std::sync::{OnceLock, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();
+static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
+
+fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
+    RUNNING_SESSIONS_CACHE.get_or_init(|| RwLock::new(Vec::new()))
+}
+
+pub fn start_running_sessions_monitor() {
+    tokio::spawn(async move {
+        loop {
+            if let Ok(sessions) = synchronize_running_sessions().await {
+                let snapshots = running_sessions_to_snapshots(&sessions);
+                let version = running_sessions_version(&sessions);
+                
+                if let Ok(mut cache) = get_running_sessions_cache().write() {
+                    *cache = snapshots;
+                }
+                RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Relaxed);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
+}
+
 async fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, LaunchError> {
     Ok(synchronize_running_sessions().await?
         .into_iter()
@@ -284,18 +310,20 @@ async fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession
 }
 
 pub async fn is_game_running(game_id: &str) -> bool {
-    find_running_session(game_id).await.ok().flatten().is_some()
+    get_running_sessions_cache()
+        .read()
+        .map(|c| c.iter().any(|s| s.game_id == game_id))
+        .unwrap_or(false)
 }
 
 pub async fn running_games_version() -> u64 {
-    synchronize_running_sessions().await
-        .map(|sessions| running_sessions_version(&sessions))
-        .unwrap_or(0)
+    RUNNING_SESSIONS_VERSION_CACHE.load(Ordering::Relaxed)
 }
 
 pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
-    synchronize_running_sessions().await
-        .map(|sessions| running_sessions_to_snapshots(&sessions))
+    get_running_sessions_cache()
+        .read()
+        .map(|c| c.clone())
         .unwrap_or_default()
 }
 
@@ -410,12 +438,6 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
         Ok(sessions) => {
             if sessions.iter().any(|session| {
                 session.match_prefix_path.as_deref() == Some(prefix_path)
-                    || session.known_pids.iter().any(|pid| {
-                        read_process_env(*pid)
-                            .and_then(|env| env.get("WINEPREFIX").cloned())
-                            .as_deref()
-                            == Some(prefix_path)
-                    })
             }) {
                 PrefixLockState::Busy
             } else {
@@ -558,14 +580,17 @@ fn refresh_known_pids(session: &mut RunningGameSession) -> HashSet<u32> {
 
     let alive_roots: HashSet<u32> = roots.into_iter().filter(|pid| is_pid_alive(*pid)).collect();
     let mut discovered = collect_descendant_pids(&alive_roots);
-    let matched = collect_runtime_matched_pids(
-        session.match_prefix_path.as_deref(),
-        session.match_game_id.as_deref(),
-    );
-    discovered.extend(matched);
 
-    if !discovered.is_empty() {
-        discovered = collect_descendant_pids(&discovered);
+    if alive_roots.is_empty() {
+        let matched = collect_runtime_matched_pids(
+            session.match_prefix_path.as_deref(),
+            session.match_game_id.as_deref(),
+        );
+        discovered.extend(matched);
+
+        if !discovered.is_empty() {
+            discovered = collect_descendant_pids(&discovered);
+        }
     }
 
     let mut known_pids: Vec<u32> = discovered.iter().copied().collect();

@@ -2,6 +2,7 @@ use std::fs;
 use directories::ProjectDirs;
 use thiserror::Error;
 use gtk4::glib;
+use log::{info, warn};
 use crate::config::get_data_dir;
 
 pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
@@ -170,8 +171,13 @@ pub fn check_or_install_umu() {
 
     let umu_core_dir = get_umu_core_dir();
 
+    info!("[dbg] umu-launcher not found, starting background download to {}", umu_core_dir);
     glib::spawn_future_local(async move {
         let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir)).await.unwrap();
+        match &result {
+            Ok(()) => info!("[dbg] umu-launcher download+install completed"),
+            Err(e) => warn!("[dbg] umu-launcher download+install failed: {e}"),
+        }
         if result.is_err() {
             // Reset so the next application start can retry.
             UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -184,6 +190,7 @@ pub fn check_or_install_umu() {
 /// `dest_dir`.
 fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     fs::create_dir_all(dest_dir)?;
+    info!("[dbg] download_and_install_umu: resolving latest version tag");
 
     // Resolve the latest release tag via the GitHub redirect.
     let tag_output = std::process::Command::new("curl")
@@ -224,6 +231,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         ));
     }
 
+    info!("[dbg] download_and_install_umu: resolved version={version}");
     let tarball_name = format!("umu-launcher-{}-zipapp.tar", version);
     let tarball_path = format!("{}/{}", dest_dir, tarball_name);
     let download_url = format!(
@@ -231,6 +239,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         version, tarball_name
     );
 
+    info!("[dbg] download_and_install_umu: downloading {download_url}");
     let ok = std::process::Command::new("curl")
         .args([
             "--proto",
@@ -257,6 +266,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         return Err(UmuError::DownloadError("Download failed".to_string()));
     }
 
+    info!("[dbg] download_and_install_umu: download done, extracting");
     // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
     let extracted = std::process::Command::new("tar")
         .args(["-xf", &tarball_path, "-C", dest_dir])

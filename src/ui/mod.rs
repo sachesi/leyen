@@ -311,6 +311,7 @@ pub fn build_ui(app: &adw::Application) {
         });
     });
     window.add_action(&add_group_action);
+
     let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
     let ui_refresh = ui.clone();
     let overlay_refresh = toast_overlay.clone();

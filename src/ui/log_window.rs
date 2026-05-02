@@ -49,6 +49,38 @@ async fn rebuild_buffer(
     entries.len()
 }
 
+async fn append_new_lines(
+    buffer: &gtk4::TextBuffer,
+    selected_game_id: Option<String>,
+    content_stack: &gtk4::Stack,
+    scroll: &gtk4::ScrolledWindow,
+    text_view: &gtk4::TextView,
+    from_index: usize,
+) -> usize {
+    let entries = tokio::task::spawn_blocking(move || get_log_entries()).await.unwrap();
+    let new_lines: Vec<String> = entries
+        .iter()
+        .skip(from_index)
+        .filter(|entry| {
+            selected_game_id.is_none() || (selected_game_id.as_deref() == entry.game_id.as_deref())
+        })
+        .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
+        .collect();
+
+    if !new_lines.is_empty() {
+        let text = if buffer.char_count() == 0 {
+            new_lines.join("\n")
+        } else {
+            format!("\n{}", new_lines.join("\n"))
+        };
+        let mut end = buffer.end_iter();
+        buffer.insert(&mut end, &text);
+        content_stack.set_visible_child_name("logs");
+        scroll_to_bottom(text_view, buffer, scroll);
+    }
+    entries.len()
+}
+
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
         static ACTIVE_LOG_WINDOW: RefCell<Option<adw::Window>> = RefCell::new(None);
@@ -217,9 +249,10 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let rc = rendered_count.clone();
         
         glib::spawn_future_local(async move {
+            let from = rc.get();
             let entry_count = tokio::task::spawn_blocking(|| get_log_entries().len()).await.unwrap();
-            if entry_count != rc.get() {
-                rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+            if entry_count != from {
+                rc.set(append_new_lines(&b, s, &cs, &sc, &tv, from).await);
             }
         });
 

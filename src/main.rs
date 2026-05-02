@@ -41,6 +41,7 @@ async fn main() -> glib::ExitCode {
     logging::apply_log_settings(&settings);
 
     runtime::check_or_install_umu();
+    launch::start_running_sessions_monitor();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(ui::build_ui);
     app.run()

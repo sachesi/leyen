@@ -83,17 +83,17 @@ pub async fn refresh_library_view(
     
     glib::spawn_future_local(async move {
         let mut items = crate::config::load_library().await;
-        
+
         if !search_text.is_empty() {
             items.retain(|item| match item {
                 LibraryItem::Game(game) => game.title.to_lowercase().contains(&search_text),
                 LibraryItem::Group(group) => {
-                    group.title.to_lowercase().contains(&search_text) || 
+                    group.title.to_lowercase().contains(&search_text) ||
                     group.games.iter().any(|g| g.title.to_lowercase().contains(&search_text))
                 }
             });
         }
-        
+
         *ui_clone.library_state.borrow_mut() = items;
         populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
         populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;

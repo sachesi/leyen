@@ -339,49 +339,55 @@ pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
 
 
 pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
-    let Some(mut session) = find_running_session(game_id).await? else {
+    let Some(session) = find_running_session(game_id).await? else {
         return Ok(false);
     };
 
-    let tracked_pids = refresh_known_pids(&mut session);
-    let mut killed_any = false;
+    let game_id_clone = game_id.to_string();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut session = session;
+        let tracked_pids = refresh_known_pids(&mut session);
+        let mut killed_any = false;
 
-    let pgid = -(session.pid as i32);
-    let group_result = unsafe { libc::kill(pgid, libc::SIGKILL) };
-    if group_result == 0 {
-        info!(
-            target: &format!("game:{game_id}"),
-            "Sent SIGKILL to process group {}", session.pid
-        );
-        killed_any = true;
-    }
-
-    let group_error = std::io::Error::last_os_error();
-    for tracked_pid in tracked_pids {
-        if unsafe { libc::kill(tracked_pid as i32, libc::SIGKILL) } == 0 {
+        let pgid = -(session.pid as i32);
+        let group_result = unsafe { libc::kill(pgid, libc::SIGKILL) };
+        if group_result == 0 {
+            info!(
+                target: &format!("game:{}", session.game_id),
+                "Sent SIGKILL to process group {}", session.pid
+            );
             killed_any = true;
         }
-    }
 
-    if killed_any {
-        let _ = mark_running_session_termination_requested(game_id);
-        info!(
-            target: &format!("game:{game_id}"),
-            "Sent SIGKILL to tracked processes for root pid {}",
-            session.pid
-        );
-        return Ok(true);
-    }
-
-    Err(LaunchError::Other(format!(
-        "Failed to stop pid {}: {}",
-        session.pid,
-        if group_error.kind() == std::io::ErrorKind::NotFound {
-            std::io::Error::last_os_error().to_string()
-        } else {
-            group_error.to_string()
+        let group_error = std::io::Error::last_os_error();
+        for tracked_pid in tracked_pids {
+            if unsafe { libc::kill(tracked_pid as i32, libc::SIGKILL) } == 0 {
+                killed_any = true;
+            }
         }
-    )))
+
+        if killed_any {
+            let _ = mark_running_session_termination_requested(&game_id_clone);
+            info!(
+                target: &format!("game:{}", game_id_clone),
+                "Sent SIGKILL to tracked processes for root pid {}",
+                session.pid
+            );
+            return Ok(true);
+        }
+
+        Err(LaunchError::Other(format!(
+            "Failed to stop pid {}: {}",
+            session.pid,
+            if group_error.kind() == std::io::ErrorKind::NotFound {
+                std::io::Error::last_os_error().to_string()
+            } else {
+                group_error.to_string()
+            }
+        )))
+    }).await.unwrap();
+
+    result
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -429,7 +435,8 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
         return PrefixLockState::Unavailable;
     }
 
-    if let Err(e) = fs::create_dir_all(prefix_path) {
+    let path_clone = prefix_path.to_string();
+    if let Err(e) = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone)).await.unwrap() {
         warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
         return PrefixLockState::Unavailable;
     }
@@ -795,7 +802,8 @@ async fn launch_game_managed(
         }
     }
 
-    let working_dir = working_directory_for(&game.exe_path);
+    let exe_path_clone = game.exe_path.clone();
+    let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone)).await.unwrap();
     match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
         PrefixLockState::Busy => {

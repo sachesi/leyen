@@ -5,7 +5,7 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::glib;
 
-use crate::logging::{clear_log_buffer, get_log_entries};
+use crate::logging::{clear_log_buffer, get_log_entries, get_log_entry_count};
 use crate::models::LibraryItem;
 
 fn scroll_to_bottom(
@@ -30,7 +30,7 @@ async fn rebuild_buffer(
     scroll: &gtk4::ScrolledWindow,
     text_view: &gtk4::TextView,
 ) -> usize {
-    let entries = tokio::task::spawn_blocking(move || get_log_entries()).await.unwrap();
+    let entries = get_log_entries();
     let lines: Vec<String> = entries
         .iter()
         .filter(|entry| {
@@ -39,46 +39,15 @@ async fn rebuild_buffer(
         .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
         .collect();
 
-    buffer.set_text(&lines.join("\n"));
     if lines.is_empty() {
+        buffer.set_text("");
         content_stack.set_visible_child_name("empty");
     } else {
+        buffer.set_text(&lines.join("\n"));
         content_stack.set_visible_child_name("logs");
         scroll_to_bottom(text_view, buffer, scroll);
     }
-    entries.len()
-}
-
-async fn append_new_lines(
-    buffer: &gtk4::TextBuffer,
-    selected_game_id: Option<String>,
-    content_stack: &gtk4::Stack,
-    scroll: &gtk4::ScrolledWindow,
-    text_view: &gtk4::TextView,
-    from_index: usize,
-) -> usize {
-    let entries = tokio::task::spawn_blocking(move || get_log_entries()).await.unwrap();
-    let new_lines: Vec<String> = entries
-        .iter()
-        .skip(from_index)
-        .filter(|entry| {
-            selected_game_id.is_none() || (selected_game_id.as_deref() == entry.game_id.as_deref())
-        })
-        .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
-        .collect();
-
-    if !new_lines.is_empty() {
-        let text = if buffer.char_count() == 0 {
-            new_lines.join("\n")
-        } else {
-            format!("\n{}", new_lines.join("\n"))
-        };
-        let mut end = buffer.end_iter();
-        buffer.insert(&mut end, &text);
-        content_stack.set_visible_child_name("logs");
-        scroll_to_bottom(text_view, buffer, scroll);
-    }
-    entries.len()
+    get_log_entry_count()
 }
 
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
@@ -150,7 +119,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .editable(false)
         .cursor_visible(false)
         .monospace(true)
-        .wrap_mode(gtk4::WrapMode::WordChar)
+        .wrap_mode(gtk4::WrapMode::None) // DISABLE WORD WRAP FOR SPEED
         .top_margin(4)
         .bottom_margin(4)
         .left_margin(20)
@@ -229,7 +198,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let cs = content_stack_for_clear.clone(); let sc = scroll_for_clear.clone(); let tv = text_view_for_clear.clone();
         let rc = rendered_count_for_clear.clone();
         glib::spawn_future_local(async move {
-            tokio::task::spawn_blocking(|| clear_log_buffer()).await.unwrap();
+            clear_log_buffer();
             rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
         });
     });
@@ -250,9 +219,11 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         
         glib::spawn_future_local(async move {
             let from = rc.get();
-            let entry_count = tokio::task::spawn_blocking(|| get_log_entries().len()).await.unwrap();
-            if entry_count != from {
-                rc.set(append_new_lines(&b, s, &cs, &sc, &tv, from).await);
+            let current = get_log_entry_count();
+            if current != from {
+                // If it's a small update, we could append, but for now just rebuild
+                // but at least it's from memory!
+                rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
             }
         });
 

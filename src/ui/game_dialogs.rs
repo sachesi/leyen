@@ -804,7 +804,7 @@ pub async fn show_add_library_item_dialog(
                 }
 
                 if let Err(err) =
-                    create_game_desktop_entry(&desktop_game, current_group_for_desktop.as_ref())
+                    create_game_desktop_entry(desktop_game.clone(), current_group_for_desktop.clone()).await
                 {
                     icon_notice = Some(match icon_notice {
                         Some(existing) => format!("{existing} Failed to create menu entry: {err}"),
@@ -1206,13 +1206,14 @@ pub async fn show_edit_group_dialog(
                 },
             ) {
                 crate::config::save_library(items.clone()).await;
-                let desktop_notice = find_group(&items, &group_id)
-                    .cloned()
-                    .and_then(|updated_group| {
-                        update_group_desktop_entries_if_present(&updated_group)
-                            .err()
-                            .map(|err| format!("Failed to update menu entries: {err}"))
-                    });
+                let updated_group = find_group(&items, &group_id).cloned();
+                let desktop_notice = if let Some(group) = updated_group {
+                    update_group_desktop_entries_if_present(group).await
+                        .err()
+                        .map(|err| format!("Failed to update menu entries: {err}"))
+                } else {
+                    None
+                };
                 refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
                 let success_message = if let Some(desktop_notice) = desktop_notice {
                     format!("Group updated successfully. {desktop_notice}")
@@ -1436,8 +1437,11 @@ pub async fn show_edit_game_dialog(
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(180)
         .build();
+    
+    let lid = game.leyen_id.clone();
+    let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&lid)).await.unwrap();
     let menu_btn = gtk4::Button::builder()
-        .label(if desktop_entry_exists(&game.leyen_id) {
+        .label(if exists {
             "Remove from menu"
         } else {
             "Add to menu"
@@ -1582,27 +1586,35 @@ pub async fn show_edit_game_dialog(
     let game_for_menu = game.clone();
     let group_for_menu = current_parent_group.clone();
     menu_btn.connect_clicked(move |button| {
-        if desktop_entry_exists(&game_for_menu.leyen_id) {
-            match remove_game_desktop_entry(&game_for_menu.leyen_id) {
-                Ok(_) => {
-                    button.set_label("Add to menu");
-                    overlay_clone_menu.add_toast(adw::Toast::new("Removed from menu"));
+        let button = button.clone();
+        let overlay = overlay_clone_menu.clone();
+        let game = game_for_menu.clone();
+        let group = group_for_menu.clone();
+        glib::spawn_future_local(async move {
+            let leyen_id = game.leyen_id.clone();
+            let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id)).await.unwrap();
+            if exists {
+                match remove_game_desktop_entry(game.leyen_id.clone()).await {
+                    Ok(_) => {
+                        button.set_label("Add to menu");
+                        overlay.add_toast(adw::Toast::new("Removed from menu"));
+                    }
+                    Err(err) => overlay.add_toast(adw::Toast::new(&format!(
+                        "Failed to remove menu entry: {err}"
+                    ))),
                 }
-                Err(err) => overlay_clone_menu.add_toast(adw::Toast::new(&format!(
-                    "Failed to remove menu entry: {err}"
-                ))),
-            }
-        } else {
-            match create_game_desktop_entry(&game_for_menu, group_for_menu.as_ref()) {
-                Ok(_) => {
-                    button.set_label("Remove from menu");
-                    overlay_clone_menu.add_toast(adw::Toast::new("Added to menu"));
+            } else {
+                match create_game_desktop_entry(game, group).await {
+                    Ok(_) => {
+                        button.set_label("Remove from menu");
+                        overlay.add_toast(adw::Toast::new("Added to menu"));
+                    }
+                    Err(err) => overlay.add_toast(adw::Toast::new(&format!(
+                        "Failed to create menu entry: {err}"
+                    ))),
                 }
-                Err(err) => overlay_clone_menu.add_toast(adw::Toast::new(&format!(
-                    "Failed to create menu entry: {err}"
-                ))),
             }
-        }
+        });
     });
     tools.add(&menu_btn);
 
@@ -1835,7 +1847,7 @@ pub async fn show_edit_game_dialog(
             if replace_game(&mut items, &edited_game) {
                 crate::config::save_library(items).await;
                 let desktop_notice =
-                    update_game_desktop_entry_if_present(&edited_game, current_parent_group.as_ref())
+                    update_game_desktop_entry_if_present(edited_game.clone(), current_parent_group.clone()).await
                         .err()
                         .map(|err| format!("Failed to update menu entry: {err}"));
                 refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
@@ -1918,7 +1930,7 @@ pub async fn show_delete_confirmation(
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();
                     tokio::task::spawn_blocking(move || clear_game_icon(&gid)).await.ok();
-                    if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
+                    if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                         delete_notice = Some(format!("Failed to remove menu entry: {err}"));
                     }
                     Some(game.title)
@@ -1928,7 +1940,7 @@ pub async fn show_delete_confirmation(
                     for game in &group.games {
                         let gid = game.id.clone();
                         tokio::task::spawn_blocking(move || clear_game_icon(&gid)).await.ok();
-                        if let Err(err) = remove_game_desktop_entry(&game.leyen_id) {
+                        if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                             delete_notice = Some(format!("Failed to remove a menu entry: {err}"));
                         }
                     }

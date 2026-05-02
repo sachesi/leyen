@@ -9,70 +9,82 @@ pub fn desktop_entry_exists(leyen_id: &str) -> bool {
     !desktop_entry_paths_for_leyen_id(leyen_id).is_empty()
 }
 
-pub fn create_game_desktop_entry(
-    game: &Game,
-    group: Option<&GameGroup>,
+pub async fn create_game_desktop_entry(
+    game: Game,
+    group: Option<GameGroup>,
 ) -> Result<PathBuf, String> {
-    let path = desired_desktop_entry_path(game, group);
-    ensure_applications_dir()?;
-    for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
-        if existing != path && existing.exists() {
-            fs::remove_file(&existing).map_err(|err| {
-                format!(
-                    "Failed to remove desktop entry '{}': {}",
-                    existing.display(),
-                    err
-                )
-            })?;
+    tokio::task::spawn_blocking(move || {
+        let path = desired_desktop_entry_path(&game, group.as_ref());
+        ensure_applications_dir()?;
+        for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
+            if existing != path && existing.exists() {
+                fs::remove_file(&existing).map_err(|err| {
+                    format!(
+                        "Failed to remove desktop entry '{}': {}",
+                        existing.display(),
+                        err
+                    )
+                })?;
+            }
         }
-    }
-    let icon = desktop_icon(game);
-    fs::write(&path, render_game_desktop_entry(game, group, &icon)).map_err(|err| {
-        format!(
-            "Failed to write desktop entry '{}': {}",
-            path.display(),
-            err
-        )
-    })?;
-    Ok(path)
+        let icon = desktop_icon(&game);
+        fs::write(&path, render_game_desktop_entry(&game, group.as_ref(), &icon)).map_err(|err| {
+            format!(
+                "Failed to write desktop entry '{}': {}",
+                path.display(),
+                err
+            )
+        })?;
+        Ok(path)
+    })
+    .await
+    .unwrap()
 }
 
-pub fn update_game_desktop_entry_if_present(
-    game: &Game,
-    group: Option<&GameGroup>,
+pub async fn update_game_desktop_entry_if_present(
+    game: Game,
+    group: Option<GameGroup>,
 ) -> Result<bool, String> {
-    if !desktop_entry_exists(&game.leyen_id) {
+    let leyen_id = game.leyen_id.clone();
+    if !tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id))
+        .await
+        .unwrap()
+    {
         return Ok(false);
     }
 
-    create_game_desktop_entry(game, group)?;
+    create_game_desktop_entry(game, group).await?;
     Ok(true)
 }
 
-pub fn update_group_desktop_entries_if_present(group: &GameGroup) -> Result<usize, String> {
+pub async fn update_group_desktop_entries_if_present(group: GameGroup) -> Result<usize, String> {
     let mut updated = 0usize;
-    for game in &group.games {
-        if update_game_desktop_entry_if_present(game, Some(group))? {
+    for game in group.games.clone() {
+        if update_game_desktop_entry_if_present(game, Some(group.clone())).await? {
             updated += 1;
         }
     }
     Ok(updated)
 }
 
-pub fn remove_game_desktop_entry(leyen_id: &str) -> Result<bool, String> {
-    let paths = desktop_entry_paths_for_leyen_id(leyen_id);
-    let had_desktop_file = !paths.is_empty();
+pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let paths = desktop_entry_paths_for_leyen_id(&leyen_id);
+        let had_desktop_file = !paths.is_empty();
 
-    for path in paths {
-        fs::remove_file(&path).map_err(|err| {
-            format!(
-                "Failed to remove desktop entry '{}': {}",
-                path.display(),
-                err
-            )
-        })?;
-    }
-    Ok(had_desktop_file)
+        for path in paths {
+            fs::remove_file(&path).map_err(|err| {
+                format!(
+                    "Failed to remove desktop entry '{}': {}",
+                    path.display(),
+                    err
+                )
+            })?;
+        }
+        Ok(had_desktop_file)
+    })
+    .await
+    .unwrap()
 }
 
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+
 use crate::config::get_data_dir;
 use crate::models::GlobalSettings;
 
@@ -121,35 +121,7 @@ pub fn detect_proton_versions() -> GlobalSettings {
         let _ = fs::create_dir_all(&leyen_proton);
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let steam_compat = PathBuf::from(format!("{}/.steam/steam/compatibilitytools.d", home));
-    if steam_compat.exists()
-        && let Ok(entries) = fs::read_dir(steam_compat)
-    {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
-                versions.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
 
-    let steam_root = PathBuf::from(format!("{}/.steam/steam/steamapps/common", home));
-    if steam_root.exists()
-        && let Ok(entries) = fs::read_dir(steam_root)
-    {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && let Some(name) = entry.file_name().to_str()
-                && name.contains("Proton")
-                && path.join("proton").is_file()
-                && path.join("version").is_file()
-            {
-                versions.push(path.to_string_lossy().to_string());
-            }
-        }
-    }
 
     let default_prefix_path = get_data_dir().join("prefixes").join("default");
     if !default_prefix_path.exists() {

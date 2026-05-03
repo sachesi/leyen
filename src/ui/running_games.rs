@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use libadwaita as adw;
 
@@ -108,10 +110,16 @@ async fn rebuild_running_games(
             .css_classes(["caption", "dim-label"])
             .build();
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
+
         let runtime_label = gtk4::Label::builder()
             .label(format!(
                 "Running for {}",
-                format_duration_brief(snapshot.elapsed_seconds)
+                format_duration_brief(elapsed)
             ))
             .xalign(0.0)
             .css_classes(["caption", "accent"])
@@ -177,21 +185,28 @@ async fn rebuild_running_games(
 
     content_stack.set_visible_child_name("list");
 }
-async fn update_running_durations(
-    running_duration_labels: &std::rc::Rc<std::cell::RefCell<HashMap<String, gtk4::Label>>>,
+pub async fn update_running_duration_labels(
+    running_duration_labels: &Rc<RefCell<HashMap<String, gtk4::Label>>>,
 ) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+
     let snapshots: HashMap<String, u64> = running_games_snapshot()
         .await
         .into_iter()
-        .map(|s| (s.game_id.clone(), s.elapsed_seconds))
+        .map(|s| (s.game_id.clone(), s.started_at_epoch_seconds))
         .collect();
 
     for (game_id, label) in running_duration_labels.borrow().iter() {
-        if let Some(elapsed) = snapshots.get(game_id) {
-            label.set_label(&format!("Running for {}", format_duration_brief(*elapsed)));
+        if let Some(started_at) = snapshots.get(game_id) {
+            let elapsed = now.saturating_sub(*started_at);
+            label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
         }
     }
 }
+
 
 pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
@@ -301,7 +316,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
                     &running_duration_labels_ref,
                 ).await;
             } else if current_version != 0 {
-                update_running_durations(&running_duration_labels_ref).await;
+                update_running_duration_labels(&running_duration_labels_ref).await;
             }
         });
         glib::ControlFlow::Continue

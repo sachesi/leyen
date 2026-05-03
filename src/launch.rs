@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -211,13 +211,16 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
+        let children_map = build_process_children_map();
+        let all_envs = build_all_envs_map();
+
         with_running_registry(|registry| {
             let original_sessions = registry.sessions.clone();
             let mut active_sessions = Vec::new();
             let mut finished_sessions = Vec::new();
 
             for mut session in registry.sessions.drain(..) {
-                if refresh_known_pids(&mut session).is_empty() {
+                if refresh_known_pids(&mut session, &children_map, &all_envs).is_empty() {
                     finished_sessions.push(session);
                 } else {
                     active_sessions.push(session);
@@ -298,7 +301,7 @@ pub fn start_running_sessions_monitor() {
                 }
                 RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Relaxed);
             }
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     });
 }
@@ -345,8 +348,10 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
     let game_id_clone = game_id.to_string();
     let result = tokio::task::spawn_blocking(move || {
+        let children_map = build_process_children_map();
+        let all_envs = build_all_envs_map();
         let mut session = session;
-        let tracked_pids = refresh_known_pids(&mut session);
+        let tracked_pids = refresh_known_pids(&mut session, &children_map, &all_envs);
         let mut killed_any = false;
 
         let pgid = -(session.pid as i32);
@@ -470,10 +475,12 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
 }
 
 fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
-    let bytes = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let mut file = fs::File::open(format!("/proc/{pid}/environ")).ok()?;
+    let mut buffer = [0u8; 8192];
+    let bytes_read = file.read(&mut buffer).ok()?;
     let mut env = HashMap::new();
 
-    for entry in bytes.split(|byte| *byte == 0) {
+    for entry in buffer[..bytes_read].split(|&byte| byte == 0) {
         if entry.is_empty() {
             continue;
         }
@@ -485,6 +492,50 @@ fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
     }
 
     Some(env)
+}
+
+fn read_process_comm(pid: u32) -> Option<String> {
+    fs::read_to_string(format!("/proc/{pid}/comm")).ok().map(|s| s.trim().to_string())
+}
+
+fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
+    let mut map = HashMap::new();
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return map;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(file_name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(pid) = file_name.parse::<u32>() else {
+            continue;
+        };
+        
+        if pid < 1000 {
+            continue;
+        }
+
+        // Smarter filtering: only read environment for processes that could be part of a game
+        if let Some(comm) = read_process_comm(pid) {
+            let comm_lower = comm.to_lowercase();
+            let looks_like_game = comm_lower.contains("wine") || 
+                                 comm_lower.contains("steam") || 
+                                 comm_lower.contains("proton") || 
+                                 comm_lower.ends_with(".exe") ||
+                                 comm_lower.contains("leyen");
+
+            if looks_like_game {
+                if let Some(env) = read_process_env(pid) {
+                    if env.contains_key("WINEPREFIX") || env.contains_key("GAMEID") {
+                        map.insert(pid, env);
+                    }
+                }
+            }
+        }
+    }
+
+    map
 }
 
 fn build_process_children_map() -> HashMap<u32, Vec<u32>> {
@@ -509,11 +560,27 @@ fn build_process_children_map() -> HashMap<u32, Vec<u32>> {
 }
 
 fn is_pid_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    let after_name = match stat.rsplit_once(") ") {
+        Some((_, after)) => after,
+        None => return false,
+    };
+    let mut fields = after_name.split_whitespace();
+    let state = match fields.next() {
+        Some(s) => s,
+        None => return false,
+    };
+    
+    // Process is alive if it exists and its state is not 'Z' (Zombie)
+    state != "Z"
 }
 
-fn collect_descendant_pids(roots: &HashSet<u32>) -> HashSet<u32> {
-    let children_map = build_process_children_map();
+fn collect_descendant_pids(
+    roots: &HashSet<u32>,
+    children_map: &HashMap<u32, Vec<u32>>,
+) -> HashSet<u32> {
     let mut visited = roots.clone();
     let mut queue: VecDeque<u32> = roots.iter().copied().collect();
 
@@ -557,46 +624,40 @@ fn process_matches_runtime(
 fn collect_runtime_matched_pids(
     match_prefix_path: Option<&str>,
     match_game_id: Option<&str>,
+    all_envs: &HashMap<u32, HashMap<String, String>>,
 ) -> HashSet<u32> {
     let mut matched = HashSet::new();
-    let Ok(entries) = fs::read_dir("/proc") else {
-        return matched;
-    };
 
-    for entry in entries.flatten() {
-        let Ok(file_name) = entry.file_name().into_string() else {
-            continue;
-        };
-        let Ok(pid) = file_name.parse::<u32>() else {
-            continue;
-        };
-        let Some(env) = read_process_env(pid) else {
-            continue;
-        };
-        if process_matches_runtime(&env, match_prefix_path, match_game_id) {
-            matched.insert(pid);
+    for (pid, env) in all_envs {
+        if process_matches_runtime(env, match_prefix_path, match_game_id) {
+            matched.insert(*pid);
         }
     }
 
     matched
 }
 
-fn refresh_known_pids(session: &mut RunningGameSession) -> HashSet<u32> {
+fn refresh_known_pids(
+    session: &mut RunningGameSession,
+    children_map: &HashMap<u32, Vec<u32>>,
+    all_envs: &HashMap<u32, HashMap<String, String>>,
+) -> HashSet<u32> {
     let mut roots: HashSet<u32> = session.known_pids.iter().copied().collect();
     roots.insert(session.pid);
 
     let alive_roots: HashSet<u32> = roots.into_iter().filter(|pid| is_pid_alive(*pid)).collect();
-    let mut discovered = collect_descendant_pids(&alive_roots);
+    let mut discovered = collect_descendant_pids(&alive_roots, children_map);
 
     if alive_roots.is_empty() {
         let matched = collect_runtime_matched_pids(
             session.match_prefix_path.as_deref(),
             session.match_game_id.as_deref(),
+            all_envs,
         );
         discovered.extend(matched);
 
         if !discovered.is_empty() {
-            discovered = collect_descendant_pids(&discovered);
+            discovered = collect_descendant_pids(&discovered, children_map);
         }
     }
 

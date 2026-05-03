@@ -1,8 +1,9 @@
+use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write, Read};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use std::sync::{OnceLock, RwLock};
 
 use chrono::Local;
 use crossbeam_channel::{Sender, unbounded};
@@ -24,6 +25,9 @@ pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
 pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
 
 static LOG_SENDER: OnceLock<Sender<LogEntry>> = OnceLock::new();
+static UI_LOG_ENTRIES: OnceLock<RwLock<VecDeque<LogEntry>>> = OnceLock::new();
+static TOTAL_LOG_LINES_PRODUCED: AtomicUsize = AtomicUsize::new(0);
+const MAX_UI_LOGS: usize = 1000; // Reduced to 1000 for better GTK performance
 
 fn log_path() -> PathBuf {
     get_config_dir().join("logs.jsonl")
@@ -77,8 +81,6 @@ impl log::Log for LeyenLogger {
         if let Some(tx) = LOG_SENDER.get() {
             let _ = tx.send(entry);
         }
-
-        eprintln!("[LEYEN] {line}");
     }
 
     fn flush(&self) {}
@@ -87,7 +89,8 @@ impl log::Log for LeyenLogger {
 static LOGGER: LeyenLogger = LeyenLogger;
 
 pub fn init() -> Result<(), log::SetLoggerError> {
-    // Clear logs on fresh launch as requested
+    let _ = UI_LOG_ENTRIES.set(RwLock::new(VecDeque::with_capacity(MAX_UI_LOGS)));
+
     let path = log_path();
     let _ = fs::remove_file(&path);
     let mut old_path = path.clone();
@@ -98,43 +101,52 @@ pub fn init() -> Result<(), log::SetLoggerError> {
     let _ = LOG_SENDER.set(tx);
 
     std::thread::spawn(move || {
+        let path = log_path();
+        let mut file = OpenOptions::new().create(true).append(true).open(&path).ok();
+        let mut lines_since_check = 0;
+
         while let Ok(entry) = rx.recv() {
-            write_log_entry(&entry);
+            // Update memory buffer for UI in the background thread to avoid blocking log callers
+            if let Some(buf) = UI_LOG_ENTRIES.get() {
+                if let Ok(mut entries) = buf.write() {
+                    if entries.len() >= MAX_UI_LOGS {
+                        entries.pop_front();
+                    }
+                    entries.push_back(entry.clone());
+                    TOTAL_LOG_LINES_PRODUCED.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+
+            lines_since_check += 1;
+            if lines_since_check >= 100 {
+                lines_since_check = 0;
+                if let Ok(metadata) = fs::metadata(&path) {
+                    if metadata.len() > MAX_LOG_SIZE {
+                        file = None;
+                        let mut old_path = path.clone();
+                        old_path.set_extension("jsonl.old");
+                        let _ = fs::rename(&path, &old_path);
+                        file = OpenOptions::new().create(true).append(true).open(&path).ok();
+                    }
+                }
+            }
+
+            if file.is_none() {
+                 file = OpenOptions::new().create(true).append(true).open(&path).ok();
+            }
+
+            if let Some(ref mut f) = file {
+                if let Ok(json) = serde_json::to_string(&entry) {
+                    let _ = writeln!(f, "{}", json);
+                }
+            }
         }
     });
 
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
-const MAX_LOG_SIZE: u64 = 2 * 1024 * 1024; // 2MB
-
-fn write_log_entry(entry: &LogEntry) {
-    let path = log_path();
-    
-    // Check for rotation
-    if let Ok(metadata) = fs::metadata(&path) {
-        if metadata.len() > MAX_LOG_SIZE {
-            let mut old_path = path.clone();
-            old_path.set_extension("jsonl.old");
-            let _ = fs::rename(&path, &old_path);
-        }
-    }
-
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            let _ = fs::create_dir_all(parent);
-        }
-    }
-
-    let mut file = match OpenOptions::new().create(true).append(true).open(&path) {
-        Ok(file) => file,
-        Err(_) => return,
-    };
-
-    if let Ok(json) = serde_json::to_string(entry) {
-        let _ = writeln!(file, "{}", json);
-    }
-}
+const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
 
 pub fn apply_log_settings(s: &GlobalSettings) {
     LOG_ERRORS.store(s.log_errors, Ordering::Relaxed);
@@ -142,35 +154,25 @@ pub fn apply_log_settings(s: &GlobalSettings) {
     LOG_OPERATIONS.store(s.log_operations, Ordering::Relaxed);
 }
 
+pub fn get_log_entry_count() -> usize {
+    TOTAL_LOG_LINES_PRODUCED.load(Ordering::Relaxed)
+}
+
 pub fn get_log_entries() -> Vec<LogEntry> {
-    let path = log_path();
-    let mut entries = Vec::new();
-
-    // Try reading .old first if it exists
-    let mut old_path = path.clone();
-    old_path.set_extension("jsonl.old");
-    if let Ok(file) = fs::File::open(&old_path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().flatten() {
-            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-                entries.push(entry);
-            }
-        }
-    }
-
-    if let Ok(file) = fs::File::open(&path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().flatten() {
-            if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-                entries.push(entry);
-            }
-        }
-    }
-
-    entries
+    UI_LOG_ENTRIES.get()
+        .and_then(|buf| buf.read().ok())
+        .map(|entries| entries.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 pub fn clear_log_buffer() {
+    if let Some(buf) = UI_LOG_ENTRIES.get() {
+        if let Ok(mut entries) = buf.write() {
+            entries.clear();
+        }
+    }
+    TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::SeqCst);
+
     let path = log_path();
     let _ = fs::remove_file(&path);
     let mut old_path = path.clone();

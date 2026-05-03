@@ -49,6 +49,7 @@ pub struct RunningGameSnapshot {
     pub pid: u32,
     pub tracked_pid_count: usize,
     pub elapsed_seconds: u64,
+    pub started_at_epoch_seconds: u64,
 }
 
 #[derive(Error, Debug)]
@@ -155,6 +156,7 @@ fn running_sessions_to_snapshots(sessions: &[RunningGameSession]) -> Vec<Running
             pid: session.pid,
             tracked_pid_count: session.known_pids.len(),
             elapsed_seconds: now.saturating_sub(session.started_at_epoch_seconds),
+            started_at_epoch_seconds: session.started_at_epoch_seconds,
         })
         .collect();
 

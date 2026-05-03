@@ -12,7 +12,7 @@ pub use self::root_view::populate_root_view;
 pub use self::group_view::populate_group_view;
 
 use crate::models::{LibraryItem, Game};
-use crate::ui::utils::{running_game_map, find_group, group_running_elapsed_seconds, format_duration_brief, game_is_running};
+use crate::ui::utils::{running_game_map, find_group, group_running_started_at, format_duration_brief, game_is_running};
 use crate::launch::{stop_game, launch_game};
 
 pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
@@ -33,21 +33,28 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
 
 pub async fn update_running_duration_labels(ui: &LibraryUi) {
     let snapshots = running_game_map().await;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+
     if ui.current_group_id.borrow().is_some() {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
+                let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
                 label.set_label(&format!(
                     "Running for {}",
-                    format_duration_brief(snapshot.elapsed_seconds)
+                    format_duration_brief(elapsed)
                 ));
             }
         }
     } else {
         for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
+                let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
                 label.set_label(&format!(
                     "Running for {}",
-                    format_duration_brief(snapshot.elapsed_seconds)
+                    format_duration_brief(elapsed)
                 ));
             }
         }
@@ -55,15 +62,16 @@ pub async fn update_running_duration_labels(ui: &LibraryUi) {
         let items = ui.library_state.borrow();
         for item in items.iter() {
             if let LibraryItem::Group(group) = item
-                && let Some(elapsed_seconds) = group_running_elapsed_seconds(group, &snapshots)
+                && let Some(started_at) = group_running_started_at(group, &snapshots)
                 && let Some(label) = ui
                     .root_group_running_duration_labels
                     .borrow()
                     .get(&group.id)
             {
+                let elapsed = now.saturating_sub(started_at);
                 label.set_label(&format!(
                     "Running for {}",
-                    format_duration_brief(elapsed_seconds)
+                    format_duration_brief(elapsed)
                 ));
             }
         }

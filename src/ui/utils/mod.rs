@@ -141,15 +141,31 @@ pub fn root_library_item_cmp(
 pub fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
     running_games
         .get(game_id)
-        .map(|snapshot| snapshot.elapsed_seconds)
+        .map(|snapshot| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0);
+            now.saturating_sub(snapshot.started_at_epoch_seconds)
+        })
 }
 
 pub fn group_running_elapsed_seconds(group: &GameGroup, running_games: &RunningGameMap) -> Option<u64> {
+    group_running_started_at(group, running_games).map(|started_at| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        now.saturating_sub(started_at)
+    })
+}
+
+pub fn group_running_started_at(group: &GameGroup, running_games: &RunningGameMap) -> Option<u64> {
     group
         .games
         .iter()
-        .filter_map(|game| running_game_elapsed_seconds(running_games, &game.id))
-        .max()
+        .filter_map(|game| running_games.get(&game.id).map(|s| s.started_at_epoch_seconds))
+        .min()
 }
 
 pub fn group_last_played(group: &GameGroup) -> u64 {

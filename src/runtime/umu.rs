@@ -72,79 +72,95 @@ pub fn get_local_umu_run_path() -> String {
     format!("{}/umu/umu-run", get_umu_core_dir())
 }
 
+use std::sync::OnceLock;
+
+static UMU_RUN_PATH: OnceLock<String> = OnceLock::new();
+static UMU_RUN_AVAILABLE: OnceLock<bool> = OnceLock::new();
+static WINETRICKS_PATH: OnceLock<String> = OnceLock::new();
+static WINETRICKS_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
 /// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 pub fn get_umu_run_path() -> String {
-    // On NixOS, we strictly prefer the system-wide binary as local copies
-    // are unlikely to work without patching.
-    if is_nixos() {
-        return "umu-run".to_string();
-    }
+    UMU_RUN_PATH
+        .get_or_init(|| {
+            if is_nixos() {
+                return "umu-run".to_string();
+            }
 
-    if std::process::Command::new("which")
-        .arg("umu-run")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return "umu-run".to_string();
-    }
+            if std::process::Command::new("which")
+                .arg("umu-run")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return "umu-run".to_string();
+            }
 
-    let local_path = get_local_umu_run_path();
-    if std::path::Path::new(&local_path).exists() {
-        return local_path;
-    }
+            let local_path = get_local_umu_run_path();
+            if std::path::Path::new(&local_path).exists() {
+                return local_path;
+            }
 
-    "umu-run".to_string()
+            "umu-run".to_string()
+        })
+        .clone()
 }
 
 /// Returns `true` when `umu-run` is actually available (system PATH or local
 /// install).  Unlike `get_umu_run_path()` this does not return a fallback
 /// string when umu-run is absent.
 pub fn is_umu_run_available() -> bool {
-    if std::process::Command::new("which")
-        .arg("umu-run")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return true;
-    }
+    *UMU_RUN_AVAILABLE.get_or_init(|| {
+        if std::process::Command::new("which")
+            .arg("umu-run")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return true;
+        }
 
-    // On NixOS, we don't consider the local copy a valid alternative
-    if is_nixos() {
-        return false;
-    }
+        if is_nixos() {
+            return false;
+        }
 
-    std::path::Path::new(&get_local_umu_run_path()).exists()
+        std::path::Path::new(&get_local_umu_run_path()).exists()
+    })
 }
 
 /// Returns the command / path to use when invoking `winetricks`.
 /// Prefers the system-wide binary.
 pub fn get_winetricks_path() -> String {
-    if is_nixos() {
-        return "winetricks".to_string();
-    }
+    WINETRICKS_PATH
+        .get_or_init(|| {
+            if is_nixos() {
+                return "winetricks".to_string();
+            }
 
-    if std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return "winetricks".to_string();
-    }
+            if std::process::Command::new("which")
+                .arg("winetricks")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return "winetricks".to_string();
+            }
 
-    "winetricks".to_string()
+            "winetricks".to_string()
+        })
+        .clone()
 }
 
 /// Returns `true` when `winetricks` is actually available.
 pub fn is_winetricks_available() -> bool {
-    std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    *WINETRICKS_AVAILABLE.get_or_init(|| {
+        std::process::Command::new("which")
+            .arg("winetricks")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
 }
 
 /// Checks whether `umu-run` is available.

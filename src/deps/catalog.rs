@@ -377,7 +377,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
                 file_name: "vcredist2022_x86.exe",
-                sha256: Some("6fef386d42639089e802334f5906f0e2f5979c5040e3a6c9d0d3b6f0e2f5979c"), // Example hash
+                sha256: None,
             },
         },
         DepStep {
@@ -393,7 +393,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
             action: DepStepAction::DownloadFile {
                 url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
                 file_name: "vcredist2022_x64.exe",
-                sha256: Some("a5e2f386d42639089e802334f5906f0e2f5979c5040e3a6c9d0d3b6f0e2f5979"), // Example hash
+                sha256: None,
             },
         },
         DepStep {

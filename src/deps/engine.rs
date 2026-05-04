@@ -671,12 +671,11 @@ pub fn uninstall_dep_async(
                 CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
             )
         });
-        if requires_umu {
-            if let Err(message) = ensure_umu_ready(&overlay, false).await {
+        if requires_umu
+            && let Err(message) = ensure_umu_ready(&overlay, false).await {
                 on_finish(false, Some(message));
                 return;
             }
-        }
 
         info!(
             "[dep:{}] starting removal ({} cleanup actions)",

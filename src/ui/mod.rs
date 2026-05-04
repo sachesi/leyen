@@ -16,9 +16,6 @@ use gtk4::glib;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-pub use self::components::game_card::build_game_card;
-pub use self::components::group_card::build_group_card;
-pub use self::components::icon::build_library_icon;
 pub use self::library::*;
 pub use self::utils::*;
 
@@ -37,7 +34,8 @@ pub fn build_ui(app: &adw::Application) {
          .library-icon-media {{ border-radius: {1}px; }} \
          .card {{ border-radius: 12px; transition: all 200ms ease; }} \
          .card:hover {{ background-color: alpha(@window_fg_color, 0.05); }} \
-         .running-card {{ border: 2px solid @accent_bg_color; }}",
+         .running-card {{ border: 2px solid @accent_bg_color; }} \
+         .running-badge {{ background: @accent_bg_color; border-radius: 50%; min-width: 12px; min-height: 12px; }}",
         LIBRARY_ICON_SIZE, LIBRARY_ICON_CORNER_RADIUS
     ));
     if let Some(display) = gtk4::gdk::Display::default() {
@@ -221,6 +219,17 @@ pub fn build_ui(app: &adw::Application) {
         .build();
     toolbar_view.add_top_bar(&download_banner);
     toolbar_view.set_content(Some(&toast_overlay));
+
+    let banner_for_update = download_banner.clone();
+    glib::timeout_add_seconds_local(1, move || {
+        let downloading = UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
+        banner_for_update.set_revealed(downloading);
+        if downloading {
+            glib::ControlFlow::Continue
+        } else {
+            glib::ControlFlow::Break
+        }
+    });
 
     let window = adw::ApplicationWindow::builder()
         .application(app)

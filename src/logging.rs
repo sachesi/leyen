@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -92,10 +92,11 @@ pub fn init() -> Result<(), log::SetLoggerError> {
     let _ = UI_LOG_ENTRIES.set(RwLock::new(VecDeque::with_capacity(MAX_UI_LOGS)));
 
     let path = log_path();
-    let _ = fs::remove_file(&path);
     let mut old_path = path.clone();
     old_path.set_extension("jsonl.old");
-    let _ = fs::remove_file(old_path);
+    if path.exists() {
+        let _ = fs::rename(&path, &old_path);
+    }
 
     let (tx, rx) = unbounded::<LogEntry>();
     let _ = LOG_SENDER.set(tx);
@@ -111,21 +112,20 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
         while let Ok(entry) = rx.recv() {
             // Update memory buffer for UI in the background thread to avoid blocking log callers
-            if let Some(buf) = UI_LOG_ENTRIES.get() {
-                if let Ok(mut entries) = buf.write() {
+            if let Some(buf) = UI_LOG_ENTRIES.get()
+                && let Ok(mut entries) = buf.write() {
                     if entries.len() >= MAX_UI_LOGS {
                         entries.pop_front();
                     }
                     entries.push_back(entry.clone());
                     TOTAL_LOG_LINES_PRODUCED.fetch_add(1, Ordering::SeqCst);
                 }
-            }
 
             lines_since_check += 1;
             if lines_since_check >= 100 {
                 lines_since_check = 0;
-                if let Ok(metadata) = fs::metadata(&path) {
-                    if metadata.len() > MAX_LOG_SIZE {
+                if let Ok(metadata) = fs::metadata(&path)
+                    && metadata.len() > MAX_LOG_SIZE {
                         file = None;
                         let mut old_path = path.clone();
                         old_path.set_extension("jsonl.old");
@@ -136,7 +136,6 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                             .open(&path)
                             .ok();
                     }
-                }
             }
 
             if file.is_none() {
@@ -147,11 +146,10 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                     .ok();
             }
 
-            if let Some(ref mut f) = file {
-                if let Ok(json) = serde_json::to_string(&entry) {
+            if let Some(ref mut f) = file
+                && let Ok(json) = serde_json::to_string(&entry) {
                     let _ = writeln!(f, "{}", json);
                 }
-            }
         }
     });
 
@@ -179,11 +177,10 @@ pub fn get_log_entries() -> Vec<LogEntry> {
 }
 
 pub fn clear_log_buffer() {
-    if let Some(buf) = UI_LOG_ENTRIES.get() {
-        if let Ok(mut entries) = buf.write() {
+    if let Some(buf) = UI_LOG_ENTRIES.get()
+        && let Ok(mut entries) = buf.write() {
             entries.clear();
         }
-    }
     TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::SeqCst);
 
     let path = log_path();

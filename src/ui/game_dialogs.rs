@@ -62,11 +62,11 @@ fn build_proton_choices(
 }
 
 fn build_env_row(title: &str, initial_value: bool) -> adw::SwitchRow {
-    let row = adw::SwitchRow::builder()
+    
+    adw::SwitchRow::builder()
         .title(title)
         .active(initial_value)
-        .build();
-    row
+        .build()
 }
 
 fn build_icon_file_filter() -> gtk4::FileFilter {
@@ -569,8 +569,14 @@ pub async fn show_add_library_item_dialog(
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
+        let filter = gtk4::FileFilter::new();
+        filter.set_name(Some("Windows programs"));
+        for suffix in ["exe", "msi", "bat", "cmd", "com"] {
+            filter.add_suffix(suffix);
+        }
         let file_dialog = gtk4::FileDialog::builder()
             .title("Select Executable")
+            .default_filter(&filter)
             .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -1707,8 +1713,14 @@ pub async fn show_edit_game_dialog(
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
+        let filter = gtk4::FileFilter::new();
+        filter.set_name(Some("Windows programs"));
+        for suffix in ["exe", "msi", "bat", "cmd", "com"] {
+            filter.add_suffix(suffix);
+        }
         let file_dialog = gtk4::FileDialog::builder()
             .title("Select Executable")
+            .default_filter(&filter)
             .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result

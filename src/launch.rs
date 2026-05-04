@@ -216,7 +216,9 @@ async fn finalize_finished_session(session: &RunningGameSession) {
     };
 
     let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds).await;
-    let _ = record_game_launch_result(&session.game_id, elapsed_seconds, status).await;
+    if !record_game_launch_result(&session.game_id, elapsed_seconds, status).await {
+        warn!(target: &format!("game:{}", session.game_id), "Failed to record launch result");
+    }
 
     info!(
         target: &format!("game:{}", session.game_id),
@@ -234,7 +236,7 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
-        let children_map = build_process_children_map();
+        let children_map = build_process_children_map_cached();
         let all_envs = build_all_envs_map();
 
         with_running_registry(|registry| {
@@ -387,8 +389,10 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     };
 
     let game_id_clone = game_id.to_string();
-    let result = tokio::task::spawn_blocking(move || {
-        let children_map = build_process_children_map();
+    
+
+    tokio::task::spawn_blocking(move || {
+        let children_map = build_process_children_map_cached();
         let all_envs = build_all_envs_map();
         let mut session = session;
         let tracked_pids = refresh_known_pids(&mut session, &children_map, &all_envs);
@@ -405,8 +409,8 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         }
 
         let group_error = std::io::Error::last_os_error();
-        for tracked_pid in tracked_pids {
-            if unsafe { libc::kill(tracked_pid as i32, libc::SIGKILL) } == 0 {
+        for tracked_pid in &tracked_pids {
+            if unsafe { libc::kill(*tracked_pid as i32, libc::SIGKILL) } == 0 {
                 killed_any = true;
             }
         }
@@ -421,6 +425,10 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
             return Ok(true);
         }
 
+        if tracked_pids.is_empty() {
+            return Ok(true);
+        }
+
         Err(LaunchError::Other(format!(
             "Failed to stop pid {}: {}",
             session.pid,
@@ -432,9 +440,7 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         )))
     })
     .await
-    .unwrap();
-
-    result
+    .unwrap()
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -572,16 +578,33 @@ fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
                 || comm_lower.ends_with(".exe")
                 || comm_lower.contains("leyen");
 
-            if looks_like_game {
-                if let Some(env) = read_process_env(pid) {
-                    if env.contains_key("WINEPREFIX") || env.contains_key("GAMEID") {
+            if looks_like_game
+                && let Some(env) = read_process_env(pid)
+                    && (env.contains_key("WINEPREFIX") || env.contains_key("GAMEID")) {
                         map.insert(pid, env);
                     }
-                }
-            }
         }
     }
 
+    map
+}
+
+static PROCESS_CHILDREN_MAP_CACHE: OnceLock<RwLock<(HashMap<u32, Vec<u32>>, u64)>> = OnceLock::new();
+
+fn get_process_children_cache() -> &'static RwLock<(HashMap<u32, Vec<u32>>, u64)> {
+    PROCESS_CHILDREN_MAP_CACHE.get_or_init(|| RwLock::new((HashMap::new(), 0)))
+}
+
+fn build_process_children_map_cached() -> HashMap<u32, Vec<u32>> {
+    let now = current_epoch_seconds();
+    if let Ok(cache) = get_process_children_cache().read()
+        && now.saturating_sub(cache.1) < 1 {
+            return cache.0.clone();
+        }
+    let map = build_process_children_map();
+    if let Ok(mut cache) = get_process_children_cache().write() {
+        *cache = (map.clone(), now);
+    }
     map
 }
 
@@ -1010,7 +1033,9 @@ async fn launch_game_managed(
                 ));
             }
 
-            let _ = record_game_launch_start(&game.id, started_at_epoch_seconds);
+            if !record_game_launch_start(&game.id, started_at_epoch_seconds).await {
+                warn!(target: &format!("game:{}", game.id), "Failed to record game launch start");
+            }
 
             if capture_output && let Some(stdout) = child.stdout.take() {
                 pipe_process_output(stdout, game.id.clone(), game.title.clone(), "stdout");

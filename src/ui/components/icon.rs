@@ -1,7 +1,7 @@
-use std::path::Path;
-use image::imageops::FilterType;
+use crate::ui::{LIBRARY_ICON_CORNER_RADIUS, LIBRARY_ICON_SIZE};
 use gtk4::prelude::*;
-use crate::ui::{LIBRARY_ICON_SIZE, LIBRARY_ICON_CORNER_RADIUS};
+use image::imageops::FilterType;
+use std::path::Path;
 
 pub fn build_library_icon(
     icon_path: Option<std::path::PathBuf>,
@@ -23,7 +23,8 @@ pub fn build_library_icon(
     wrapper.set_overflow(gtk4::Overflow::Hidden);
     wrapper.add_css_class("library-icon-frame");
 
-    let icon_widget: gtk4::Widget = if let Some(path) = icon_path.as_deref().filter(|path| path.is_file())
+    let icon_widget: gtk4::Widget = if let Some(path) =
+        icon_path.as_deref().filter(|path| path.is_file())
         && let Some(icon) = build_scaled_art_icon(path)
     {
         icon.upcast()

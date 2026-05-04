@@ -1,10 +1,10 @@
+pub mod components;
 pub mod deps_dialog;
 pub mod game_dialogs;
+pub mod library;
 pub mod log_window;
 pub mod running_games;
 pub mod settings;
-pub mod library;
-pub mod components;
 pub mod utils;
 
 use libadwaita as adw;
@@ -13,18 +13,16 @@ use adw::prelude::*;
 use gtk4::gio;
 use gtk4::glib;
 
-use std::rc::Rc;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
-pub use self::library::*;
-pub use self::utils::*;
-pub use self::components::icon::build_library_icon;
 pub use self::components::game_card::build_game_card;
 pub use self::components::group_card::build_group_card;
+pub use self::components::icon::build_library_icon;
+pub use self::library::*;
+pub use self::utils::*;
 
-use self::game_dialogs::{
-    AddLibraryItemKind, show_add_library_item_dialog,
-};
+use self::game_dialogs::{AddLibraryItemKind, show_add_library_item_dialog};
 use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
@@ -96,15 +94,14 @@ pub fn build_ui(app: &adw::Application) {
         .placeholder_text("Search games...")
         .build();
 
-    let search_bar = gtk4::SearchBar::builder()
-        .child(&search_entry)
-        .build();
+    let search_bar = gtk4::SearchBar::builder().child(&search_entry).build();
 
     header.pack_end(&menu_btn);
     header.pack_end(&add_button_stack);
     header.pack_end(&search_btn);
 
-    search_bar.bind_property("search-mode-enabled", &search_btn, "active")
+    search_bar
+        .bind_property("search-mode-enabled", &search_btn, "active")
         .sync_create()
         .bidirectional()
         .build();
@@ -264,26 +261,40 @@ pub fn build_ui(app: &adw::Application) {
     let overlay_c = toast_overlay.clone();
     let window_c = window.clone();
     search_entry.connect_search_changed(move |_| {
-        let u = ui_c.clone(); let o = overlay_c.clone(); let w = window_c.clone();
-        glib::spawn_future_local(async move { refresh_library_view(&u, &o, &w).await; });
+        let u = ui_c.clone();
+        let o = overlay_c.clone();
+        let w = window_c.clone();
+        glib::spawn_future_local(async move {
+            refresh_library_view(&u, &o, &w).await;
+        });
     });
 
-    let ui_c = ui.clone(); let overlay_c = toast_overlay.clone(); let window_c = window.clone(); glib::spawn_future_local(async move { refresh_library_view(&ui_c, &overlay_c, &window_c).await; });
+    let ui_c = ui.clone();
+    let overlay_c = toast_overlay.clone();
+    let window_c = window.clone();
+    glib::spawn_future_local(async move {
+        refresh_library_view(&ui_c, &overlay_c, &window_c).await;
+    });
 
     let ui_clone = ui.clone();
     let overlay_clone = toast_overlay.clone();
     let window_clone = window.clone();
     back_btn.connect_clicked(move |_| {
         *ui_clone.current_group_id.borrow_mut() = None;
-        let ui = ui_clone.clone(); let overlay = overlay_clone.clone(); let window = window_clone.clone(); glib::spawn_future_local(async move { refresh_library_view(&ui, &overlay, &window).await; });
+        let ui = ui_clone.clone();
+        let overlay = overlay_clone.clone();
+        let window = window_clone.clone();
+        glib::spawn_future_local(async move {
+            refresh_library_view(&ui, &overlay, &window).await;
+        });
     });
 
     let add_game_action = gio::SimpleAction::new("add-game", None);
     let window_clone = window.clone();
     let ui_clone = ui.clone();
-    let overlay_clone = toast_overlay.clone();
     add_game_action.connect_activate(move |_, _| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
         glib::spawn_future_local(async move {
             show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Game).await;
         });
@@ -292,9 +303,9 @@ pub fn build_ui(app: &adw::Application) {
 
     let window_clone = window.clone();
     let ui_clone = ui.clone();
-    let overlay_clone = toast_overlay.clone();
     add_game_btn.connect_clicked(move |_| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
         glib::spawn_future_local(async move {
             show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Game).await;
         });
@@ -303,9 +314,9 @@ pub fn build_ui(app: &adw::Application) {
     let add_group_action = gio::SimpleAction::new("add-group", None);
     let window_clone = window.clone();
     let ui_clone = ui.clone();
-    let overlay_clone = toast_overlay.clone();
     add_group_action.connect_activate(move |_, _| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone();
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
         glib::spawn_future_local(async move {
             show_add_library_item_dialog(&w, &u, AddLibraryItemKind::Group).await;
         });
@@ -317,11 +328,21 @@ pub fn build_ui(app: &adw::Application) {
     let overlay_refresh = toast_overlay.clone();
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
+        if crate::instance::check_and_clear_show_signal() {
+            window_refresh.set_visible(true);
+            window_refresh.present();
+        }
+
+        if !window_refresh.is_visible() && !crate::launch::is_any_game_running() {
+            window_refresh.close();
+            return glib::ControlFlow::Break;
+        }
+
         let ui_refresh = ui_refresh.clone();
         let overlay_refresh = overlay_refresh.clone();
         let window_refresh = window_refresh.clone();
         let running_state_version = running_state_version.clone();
-        
+
         glib::spawn_future_local(async move {
             let current_version = crate::launch::running_games_version().await;
             if current_version != running_state_version.get() {
@@ -336,28 +357,50 @@ pub fn build_ui(app: &adw::Application) {
     let prefs_action = gio::SimpleAction::new("show-preferences", None);
     let window_clone = window.clone();
     prefs_action.connect_activate(move |_, _| {
-        let window = window_clone.clone(); glib::spawn_future_local(async move { show_global_settings(&window).await; });
+        let window = window_clone.clone();
+        glib::spawn_future_local(async move {
+            show_global_settings(&window).await;
+        });
     });
     window.add_action(&prefs_action);
 
     let logs_action = gio::SimpleAction::new("show-logs", None);
     let window_clone_logs = window.clone();
     logs_action.connect_activate(move |_, _| {
-        let window = window_clone_logs.clone(); glib::spawn_future_local(async move { show_log_window(&window, None).await; });
+        let window = window_clone_logs.clone();
+        glib::spawn_future_local(async move {
+            show_log_window(&window, None).await;
+        });
     });
     window.add_action(&logs_action);
 
     let running_games_action = gio::SimpleAction::new("show-running-games", None);
     let window_clone_running = window.clone();
     running_games_action.connect_activate(move |_, _| {
-        let window = window_clone_running.clone(); glib::spawn_future_local(async move { show_running_games_window(&window).await; });
+        let window = window_clone_running.clone();
+        glib::spawn_future_local(async move {
+            show_running_games_window(&window).await;
+        });
     });
     window.add_action(&running_games_action);
+
+    window.connect_close_request(move |win| {
+        if crate::launch::is_any_game_running() {
+            win.set_visible(false);
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
 
     window.present();
 
     let open_logs_on_start = crate::cli::take_open_logs_on_start();
     if open_logs_on_start {
-        glib::spawn_future_local(async move { glib::spawn_future_local(async move { show_log_window(&window, None).await; }); });
+        glib::spawn_future_local(async move {
+            glib::spawn_future_local(async move {
+                show_log_window(&window, None).await;
+            });
+        });
     }
 }

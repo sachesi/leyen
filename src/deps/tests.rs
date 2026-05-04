@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::engine::{execute_dep_step, DepStep, DepStepAction};
+    use super::super::engine::{DepStep, DepStepAction, execute_dep_step};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -22,7 +22,7 @@ mod tests {
 
         // SHA256 of "hello world" is b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
         let valid_sha = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
-        
+
         let step = DepStep {
             description: "Test SHA",
             action: DepStepAction::DownloadFile {

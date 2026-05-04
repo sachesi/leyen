@@ -1,16 +1,19 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use gtk4::glib;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::models::Game;
 use crate::icons::game_icon_file;
+use crate::models::Game;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
-use crate::ui::utils::{game_is_running, running_game_elapsed_seconds, format_playtime, format_duration_brief, format_last_played, RunningGameMap};
-use crate::ui::game_dialogs::{show_edit_game_dialog, show_delete_confirmation};
+use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_game_dialog};
 use crate::ui::handle_game_primary_action;
+use crate::ui::utils::{
+    RunningGameMap, format_duration_brief, format_last_played, format_playtime, game_is_running,
+    running_game_elapsed_seconds,
+};
 
 pub fn build_game_card(
     game: &Game,
@@ -106,7 +109,11 @@ pub fn build_game_card(
     let game_clone = game.clone();
     let overlay_clone = overlay.clone();
     gesture.connect_pressed(move |_, _, _, _| {
-        let game = game_clone.clone(); let overlay = overlay_clone.clone(); glib::spawn_future_local(async move { handle_game_primary_action(&game, &overlay).await; });
+        let game = game_clone.clone();
+        let overlay = overlay_clone.clone();
+        glib::spawn_future_local(async move {
+            handle_game_primary_action(&game, &overlay).await;
+        });
     });
     open_area.add_controller(gesture);
 
@@ -146,7 +153,11 @@ pub fn build_game_card(
     let game_clone = game.clone();
     let overlay_clone = overlay.clone();
     play_btn.connect_clicked(move |_| {
-        let game = game_clone.clone(); let overlay = overlay_clone.clone(); glib::spawn_future_local(async move { handle_game_primary_action(&game, &overlay).await; });
+        let game = game_clone.clone();
+        let overlay = overlay_clone.clone();
+        glib::spawn_future_local(async move {
+            handle_game_primary_action(&game, &overlay).await;
+        });
     });
 
     let game_clone = game.clone();
@@ -154,7 +165,13 @@ pub fn build_game_card(
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
     edit_btn.connect_clicked(move |_| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let g = game_clone.clone(); glib::spawn_future_local(async move { show_edit_game_dialog(&w, &u, &o, &g).await; });
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
+        let o = overlay_clone.clone();
+        let g = game_clone.clone();
+        glib::spawn_future_local(async move {
+            show_edit_game_dialog(&w, &u, &o, &g).await;
+        });
     });
 
     let ui_clone = ui.clone();
@@ -162,7 +179,13 @@ pub fn build_game_card(
     let window_clone = window.clone();
     let game_id = game.id.clone();
     delete_btn.connect_clicked(move |_| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let gid = game_id.clone(); glib::spawn_future_local(async move { show_delete_confirmation(&w, &u, &o, &gid).await; });
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
+        let o = overlay_clone.clone();
+        let gid = game_id.clone();
+        glib::spawn_future_local(async move {
+            show_delete_confirmation(&w, &u, &o, &gid).await;
+        });
     });
 
     button_box.append(&edit_btn);

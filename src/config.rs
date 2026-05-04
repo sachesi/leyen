@@ -1,7 +1,7 @@
+use directories::ProjectDirs;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use directories::ProjectDirs;
 
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
@@ -100,7 +100,9 @@ pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> Globa
             settings.default_prefix_path = fresh.default_prefix_path;
         }
         settings
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     if auto_install_proton && settings.available_proton_versions.len() <= 1 {
         crate::runtime::check_or_install_protonge();
@@ -119,7 +121,9 @@ pub async fn save_settings(settings: GlobalSettings) {
         if let Ok(data) = toml::to_string_pretty(&settings) {
             let _ = fs::write(path, data);
         }
-    }).await.ok();
+    })
+    .await
+    .ok();
 }
 
 pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {
@@ -354,7 +358,9 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
 pub fn is_valid_leyen_id(id: &str) -> bool {
     id.starts_with(LEYEN_ID_PREFIX)
         && id.len() == LEYEN_ID_PREFIX.len() + LEYEN_ID_DIGITS
-        && id[LEYEN_ID_PREFIX.len()..].chars().all(|c| c.is_ascii_digit())
+        && id[LEYEN_ID_PREFIX.len()..]
+            .chars()
+            .all(|c| c.is_ascii_digit())
 }
 
 pub fn effective_game_id(game: &Game) -> String {

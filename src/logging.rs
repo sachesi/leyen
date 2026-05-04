@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use chrono::Local;
@@ -66,7 +66,7 @@ impl log::Log for LeyenLogger {
 
         let message = record.args().to_string();
         let module = record.module_path().unwrap_or("unknown");
-        
+
         let line = match &game_id {
             Some(id) => format!("[{level_str}] [{module}] [game:{id}] {message}"),
             None => format!("[{level_str}] [{module}] {message}"),
@@ -102,7 +102,11 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
     std::thread::spawn(move || {
         let path = log_path();
-        let mut file = OpenOptions::new().create(true).append(true).open(&path).ok();
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .ok();
         let mut lines_since_check = 0;
 
         while let Ok(entry) = rx.recv() {
@@ -126,13 +130,21 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                         let mut old_path = path.clone();
                         old_path.set_extension("jsonl.old");
                         let _ = fs::rename(&path, &old_path);
-                        file = OpenOptions::new().create(true).append(true).open(&path).ok();
+                        file = OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                            .ok();
                     }
                 }
             }
 
             if file.is_none() {
-                 file = OpenOptions::new().create(true).append(true).open(&path).ok();
+                file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .ok();
             }
 
             if let Some(ref mut f) = file {
@@ -159,7 +171,8 @@ pub fn get_log_entry_count() -> usize {
 }
 
 pub fn get_log_entries() -> Vec<LogEntry> {
-    UI_LOG_ENTRIES.get()
+    UI_LOG_ENTRIES
+        .get()
         .and_then(|buf| buf.read().ok())
         .map(|entries| entries.iter().cloned().collect())
         .unwrap_or_default()

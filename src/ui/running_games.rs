@@ -1,6 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::cell::RefCell;
 
 use libadwaita as adw;
 
@@ -117,10 +117,7 @@ async fn rebuild_running_games(
         let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
 
         let runtime_label = gtk4::Label::builder()
-            .label(format!(
-                "Running for {}",
-                format_duration_brief(elapsed)
-            ))
+            .label(format!("Running for {}", format_duration_brief(elapsed)))
             .xalign(0.0)
             .css_classes(["caption", "accent"])
             .build();
@@ -152,7 +149,11 @@ async fn rebuild_running_games(
         let game_id_for_logs = snapshot.game_id.clone();
         let parent_for_logs = parent.clone();
         logs_btn.connect_clicked(move |_| {
-            let parent = parent_for_logs.clone(); let game_id = game_id_for_logs.clone(); glib::spawn_future_local(async move { show_log_window(&parent, Some(&game_id)).await; });
+            let parent = parent_for_logs.clone();
+            let game_id = game_id_for_logs.clone();
+            glib::spawn_future_local(async move {
+                show_log_window(&parent, Some(&game_id)).await;
+            });
         });
 
         let overlay_for_stop = overlay.clone();
@@ -166,12 +167,12 @@ async fn rebuild_running_games(
                     Ok(true) => {}
                     Ok(false) => overlay.add_toast(adw::Toast::new("Game is no longer running")),
                     Err(err) => {
-                        overlay.add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err)));
+                        overlay
+                            .add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err)));
                     }
                 }
             });
         });
-
 
         actions.append(&logs_btn);
         actions.append(&stop_btn);
@@ -207,7 +208,6 @@ pub async fn update_running_duration_labels(
     }
 }
 
-
 pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
         static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = std::cell::RefCell::new(None);
@@ -241,7 +241,6 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         .margin_end(16)
         .build();
 
-
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
@@ -271,15 +270,13 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     toolbar_view.set_content(Some(&overlay));
     window.set_content(Some(&toolbar_view));
 
-    let lbox = list_box.clone(); let cstack = content_stack.clone(); let ov = overlay.clone(); let p = parent.clone(); let rdl = running_duration_labels.clone();
+    let lbox = list_box.clone();
+    let cstack = content_stack.clone();
+    let ov = overlay.clone();
+    let p = parent.clone();
+    let rdl = running_duration_labels.clone();
     glib::spawn_future_local(async move {
-        rebuild_running_games(
-            &lbox,
-            &cstack,
-            &ov,
-            &p,
-            &rdl,
-        ).await;
+        rebuild_running_games(&lbox, &cstack, &ov, &p, &rdl).await;
     });
     window.present();
 
@@ -314,7 +311,8 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
                     &overlay_ref,
                     &parent_ref,
                     &running_duration_labels_ref,
-                ).await;
+                )
+                .await;
             } else if current_version != 0 {
                 update_running_duration_labels(&running_duration_labels_ref).await;
             }

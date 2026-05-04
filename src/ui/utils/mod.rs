@@ -1,6 +1,6 @@
-use std::cmp::Ordering;
-use crate::models::{Game, GameGroup, LibraryItem};
 use crate::launch::RunningGameSnapshot;
+use crate::models::{Game, GameGroup, LibraryItem};
+use std::cmp::Ordering;
 
 pub type RunningGameMap = std::collections::HashMap<String, RunningGameSnapshot>;
 
@@ -8,7 +8,8 @@ pub const LIST_PAGE_PRIMARY: &str = "primary";
 pub const LIST_PAGE_SECONDARY: &str = "secondary";
 
 pub async fn running_game_map() -> RunningGameMap {
-    crate::launch::running_games_snapshot().await
+    crate::launch::running_games_snapshot()
+        .await
         .into_iter()
         .map(|snapshot| (snapshot.game_id.clone(), snapshot))
         .collect()
@@ -33,7 +34,11 @@ pub fn next_swap_list_box<'a>(
     }
 }
 
-pub fn finish_list_swap(list_stack: &gtk4::Stack, showing_primary: &std::cell::Cell<bool>, visible_page: &str) {
+pub fn finish_list_swap(
+    list_stack: &gtk4::Stack,
+    showing_primary: &std::cell::Cell<bool>,
+    visible_page: &str,
+) {
     list_stack.set_visible_child_name(visible_page);
     showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
 }
@@ -139,18 +144,19 @@ pub fn root_library_item_cmp(
 }
 
 pub fn running_game_elapsed_seconds(running_games: &RunningGameMap, game_id: &str) -> Option<u64> {
-    running_games
-        .get(game_id)
-        .map(|snapshot| {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or(0);
-            now.saturating_sub(snapshot.started_at_epoch_seconds)
-        })
+    running_games.get(game_id).map(|snapshot| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        now.saturating_sub(snapshot.started_at_epoch_seconds)
+    })
 }
 
-pub fn group_running_elapsed_seconds(group: &GameGroup, running_games: &RunningGameMap) -> Option<u64> {
+pub fn group_running_elapsed_seconds(
+    group: &GameGroup,
+    running_games: &RunningGameMap,
+) -> Option<u64> {
     group_running_started_at(group, running_games).map(|started_at| {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -164,12 +170,18 @@ pub fn group_running_started_at(group: &GameGroup, running_games: &RunningGameMa
     group
         .games
         .iter()
-        .filter_map(|game| running_games.get(&game.id).map(|s| s.started_at_epoch_seconds))
+        .filter_map(|game| {
+            running_games
+                .get(&game.id)
+                .map(|s| s.started_at_epoch_seconds)
+        })
         .min()
 }
 
 pub fn group_last_played(group: &GameGroup) -> u64 {
-    group.games.iter()
+    group
+        .games
+        .iter()
         .map(|game| game.last_played_epoch_seconds)
         .max()
         .unwrap_or(0)

@@ -1,6 +1,6 @@
+use libadwaita as adw;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::glib;
@@ -156,13 +156,16 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     window.present();
 
     let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));
-    let rendered_count = Rc::new(Cell::new(rebuild_buffer(
-        &buffer,
-        selected_filter.borrow().clone(),
-        &content_stack,
-        &scroll,
-        &text_view,
-    ).await));
+    let rendered_count = Rc::new(Cell::new(
+        rebuild_buffer(
+            &buffer,
+            selected_filter.borrow().clone(),
+            &content_stack,
+            &scroll,
+            &text_view,
+        )
+        .await,
+    ));
 
     let buffer_for_filter = buffer.clone();
     let content_stack_for_filter = content_stack.clone();
@@ -178,9 +181,12 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
             .cloned()
             .unwrap_or(None);
         *selected_filter_for_dropdown.borrow_mut() = game_id;
-        
-        let b = buffer_for_filter.clone(); let s = selected_filter_for_dropdown.borrow().clone();
-        let cs = content_stack_for_filter.clone(); let sc = scroll_for_filter.clone(); let tv = text_view_for_filter.clone();
+
+        let b = buffer_for_filter.clone();
+        let s = selected_filter_for_dropdown.borrow().clone();
+        let cs = content_stack_for_filter.clone();
+        let sc = scroll_for_filter.clone();
+        let tv = text_view_for_filter.clone();
         let rc = rendered_count_for_dropdown.clone();
         glib::spawn_future_local(async move {
             rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
@@ -194,8 +200,11 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     let selected_filter_for_clear = selected_filter.clone();
     let rendered_count_for_clear = rendered_count.clone();
     clear_button.connect_clicked(move |_| {
-        let b = buffer_for_clear.clone(); let s = selected_filter_for_clear.borrow().clone();
-        let cs = content_stack_for_clear.clone(); let sc = scroll_for_clear.clone(); let tv = text_view_for_clear.clone();
+        let b = buffer_for_clear.clone();
+        let s = selected_filter_for_clear.borrow().clone();
+        let cs = content_stack_for_clear.clone();
+        let sc = scroll_for_clear.clone();
+        let tv = text_view_for_clear.clone();
         let rc = rendered_count_for_clear.clone();
         glib::spawn_future_local(async move {
             clear_log_buffer();
@@ -213,10 +222,13 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
             return glib::ControlFlow::Break;
         }
 
-        let b = buffer_for_tick.clone(); let s = selected_filter.borrow().clone();
-        let cs = content_stack_for_tick.clone(); let sc = scroll_for_tick.clone(); let tv = text_view_for_tick.clone();
+        let b = buffer_for_tick.clone();
+        let s = selected_filter.borrow().clone();
+        let cs = content_stack_for_tick.clone();
+        let sc = scroll_for_tick.clone();
+        let tv = text_view_for_tick.clone();
         let rc = rendered_count.clone();
-        
+
         glib::spawn_future_local(async move {
             let from = rc.get();
             let current = get_log_entry_count();

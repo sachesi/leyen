@@ -210,15 +210,14 @@ pub async fn update_running_duration_labels(
 
 pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
-        static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = std::cell::RefCell::new(None);
+        static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
     }
 
-    if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone()) {
-        if existing.is_visible() {
+    if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone())
+        && existing.is_visible() {
             existing.present();
             return;
         }
-    }
 
     let window = adw::Window::builder()
         .title("Leyen – Running Games")

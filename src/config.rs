@@ -95,7 +95,24 @@ pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> Globa
         };
 
         let fresh = crate::runtime::detect_proton_versions();
-        settings.available_proton_versions = fresh.available_proton_versions;
+        let mut merged = std::collections::HashSet::new();
+        for v in &settings.available_proton_versions {
+            merged.insert(v.clone());
+        }
+        for v in &fresh.available_proton_versions {
+            merged.insert(v.clone());
+        }
+        let mut merged_vec: Vec<String> = merged.into_iter().collect();
+        if merged_vec.len() > 1 {
+            merged_vec.sort();
+        }
+        if !merged_vec.contains(&"Default".to_string()) {
+            merged_vec.insert(0, "Default".to_string());
+        } else {
+            merged_vec.retain(|v| v != "Default");
+            merged_vec.insert(0, "Default".to_string());
+        }
+        settings.available_proton_versions = merged_vec;
         if settings.default_prefix_path.is_empty() {
             settings.default_prefix_path = fresh.default_prefix_path;
         }
@@ -233,11 +250,10 @@ pub fn find_group<'a>(items: &'a [LibraryItem], group_id: &str) -> Option<&'a Ga
 
 pub fn game_parent_group_id(items: &[LibraryItem], game_id: &str) -> Option<String> {
     items.iter().find_map(|item| {
-        if let LibraryItem::Group(group) = item {
-            if group.games.iter().any(|g| g.id == game_id) {
+        if let LibraryItem::Group(group) = item
+            && group.games.iter().any(|g| g.id == game_id) {
                 return Some(group.id.clone());
             }
-        }
         None
     })
 }
@@ -305,18 +321,16 @@ pub fn remove_game(items: &mut Vec<LibraryItem>, game_id: &str) -> Option<Game> 
         } else {
             false
         }
-    }) {
-        if let LibraryItem::Game(game) = items.remove(pos) {
+    })
+        && let LibraryItem::Game(game) = items.remove(pos) {
             return Some(game);
         }
-    }
 
     for item in items {
-        if let LibraryItem::Group(group) = item {
-            if let Some(pos) = group.games.iter().position(|g| g.id == game_id) {
+        if let LibraryItem::Group(group) = item
+            && let Some(pos) = group.games.iter().position(|g| g.id == game_id) {
                 return Some(group.games.remove(pos));
             }
-        }
     }
     None
 }
@@ -328,11 +342,10 @@ pub fn remove_group(items: &mut Vec<LibraryItem>, group_id: &str) -> Option<Game
         } else {
             false
         }
-    }) {
-        if let LibraryItem::Group(group) = items.remove(pos) {
+    })
+        && let LibraryItem::Group(group) = items.remove(pos) {
             return Some(group);
         }
-    }
     None
 }
 

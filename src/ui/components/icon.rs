@@ -1,4 +1,4 @@
-use crate::ui::{LIBRARY_ICON_CORNER_RADIUS, LIBRARY_ICON_SIZE};
+use crate::ui::LIBRARY_ICON_SIZE;
 use gtk4::prelude::*;
 use image::imageops::FilterType;
 use std::path::Path;

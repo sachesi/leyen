@@ -5,7 +5,6 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use std::rc::Rc;
 
 pub use self::group_view::populate_group_view;
 pub use self::root_view::populate_root_view;

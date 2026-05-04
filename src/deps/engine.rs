@@ -8,9 +8,9 @@ use std::time::UNIX_EPOCH;
 
 use gtk4::glib;
 use log::{error, info};
-use tokio::process::Command as AsyncCommand;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::io::Read;
+use tokio::process::Command as AsyncCommand;
 
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{
@@ -68,12 +68,8 @@ pub enum DepStepAction {
 
 #[derive(Clone)]
 pub enum VerifyAction {
-    RegistryKeyExists {
-        path: &'static str,
-    },
-    FileExistsInPrefix {
-        relative_path: &'static str,
-    },
+    RegistryKeyExists { path: &'static str },
+    FileExistsInPrefix { relative_path: &'static str },
 }
 
 #[derive(Clone)]
@@ -145,7 +141,11 @@ pub async fn execute_dep_step(
     cache_dir: &str,
 ) -> Result<StepChanges, String> {
     match &step.action {
-        DepStepAction::DownloadFile { url, file_name, sha256 } => {
+        DepStepAction::DownloadFile {
+            url,
+            file_name,
+            sha256,
+        } => {
             if !url.starts_with("https://") {
                 return Err(format!(
                     "Refusing to download '{}' from a non-HTTPS source",
@@ -156,9 +156,10 @@ pub async fn execute_dep_step(
             let dest = Path::new(cache_dir).join(file_name);
             if !dest.exists() {
                 let cache_dir_clone = cache_dir.to_string();
-                tokio::task::spawn_blocking(move || {
-                    fs::create_dir_all(cache_dir_clone)
-                }).await.unwrap().map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
+                tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
+                    .await
+                    .unwrap()
+                    .map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
 
                 let status = AsyncCommand::new("curl")
                     .args([
@@ -192,11 +193,14 @@ pub async fn execute_dep_step(
                 let expected_sha = expected_sha.to_string();
                 let file_name = *file_name;
                 tokio::task::spawn_blocking(move || -> Result<(), String> {
-                    let mut file = fs::File::open(&dest_clone).map_err(|err| format!("Failed to open downloaded file: {err}"))?;
+                    let mut file = fs::File::open(&dest_clone)
+                        .map_err(|err| format!("Failed to open downloaded file: {err}"))?;
                     let mut hasher = Sha256::new();
                     let mut buffer = [0u8; 8192];
                     while let Ok(n) = file.read(&mut buffer) {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         hasher.update(&buffer[..n]);
                     }
                     let actual_sha = hex::encode(hasher.finalize());
@@ -208,7 +212,9 @@ pub async fn execute_dep_step(
                         ));
                     }
                     Ok(())
-                }).await.unwrap()?;
+                })
+                .await
+                .unwrap()?;
             }
 
             Ok(StepChanges::default())
@@ -221,7 +227,9 @@ pub async fn execute_dep_step(
         } => {
             let exe_path = Path::new(cache_dir).join(file_name);
             let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -240,29 +248,38 @@ pub async fn execute_dep_step(
                 .status()
                 .await
                 .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
-            
+
             let exit_code = status.code();
             if !status.success() && exit_code != Some(3010) {
                 return Err(format!(
                     "Installer '{}' exited with error code {}",
                     file_name,
-                    exit_code.map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string())
+                    exit_code
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
                 ));
             }
 
             if exit_code == Some(3010) {
-                info!("[dep] Installer '{}' requested a reboot (3010) — continuing.", file_name);
+                info!(
+                    "[dep] Installer '{}' requested a reboot (3010) — continuing.",
+                    file_name
+                );
             }
 
             let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
 
         DepStepAction::RunMsi { file_name, args } => {
             let msi_path = Path::new(cache_dir).join(file_name);
             let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -277,18 +294,26 @@ pub async fn execute_dep_step(
                 .status()
                 .await
                 .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
-            
+
             let exit_code = status.code();
             if !status.success() && exit_code != Some(3010) {
-                return Err(format!("MSI install '{}' failed (code {:?})", file_name, exit_code));
+                return Err(format!(
+                    "MSI install '{}' failed (code {:?})",
+                    file_name, exit_code
+                ));
             }
-            
+
             if exit_code == Some(3010) {
-                info!("[dep] MSI installer '{}' requested a reboot (3010) — continuing.", file_name);
+                info!(
+                    "[dep] MSI installer '{}' requested a reboot (3010) — continuing.",
+                    file_name
+                );
             }
 
             let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
 
@@ -309,15 +334,16 @@ pub async fn execute_dep_step(
             let archive_path = Path::new(cache_dir).join(archive_name);
             let dest_path = Path::new(cache_dir).join(dest_subdir);
             let dest_path_clone = dest_path.clone();
-            tokio::task::spawn_blocking(move || {
-                fs::create_dir_all(&dest_path_clone)
-            }).await.unwrap().map_err(|err| {
-                format!(
-                    "Failed to create extraction directory '{}': {}",
-                    dest_path.display(),
-                    err
-                )
-            })?;
+            tokio::task::spawn_blocking(move || fs::create_dir_all(&dest_path_clone))
+                .await
+                .unwrap()
+                .map_err(|err| {
+                    format!(
+                        "Failed to create extraction directory '{}': {}",
+                        dest_path.display(),
+                        err
+                    )
+                })?;
 
             let mut cmd = AsyncCommand::new("tar");
             if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
@@ -352,40 +378,45 @@ pub async fn execute_dep_step(
                 .join("windows")
                 .join(wine_dir);
             let dst_dir_clone = dst_dir.clone();
-            tokio::task::spawn_blocking(move || {
-                fs::create_dir_all(&dst_dir_clone)
-            }).await.unwrap().map_err(|err| {
-                format!(
-                    "Failed to create target directory '{}': {}",
-                    dst_dir.display(),
-                    err
-                )
-            })?;
+            tokio::task::spawn_blocking(move || fs::create_dir_all(&dst_dir_clone))
+                .await
+                .unwrap()
+                .map_err(|err| {
+                    format!(
+                        "Failed to create target directory '{}': {}",
+                        dst_dir.display(),
+                        err
+                    )
+                })?;
 
             let prefix_path = prefix_path.to_string();
             let dlls = split_csv_values(dlls);
-            
+
             // File operations are generally fast but let's be safe and wrap the copy loop if it's many files.
             // For now just wrap the whole loop to avoid any blocking on the async thread.
-            let mut changes = tokio::task::spawn_blocking(move || -> Result<StepChanges, String> {
-                let mut changes = StepChanges::default();
-                for dll in dlls {
-                    let src = src_dir.join(format!("{dll}.dll"));
-                    let dst = dst_dir.join(format!("{dll}.dll"));
-                    let existed_before = dst.exists();
+            let mut changes =
+                tokio::task::spawn_blocking(move || -> Result<StepChanges, String> {
+                    let mut changes = StepChanges::default();
+                    for dll in dlls {
+                        let src = src_dir.join(format!("{dll}.dll"));
+                        let dst = dst_dir.join(format!("{dll}.dll"));
+                        let existed_before = dst.exists();
 
-                    fs::copy(&src, &dst)
-                        .map_err(|err| format!("Failed to copy {}.dll: {}", dll, err))?;
+                        fs::copy(&src, &dst)
+                            .map_err(|err| format!("Failed to copy {}.dll: {}", dll, err))?;
 
-                    if existed_before {
-                        changes.touched_existing_files = true;
-                    } else if let Some(relative) = path_to_prefix_relative(Path::new(&prefix_path), &dst)
-                    {
-                        changes.created_files.push(relative);
+                        if existed_before {
+                            changes.touched_existing_files = true;
+                        } else if let Some(relative) =
+                            path_to_prefix_relative(Path::new(&prefix_path), &dst)
+                        {
+                            changes.created_files.push(relative);
+                        }
                     }
-                }
-                Ok(changes)
-            }).await.unwrap()?;
+                    Ok(changes)
+                })
+                .await
+                .unwrap()?;
 
             changes.created_files = merge_unique_strings(&[], &changes.created_files);
             Ok(changes)
@@ -393,7 +424,9 @@ pub async fn execute_dep_step(
 
         DepStepAction::RunWinetricks { verb } => {
             let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -409,11 +442,16 @@ pub async fn execute_dep_step(
             }
 
             let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone)).await.unwrap()?;
+            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
+                .await
+                .unwrap()?;
             Ok(diff_snapshots(&before, &after))
         }
 
-        DepStepAction::Verify { description, action } => {
+        DepStepAction::Verify {
+            description,
+            action,
+        } => {
             info!("[dep] Verifying: {}", description);
             let verified = match action {
                 VerifyAction::RegistryKeyExists { path } => {
@@ -422,7 +460,9 @@ pub async fn execute_dep_step(
                     let path = path.to_string();
                     tokio::task::spawn_blocking(move || {
                         super::verify::check_registry_key_exists(&prefix_path, &proton_path, &path)
-                    }).await.unwrap()?
+                    })
+                    .await
+                    .unwrap()?
                 }
                 VerifyAction::FileExistsInPrefix { relative_path } => {
                     super::verify::check_file_exists_in_prefix(prefix_path, relative_path)
@@ -465,7 +505,13 @@ pub fn install_dep_async(
     on_finish: impl FnOnce(bool, Option<String>) + 'static,
 ) {
     let profile = get_dep_profile(dep_id);
-    let needs_winetricks = profile.map(|p| get_dep_steps(p.id).iter().any(|s| matches!(s.action, DepStepAction::RunWinetricks { .. }))).unwrap_or(false);
+    let needs_winetricks = profile
+        .map(|p| {
+            get_dep_steps(p.id)
+                .iter()
+                .any(|s| matches!(s.action, DepStepAction::RunWinetricks { .. }))
+        })
+        .unwrap_or(false);
 
     let dep_id = dep_id.to_string();
     let prefix_path = prefix_path.to_string();
@@ -479,8 +525,11 @@ pub fn install_dep_async(
             return;
         }
         let prefix_path_for_state = prefix_path.clone();
-        let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state)).await.unwrap();
-        
+        let state =
+            tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
+                .await
+                .unwrap();
+
         let install_plan = match build_install_plan(&dep_id, &state) {
             Ok(plan) if !plan.is_empty() => plan,
             Ok(_) => {
@@ -589,7 +638,10 @@ pub fn uninstall_dep_async(
 
     glib::spawn_future_local(async move {
         let prefix_path_for_state = prefix_path.clone();
-        let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state)).await.unwrap();
+        let state =
+            tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
+                .await
+                .unwrap();
 
         let installed = match state.installed.get(&dep_id).cloned() {
             Some(installed) => installed,
@@ -640,19 +692,19 @@ pub fn uninstall_dep_async(
             let proton_path = proton_path.clone();
             let cache_dir = cache_dir.clone();
 
-            let result = tokio::task::spawn_blocking(move || {
-                match action {
-                    CleanupAction::RemoveDllOverrides(dlls) => {
-                        remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
-                    }
-                    CleanupAction::UnregisterDlls(dlls) => {
-                        unregister_dlls(&prefix_path, &proton_path, &dlls)
-                    }
-                    CleanupAction::RemoveCreatedFiles(files) => {
-                        remove_created_files(&prefix_path, &files)
-                    }
+            let result = tokio::task::spawn_blocking(move || match action {
+                CleanupAction::RemoveDllOverrides(dlls) => {
+                    remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
                 }
-            }).await.unwrap();
+                CleanupAction::UnregisterDlls(dlls) => {
+                    unregister_dlls(&prefix_path, &proton_path, &dlls)
+                }
+                CleanupAction::RemoveCreatedFiles(files) => {
+                    remove_created_files(&prefix_path, &files)
+                }
+            })
+            .await
+            .unwrap();
 
             if let Err(error) = result {
                 error!("[dep:{}] removal failed: {}", dep_id, error);
@@ -683,7 +735,10 @@ pub fn uninstall_dep_async(
     });
 }
 
-async fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -> Result<(), String> {
+async fn ensure_umu_ready(
+    overlay: &adw::ToastOverlay,
+    check_winetricks: bool,
+) -> Result<(), String> {
     if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
@@ -691,14 +746,21 @@ async fn ensure_umu_ready(overlay: &adw::ToastOverlay, check_winetricks: bool) -
         return Err("umu-launcher not ready".to_string());
     }
 
-    if !tokio::task::spawn_blocking(is_umu_run_available).await.unwrap() {
+    if !tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap()
+    {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
         return Err("umu-launcher not available".to_string());
     }
 
-    if check_winetricks && !tokio::task::spawn_blocking(is_winetricks_available).await.unwrap() {
+    if check_winetricks
+        && !tokio::task::spawn_blocking(is_winetricks_available)
+            .await
+            .unwrap()
+    {
         overlay.add_toast(adw::Toast::new(
             "winetricks is not installed. Please install it using your package manager.",
         ));

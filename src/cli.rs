@@ -8,7 +8,7 @@ use gtk4::glib;
 
 use crate::config::{find_game_by_leyen_id, load_library};
 use crate::launch::{
-    launch_game_headless, monitor_running_game, running_games_snapshot, stop_game,
+    launch_game_headless, monitor_running_game, read_running_games_snapshot, stop_game,
 };
 use crate::models::{Game, LibraryItem};
 use crate::runtime::umu::{UMU_DOWNLOADING, check_or_install_umu, is_umu_run_available};
@@ -49,8 +49,8 @@ enum Commands {
 
 pub async fn maybe_run_from_args() -> Option<glib::ExitCode> {
     let args = std::env::args().collect::<Vec<_>>();
-    
-    // We use try_parse to handle errors ourselves if needed, 
+
+    // We use try_parse to handle errors ourselves if needed,
     // or just use parse() which will exit on help/error.
     // However, we want to return None if no args were provided to start the GUI.
     if args.len() <= 1 {
@@ -205,11 +205,13 @@ async fn run_game(requested_leyen_id: &str) -> Result<()> {
 
     let items = load_library().await;
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
-        anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
+        anyhow::bail!(
+            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
+        );
     };
 
-    let current_exe = std::env::current_exe()
-        .context("Failed to resolve the current executable")?;
+    let current_exe =
+        std::env::current_exe().context("Failed to resolve the current executable")?;
     Command::new(current_exe)
         .arg("internal-run")
         .arg(&game.leyen_id)
@@ -239,8 +241,12 @@ async fn internal_run(requested_leyen_id: &str) -> Result<()> {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'.");
     };
 
-    launch_game_headless(game).await.context("Failed to launch game")?;
-    monitor_running_game(&game.id).await.context("Failed to monitor game")?;
+    launch_game_headless(game)
+        .await
+        .context("Failed to launch game")?;
+    monitor_running_game(&game.id)
+        .await
+        .context("Failed to monitor game")?;
 
     Ok(())
 }
@@ -248,7 +254,9 @@ async fn internal_run(requested_leyen_id: &str) -> Result<()> {
 async fn kill_game(requested_leyen_id: &str) -> Result<()> {
     let items = load_library().await;
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
-        anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games.");
+        anyhow::bail!(
+            "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
+        );
     };
 
     match stop_game(&game.id).await.context("Failed to stop game")? {
@@ -261,7 +269,9 @@ async fn kill_game(requested_leyen_id: &str) -> Result<()> {
 }
 
 async fn internal_monitor(game_id: &str) -> Result<()> {
-    monitor_running_game(game_id).await.context("Failed to monitor game")?;
+    monitor_running_game(game_id)
+        .await
+        .context("Failed to monitor game")?;
     Ok(())
 }
 
@@ -285,10 +295,16 @@ fn index_games(items: &[LibraryItem]) -> HashMap<String, &Game> {
 }
 
 async fn running_games_index() -> HashMap<String, crate::launch::RunningGameSnapshot> {
-    running_games_snapshot().await
-        .into_iter()
-        .map(|snapshot| (snapshot.game_id.clone(), snapshot))
-        .collect()
+    match read_running_games_snapshot().await {
+        Ok(snapshots) => snapshots
+            .into_iter()
+            .map(|snapshot| (snapshot.game_id.clone(), snapshot))
+            .collect(),
+        Err(err) => {
+            eprintln!("Warning: could not read running games state: {err}");
+            HashMap::new()
+        }
+    }
 }
 
 fn print_list_row(game: &Game, running: bool) {

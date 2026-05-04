@@ -77,7 +77,9 @@ async fn refresh_dep_rows(
     handles: &[DepRowHandle],
 ) -> std::collections::BTreeSet<String> {
     let prefix_path = prefix_path.to_string();
-    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path)).await.unwrap();
+    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path))
+        .await
+        .unwrap();
     let installed = state
         .installed
         .keys()
@@ -143,7 +145,10 @@ pub async fn show_dependencies_dialog(
     };
 
     let prefix_path_for_state = resolved_prefix.clone();
-    let installed = tokio::task::spawn_blocking(move || read_installed_deps(&prefix_path_for_state)).await.unwrap();
+    let installed =
+        tokio::task::spawn_blocking(move || read_installed_deps(&prefix_path_for_state))
+            .await
+            .unwrap();
 
     let dialog = adw::Window::builder()
         .transient_for(parent)
@@ -351,7 +356,8 @@ pub async fn show_dependencies_dialog(
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
                         row3.set_sensitive(true);
-                        let title = title3.clone(); let handles = row_handles3.clone();
+                        let title = title3.clone();
+                        let handles = row_handles3.clone();
                         glib::spawn_future_local(async move {
                             refresh_dep_rows(&prefix3, &title, &handles.borrow()).await;
                         });
@@ -439,7 +445,8 @@ pub async fn show_dependencies_dialog(
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
                         row3.set_sensitive(true);
-                        let title = title3.clone(); let handles = row_handles3.clone();
+                        let title = title3.clone();
+                        let handles = row_handles3.clone();
                         glib::spawn_future_local(async move {
                             refresh_dep_rows(&prefix3, &title, &handles.borrow()).await;
                         });
@@ -528,7 +535,9 @@ pub async fn show_dependencies_dialog(
                                 .unwrap_or_else(|| {
                                     "This removes the dependency from Leyen's tracking.".to_string()
                                 })
-                        }).await.unwrap();
+                        })
+                        .await
+                        .unwrap();
 
                         let confirm = confirm_builder.detail(&detail).build();
                         confirm.choose(Some(&dialog3), gio::Cancellable::NONE, move |result| {
@@ -563,48 +572,55 @@ pub async fn show_dependencies_dialog(
                                 let dialog_busy4 = dialog_busy3.clone();
 
                                 let progress_label_p = progress_label3.clone();
-                                let on_progress = move |_step: usize, _total: usize, desc: String| {
-                                    progress_label_p.set_label(&desc);
-                                };
+                                let on_progress =
+                                    move |_step: usize, _total: usize, desc: String| {
+                                        progress_label_p.set_label(&desc);
+                                    };
 
-                                let on_finish = move |success: bool, note_or_error: Option<String>| {
-                                    spinner4.stop();
-                                    spinner4.set_visible(false);
-                                    progress_label4.set_visible(false);
-                                    row4.set_sensitive(true);
-                                    let title = title4.clone(); let handles = row_handles4.clone();
-                                    glib::spawn_future_local(async move {
-                                        refresh_dep_rows(&prefix4, &title, &handles.borrow()).await;
-                                    });
-                                    dialog_busy4.set(false);
-                                    set_dialog_busy(
-                                        false,
-                                        &close_btn4,
-                                        &search_entry4,
-                                        &row_handles4.borrow(),
-                                    );
-                                    if success {
-                                        badge4.set_visible(false);
-                                        install_btn4.set_visible(true);
-                                        reinstall_btn4.set_visible(false);
-                                        remove_btn4.set_visible(false);
-                                        let message = note_or_error
-                                            .map(|note| {
-                                                format!("'{}' removed successfully. {}", dep_id, note)
-                                            })
-                                            .unwrap_or_else(|| {
-                                                format!("'{}' removed successfully.", dep_id)
-                                            });
-                                        overlay4.add_toast(adw::Toast::new(&message));
-                                    } else {
-                                        install_btn4.set_visible(false);
-                                        reinstall_btn4.set_visible(true);
-                                        remove_btn4.set_visible(true);
-                                        let msg = note_or_error
-                                            .unwrap_or_else(|| "Remove failed.".to_string());
-                                        overlay4.add_toast(adw::Toast::new(&msg));
-                                    }
-                                };
+                                let on_finish =
+                                    move |success: bool, note_or_error: Option<String>| {
+                                        spinner4.stop();
+                                        spinner4.set_visible(false);
+                                        progress_label4.set_visible(false);
+                                        row4.set_sensitive(true);
+                                        let title = title4.clone();
+                                        let handles = row_handles4.clone();
+                                        glib::spawn_future_local(async move {
+                                            refresh_dep_rows(&prefix4, &title, &handles.borrow())
+                                                .await;
+                                        });
+                                        dialog_busy4.set(false);
+                                        set_dialog_busy(
+                                            false,
+                                            &close_btn4,
+                                            &search_entry4,
+                                            &row_handles4.borrow(),
+                                        );
+                                        if success {
+                                            badge4.set_visible(false);
+                                            install_btn4.set_visible(true);
+                                            reinstall_btn4.set_visible(false);
+                                            remove_btn4.set_visible(false);
+                                            let message = note_or_error
+                                                .map(|note| {
+                                                    format!(
+                                                        "'{}' removed successfully. {}",
+                                                        dep_id, note
+                                                    )
+                                                })
+                                                .unwrap_or_else(|| {
+                                                    format!("'{}' removed successfully.", dep_id)
+                                                });
+                                            overlay4.add_toast(adw::Toast::new(&message));
+                                        } else {
+                                            install_btn4.set_visible(false);
+                                            reinstall_btn4.set_visible(true);
+                                            remove_btn4.set_visible(true);
+                                            let msg = note_or_error
+                                                .unwrap_or_else(|| "Remove failed.".to_string());
+                                            overlay4.add_toast(adw::Toast::new(&msg));
+                                        }
+                                    };
 
                                 uninstall_dep_async(
                                     dep_id,

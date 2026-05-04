@@ -2,18 +2,20 @@ pub mod group_view;
 pub mod root_view;
 pub mod state;
 
-use libadwaita as adw;
 use gtk4::glib;
 use gtk4::prelude::*;
+use libadwaita as adw;
 use std::rc::Rc;
 
-pub use self::state::*;
-pub use self::root_view::populate_root_view;
 pub use self::group_view::populate_group_view;
+pub use self::root_view::populate_root_view;
+pub use self::state::*;
 
-use crate::models::{LibraryItem, Game};
-use crate::ui::utils::{running_game_map, find_group, group_running_started_at, format_duration_brief, game_is_running};
-use crate::launch::{stop_game, launch_game};
+use crate::launch::{launch_game, stop_game};
+use crate::models::{Game, LibraryItem};
+use crate::ui::utils::{
+    find_group, format_duration_brief, game_is_running, group_running_started_at, running_game_map,
+};
 
 pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
     if game_is_running(&running_game_map().await, &game.id) {
@@ -42,20 +44,14 @@ pub async fn update_running_duration_labels(ui: &LibraryUi) {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&format!(
-                    "Running for {}",
-                    format_duration_brief(elapsed)
-                ));
+                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
             }
         }
     } else {
         for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&format!(
-                    "Running for {}",
-                    format_duration_brief(elapsed)
-                ));
+                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
             }
         }
 
@@ -69,10 +65,7 @@ pub async fn update_running_duration_labels(ui: &LibraryUi) {
                     .get(&group.id)
             {
                 let elapsed = now.saturating_sub(started_at);
-                label.set_label(&format!(
-                    "Running for {}",
-                    format_duration_brief(elapsed)
-                ));
+                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
             }
         }
     }
@@ -86,9 +79,9 @@ pub async fn refresh_library_view(
     let ui_clone = ui.clone();
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
-    
+
     let search_text = ui.search_entry.text().to_string().to_lowercase();
-    
+
     glib::spawn_future_local(async move {
         let mut items = crate::config::load_library().await;
 
@@ -96,8 +89,11 @@ pub async fn refresh_library_view(
             items.retain(|item| match item {
                 LibraryItem::Game(game) => game.title.to_lowercase().contains(&search_text),
                 LibraryItem::Group(group) => {
-                    group.title.to_lowercase().contains(&search_text) ||
-                    group.games.iter().any(|g| g.title.to_lowercase().contains(&search_text))
+                    group.title.to_lowercase().contains(&search_text)
+                        || group
+                            .games
+                            .iter()
+                            .any(|g| g.title.to_lowercase().contains(&search_text))
                 }
             });
         }
@@ -144,7 +140,9 @@ pub fn open_group(
     group_id: &str,
 ) {
     *ui.current_group_id.borrow_mut() = Some(group_id.to_string());
-    let u = ui.clone(); let o = overlay.clone(); let w = window.clone();
+    let u = ui.clone();
+    let o = overlay.clone();
+    let w = window.clone();
     glib::spawn_future_local(async move {
         refresh_library_view(&u, &o, &w).await;
     });

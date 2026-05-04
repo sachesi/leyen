@@ -1,5 +1,5 @@
-use libadwaita as adw;
 use gtk4::prelude::*;
+use libadwaita as adw;
 
 use crate::models::LibraryItem;
 use crate::ui::LibraryUi;

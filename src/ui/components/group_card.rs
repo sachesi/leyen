@@ -1,16 +1,19 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use gtk4::glib;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::models::GameGroup;
 use crate::icons::group_icon_file;
+use crate::models::GameGroup;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
-use crate::ui::utils::{game_is_running, group_running_elapsed_seconds, group_last_played, format_duration_brief, format_last_played, RunningGameMap};
-use crate::ui::game_dialogs::{show_edit_group_dialog, show_delete_confirmation};
+use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_group_dialog};
 use crate::ui::open_group;
+use crate::ui::utils::{
+    RunningGameMap, format_duration_brief, format_last_played, game_is_running, group_last_played,
+    group_running_elapsed_seconds,
+};
 
 pub fn build_group_card(
     group: &GameGroup,
@@ -36,7 +39,12 @@ pub fn build_group_card(
         .margin_end(12)
         .build();
 
-    let icon = build_library_icon(group_icon_file(&group.id), "folder", gtk4::Align::Start, group_running_elapsed_seconds(group, running_games).is_some());
+    let icon = build_library_icon(
+        group_icon_file(&group.id),
+        "folder",
+        gtk4::Align::Start,
+        group_running_elapsed_seconds(group, running_games).is_some(),
+    );
 
     let info_column = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
@@ -153,7 +161,13 @@ pub fn build_group_card(
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
     edit_btn.connect_clicked(move |_| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let g = group_clone.clone(); glib::spawn_future_local(async move { show_edit_group_dialog(&w, &u, &o, &g).await; });
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
+        let o = overlay_clone.clone();
+        let g = group_clone.clone();
+        glib::spawn_future_local(async move {
+            show_edit_group_dialog(&w, &u, &o, &g).await;
+        });
     });
 
     let ui_clone = ui.clone();
@@ -161,7 +175,13 @@ pub fn build_group_card(
     let window_clone = window.clone();
     let group_id = group.id.clone();
     delete_btn.connect_clicked(move |_| {
-        let w = window_clone.clone(); let u = ui_clone.clone(); let o = overlay_clone.clone(); let gid = group_id.clone(); glib::spawn_future_local(async move { show_delete_confirmation(&w, &u, &o, &gid).await; });
+        let w = window_clone.clone();
+        let u = ui_clone.clone();
+        let o = overlay_clone.clone();
+        let gid = group_id.clone();
+        glib::spawn_future_local(async move {
+            show_delete_confirmation(&w, &u, &o, &gid).await;
+        });
     });
 
     button_box.append(&edit_btn);

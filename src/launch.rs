@@ -19,8 +19,8 @@ use crate::config::{
 };
 use crate::models::{Game, GameGroup};
 use crate::runtime::proton::resolve_proton_path;
-use crate::tools::{gamemode_available, mangohud_available};
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::tools::{gamemode_available, mangohud_available};
 
 #[derive(Debug, Clone)]
 pub struct LaunchReport {
@@ -57,13 +57,27 @@ pub enum LaunchError {
     #[error("Failed to prepare runtime lock directory: {0}")]
     LockDirectoryError(#[from] std::io::Error),
     #[error("Failed to open runtime lock '{path}': {source}")]
-    LockOpenError { path: PathBuf, source: std::io::Error },
+    LockOpenError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("Failed to lock runtime state '{path}': {source}")]
-    LockAcquireError { path: PathBuf, source: std::io::Error },
+    LockAcquireError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("Failed to serialize running games state: {0}")]
     SerializationError(String),
     #[error("Failed to write running games state '{path}': {source}")]
-    WriteError { path: PathBuf, source: std::io::Error },
+    WriteError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("Failed to read running games state '{path}': {source}")]
+    ReadError {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("Game '{0}' is not running")]
     GameNotRunning(String),
     #[error("Prefix error: {0}")]
@@ -119,10 +133,17 @@ fn with_running_registry<R>(
     }
 
     let registry_path = running_registry_path();
-    let mut registry = fs::read_to_string(&registry_path)
-        .ok()
-        .and_then(|data| toml::from_str::<RunningGamesRegistry>(&data).ok())
-        .unwrap_or_default();
+    let mut registry = match fs::read_to_string(&registry_path) {
+        Ok(data) => toml::from_str::<RunningGamesRegistry>(&data)
+            .map_err(|e| LaunchError::SerializationError(e.to_string()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => RunningGamesRegistry::default(),
+        Err(e) => {
+            return Err(LaunchError::ReadError {
+                path: registry_path,
+                source: e,
+            });
+        }
+    };
 
     let (result, dirty) = f(&mut registry);
 
@@ -281,8 +302,8 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
-use std::sync::{OnceLock, RwLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{OnceLock, RwLock};
 
 static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();
 static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
@@ -297,7 +318,7 @@ pub fn start_running_sessions_monitor() {
             if let Ok(sessions) = synchronize_running_sessions().await {
                 let snapshots = running_sessions_to_snapshots(&sessions);
                 let version = running_sessions_version(&sessions);
-                
+
                 if let Ok(mut cache) = get_running_sessions_cache().write() {
                     *cache = snapshots;
                 }
@@ -309,20 +330,38 @@ pub fn start_running_sessions_monitor() {
 }
 
 async fn find_running_session(game_id: &str) -> Result<Option<RunningGameSession>, LaunchError> {
-    Ok(synchronize_running_sessions().await?
+    Ok(synchronize_running_sessions()
+        .await?
         .into_iter()
         .find(|session| session.game_id == game_id))
 }
 
-pub async fn is_game_running(game_id: &str) -> bool {
+pub fn is_game_running(game_id: &str) -> bool {
     get_running_sessions_cache()
         .read()
         .map(|c| c.iter().any(|s| s.game_id == game_id))
         .unwrap_or(false)
 }
 
+pub fn is_any_game_running() -> bool {
+    get_running_sessions_cache()
+        .read()
+        .map(|c| !c.is_empty())
+        .unwrap_or(false)
+}
+
 pub async fn running_games_version() -> u64 {
     RUNNING_SESSIONS_VERSION_CACHE.load(Ordering::Relaxed)
+}
+
+pub async fn read_running_games_snapshot() -> Result<Vec<RunningGameSnapshot>, LaunchError> {
+    let sessions = tokio::task::spawn_blocking(|| {
+        with_running_registry(|registry| (registry.sessions.clone(), false))
+    })
+    .await
+    .unwrap()?;
+
+    Ok(running_sessions_to_snapshots(&sessions))
 }
 
 pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
@@ -341,7 +380,6 @@ pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
-
 
 pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     let Some(session) = find_running_session(game_id).await? else {
@@ -392,7 +430,9 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
                 group_error.to_string()
             }
         )))
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 
     result
 }
@@ -429,7 +469,6 @@ fn resolve_launch_proton(
     resolve_proton_path(selected)
 }
 
-
 fn working_directory_for(exe_path: &str) -> Option<PathBuf> {
     let exe = Path::new(exe_path);
     exe.parent()
@@ -443,16 +482,20 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
     }
 
     let path_clone = prefix_path.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone)).await.unwrap() {
+    if let Err(e) = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone))
+        .await
+        .unwrap()
+    {
         warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
         return PrefixLockState::Unavailable;
     }
 
     match synchronize_running_sessions().await {
         Ok(sessions) => {
-            if sessions.iter().any(|session| {
-                session.match_prefix_path.as_deref() == Some(prefix_path)
-            }) {
+            if sessions
+                .iter()
+                .any(|session| session.match_prefix_path.as_deref() == Some(prefix_path))
+            {
                 PrefixLockState::Busy
             } else {
                 PrefixLockState::Available
@@ -497,7 +540,9 @@ fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
 }
 
 fn read_process_comm(pid: u32) -> Option<String> {
-    fs::read_to_string(format!("/proc/{pid}/comm")).ok().map(|s| s.trim().to_string())
+    fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
@@ -513,7 +558,7 @@ fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
         let Ok(pid) = file_name.parse::<u32>() else {
             continue;
         };
-        
+
         if pid < 1000 {
             continue;
         }
@@ -521,11 +566,11 @@ fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
         // Smarter filtering: only read environment for processes that could be part of a game
         if let Some(comm) = read_process_comm(pid) {
             let comm_lower = comm.to_lowercase();
-            let looks_like_game = comm_lower.contains("wine") || 
-                                 comm_lower.contains("steam") || 
-                                 comm_lower.contains("proton") || 
-                                 comm_lower.ends_with(".exe") ||
-                                 comm_lower.contains("leyen");
+            let looks_like_game = comm_lower.contains("wine")
+                || comm_lower.contains("steam")
+                || comm_lower.contains("proton")
+                || comm_lower.ends_with(".exe")
+                || comm_lower.contains("leyen");
 
             if looks_like_game {
                 if let Some(env) = read_process_env(pid) {
@@ -574,7 +619,7 @@ fn is_pid_alive(pid: u32) -> bool {
         Some(s) => s,
         None => return false,
     };
-    
+
     // Process is alive if it exists and its state is not 'Z' (Zombie)
     state != "Z"
 }
@@ -701,7 +746,7 @@ pub fn launch_game(game: &Game, overlay: &adw::ToastOverlay) {
     let game = game.clone();
     let overlay = overlay.clone();
     glib::spawn_future_local(async move {
-        match launch_game_managed(&game, true, true, true).await {
+        match launch_game_managed(&game, true, true, false).await {
             Ok(report) => {
                 for notice in report.notices {
                     overlay.add_toast(adw::Toast::new(&notice));
@@ -756,7 +801,10 @@ async fn launch_game_managed(
     }
 
     // Block launch if umu-run is simply not available.
-    if !tokio::task::spawn_blocking(is_umu_run_available).await.unwrap() {
+    if !tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap()
+    {
         return Err(LaunchError::Other(
             "umu-launcher is not installed. Please check your internet connection and restart."
                 .to_string(),
@@ -769,8 +817,10 @@ async fn launch_game_managed(
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
     let launch_game_id = effective_game_id(game);
 
-    if is_game_running(&game.id).await {
-        return Err(LaunchError::Other("This game is already running".to_string()));
+    if is_game_running(&game.id) {
+        return Err(LaunchError::Other(
+            "This game is already running".to_string(),
+        ));
     }
 
     let mut env_vars: Vec<(String, String)> = Vec::new();
@@ -821,11 +871,7 @@ async fn launch_game_managed(
         },
     ));
 
-    let ntsync_val = if game.ntsync {
-        "1"
-    } else {
-        "0"
-    };
+    let ntsync_val = if game.ntsync { "1" } else { "0" };
     env_vars.push(("PROTON_USE_NTSYNC".to_string(), ntsync_val.to_string()));
     env_vars.push(("WINENTSYNC".to_string(), ntsync_val.to_string()));
 
@@ -866,7 +912,9 @@ async fn launch_game_managed(
     }
 
     let exe_path_clone = game.exe_path.clone();
-    let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone)).await.unwrap();
+    let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
+        .await
+        .unwrap();
     match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
         PrefixLockState::Busy => {
@@ -957,7 +1005,9 @@ async fn launch_game_managed(
             if !try_register_running_session(session).await? {
                 let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
                 let _ = child.wait();
-                return Err(LaunchError::Other("This game is already running".to_string()));
+                return Err(LaunchError::Other(
+                    "This game is already running".to_string(),
+                ));
             }
 
             let _ = record_game_launch_start(&game.id, started_at_epoch_seconds);

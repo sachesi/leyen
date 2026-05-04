@@ -1,10 +1,11 @@
-use libadwaita as adw;
 use gtk4::prelude::*;
+use libadwaita as adw;
 
 use crate::ui::LibraryUi;
 use crate::ui::components::game_card::build_game_card;
 use crate::ui::utils::{
-    clear_list_box, finish_list_swap, next_swap_list_box, running_game_map, find_group, game_display_cmp,
+    clear_list_box, find_group, finish_list_swap, game_display_cmp, next_swap_list_box,
+    running_game_map,
 };
 
 pub async fn populate_group_view(

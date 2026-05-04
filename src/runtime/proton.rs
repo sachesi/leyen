@@ -96,11 +96,17 @@ pub fn check_or_install_protonge() {
 
             if ok {
                 let _ = std::process::Command::new("tar")
-                    .args(["-xzf", &tarball_path.to_string_lossy(), "-C", &proton_dir_str])
+                    .args([
+                        "-xzf",
+                        &tarball_path.to_string_lossy(),
+                        "-C",
+                        &proton_dir_str,
+                    ])
                     .status();
                 let _ = fs::remove_file(&tarball_path);
             }
-        }).await;
+        })
+        .await;
     });
 }
 
@@ -112,7 +118,8 @@ pub fn detect_proton_versions() -> GlobalSettings {
         if let Ok(entries) = fs::read_dir(&leyen_proton) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file() {
+                if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file()
+                {
                     versions.push(path.to_string_lossy().to_string());
                 }
             }
@@ -120,8 +127,6 @@ pub fn detect_proton_versions() -> GlobalSettings {
     } else {
         let _ = fs::create_dir_all(&leyen_proton);
     }
-
-
 
     let default_prefix_path = get_data_dir().join("prefixes").join("default");
     if !default_prefix_path.exists() {
@@ -142,4 +147,3 @@ pub fn detect_proton_versions() -> GlobalSettings {
         log_operations: false,
     }
 }
-

@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 use super::deps_dialog::show_dependencies_dialog;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
- use gtk4::glib;
 use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::runtime::proton::resolve_proton_path;
-use crate::tools::{gamemode_available, mangohud_available};
 use crate::runtime::umu::get_umu_runtime_dir;
+use crate::tools::{gamemode_available, mangohud_available};
+use gtk4::glib;
 
 pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let settings = crate::config::load_settings().await;
@@ -109,7 +109,9 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     let manage_deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
     manage_deps_btn.set_margin_bottom(6);
-    let run_prefix_btn = gtk4::Button::builder().label("Run in default prefix").build();
+    let run_prefix_btn = gtk4::Button::builder()
+        .label("Run in default prefix")
+        .build();
     run_prefix_btn.set_margin_top(6);
 
     let overlay = adw::ToastOverlay::new();
@@ -236,7 +238,9 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     let reset_row = adw::ActionRow::builder()
         .title("Reset umu Runtime")
-        .subtitle("Deletes steamrt3 directory. It will be re-downloaded on next dependency install.")
+        .subtitle(
+            "Deletes steamrt3 directory. It will be re-downloaded on next dependency install.",
+        )
         .build();
 
     let reset_btn = gtk4::Button::builder()

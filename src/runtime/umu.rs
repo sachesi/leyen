@@ -1,9 +1,9 @@
-use std::fs;
+use crate::config::get_data_dir;
 use directories::ProjectDirs;
-use thiserror::Error;
 use gtk4::glib;
 use log::{info, warn};
-use crate::config::get_data_dir;
+use std::fs;
+use thiserror::Error;
 
 pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -54,7 +54,7 @@ pub fn is_nixos() -> bool {
     if std::path::Path::new("/etc/NIXOS").exists() {
         return true;
     }
-    
+
     // Fallback: check /etc/os-release for ID=nixos
     if let Ok(content) = fs::read_to_string("/etc/os-release") {
         for line in content.lines() {
@@ -110,7 +110,7 @@ pub fn is_umu_run_available() -> bool {
     {
         return true;
     }
-    
+
     // On NixOS, we don't consider the local copy a valid alternative
     if is_nixos() {
         return false;
@@ -171,9 +171,14 @@ pub fn check_or_install_umu() {
 
     let umu_core_dir = get_umu_core_dir();
 
-    info!("[dbg] umu-launcher not found, starting background download to {}", umu_core_dir);
+    info!(
+        "[dbg] umu-launcher not found, starting background download to {}",
+        umu_core_dir
+    );
     glib::spawn_future_local(async move {
-        let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir)).await.unwrap();
+        let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir))
+            .await
+            .unwrap();
         match &result {
             Ok(()) => info!("[dbg] umu-launcher download+install completed"),
             Err(e) => warn!("[dbg] umu-launcher download+install failed: {e}"),
@@ -300,13 +305,15 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
 pub fn get_local_umu_version() -> Option<String> {
     let core_dir = get_umu_core_dir();
     let version_file = std::path::Path::new(&core_dir).join("version");
-    fs::read_to_string(version_file).ok().map(|s| s.trim().to_string())
+    fs::read_to_string(version_file)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Checks if an update for umu-launcher is available.
 pub fn check_for_umu_updates() -> Result<bool, UmuError> {
     let current_version = get_local_umu_version();
-    
+
     let tag_output = std::process::Command::new("curl")
         .args([
             "--proto",

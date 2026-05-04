@@ -31,6 +31,10 @@ async fn main() -> glib::ExitCode {
 
     let _lock = match instance::InstanceLock::acquire() {
         Ok(lock) => lock,
+        Err(instance::InstanceError::AlreadyRunning) => {
+            let _ = instance::signal_show_window();
+            return glib::ExitCode::SUCCESS;
+        }
         Err(err) => {
             eprintln!("{err}");
             return glib::ExitCode::FAILURE;

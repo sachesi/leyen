@@ -1,7 +1,7 @@
+use crate::models::LibraryItem;
+use libadwaita as adw;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use libadwaita as adw;
-use crate::models::LibraryItem;
 
 pub const LIBRARY_ICON_SIZE: i32 = 48;
 pub const LIBRARY_ICON_CORNER_RADIUS: i32 = 7;

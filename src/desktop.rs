@@ -28,7 +28,11 @@ pub async fn create_game_desktop_entry(
             }
         }
         let icon = desktop_icon(&game);
-        fs::write(&path, render_game_desktop_entry(&game, group.as_ref(), &icon)).map_err(|err| {
+        fs::write(
+            &path,
+            render_game_desktop_entry(&game, group.as_ref(), &icon),
+        )
+        .map_err(|err| {
             format!(
                 "Failed to write desktop entry '{}': {}",
                 path.display(),

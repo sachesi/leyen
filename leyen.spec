@@ -1,7 +1,7 @@
 %define _debugsource_template %{nil}
 %define debug_package %{nil}
 
-%bcond_without vendored
+%bcond_with vendored
 
 %global app_id com.github.sachesi.leyen
 

@@ -13,6 +13,14 @@ pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
 pub static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+pub static WINETRICKS_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// `true` while the background winetricks download thread is actively running.
+/// The UI polls this to show/hide the download status banner.
+pub static WINETRICKS_DOWNLOADING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Error, Debug)]
 pub enum UmuError {
     #[error("Failed to create directory: {0}")]
@@ -72,95 +80,151 @@ pub fn get_local_umu_run_path() -> String {
     format!("{}/umu/umu-run", get_umu_core_dir())
 }
 
-use std::sync::OnceLock;
-
-static UMU_RUN_PATH: OnceLock<String> = OnceLock::new();
-static UMU_RUN_AVAILABLE: OnceLock<bool> = OnceLock::new();
-static WINETRICKS_PATH: OnceLock<String> = OnceLock::new();
-static WINETRICKS_AVAILABLE: OnceLock<bool> = OnceLock::new();
-
 /// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 pub fn get_umu_run_path() -> String {
-    UMU_RUN_PATH
-        .get_or_init(|| {
-            if is_nixos() {
-                return "umu-run".to_string();
-            }
+    if is_nixos() {
+        return "umu-run".to_string();
+    }
 
-            if std::process::Command::new("which")
-                .arg("umu-run")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                return "umu-run".to_string();
-            }
+    if std::process::Command::new("which")
+        .arg("umu-run")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "umu-run".to_string();
+    }
 
-            let local_path = get_local_umu_run_path();
-            if std::path::Path::new(&local_path).exists() {
-                return local_path;
-            }
+    let local_path = get_local_umu_run_path();
+    if std::path::Path::new(&local_path).exists() {
+        return local_path;
+    }
 
-            "umu-run".to_string()
-        })
-        .clone()
+    "umu-run".to_string()
 }
 
 /// Returns `true` when `umu-run` is actually available (system PATH or local
 /// install).  Unlike `get_umu_run_path()` this does not return a fallback
 /// string when umu-run is absent.
+/// Not cached — always re-checks so a download started during the
+/// session is detected immediately.
 pub fn is_umu_run_available() -> bool {
-    *UMU_RUN_AVAILABLE.get_or_init(|| {
-        if std::process::Command::new("which")
-            .arg("umu-run")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return true;
-        }
+    if std::process::Command::new("which")
+        .arg("umu-run")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return true;
+    }
 
-        if is_nixos() {
-            return false;
-        }
+    if is_nixos() {
+        return false;
+    }
 
-        std::path::Path::new(&get_local_umu_run_path()).exists()
-    })
+    std::path::Path::new(&get_local_umu_run_path()).exists()
+}
+
+/// Directory where the winetricks script is stored.
+pub fn get_winetricks_dir() -> String {
+    get_data_dir()
+        .join("core")
+        .join("winetricks")
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Full path to the locally downloaded winetricks script.
+pub fn get_local_winetricks_path() -> String {
+    format!("{}/winetricks", get_winetricks_dir())
 }
 
 /// Returns the command / path to use when invoking `winetricks`.
-/// Prefers the system-wide binary.
+/// Prefers the system-wide binary; falls back to the locally downloaded copy.
+/// Not cached — always re-checks so a download started during the
+/// session is detected immediately.
 pub fn get_winetricks_path() -> String {
-    WINETRICKS_PATH
-        .get_or_init(|| {
-            if is_nixos() {
-                return "winetricks".to_string();
-            }
+    if is_nixos() {
+        return "winetricks".to_string();
+    }
 
-            if std::process::Command::new("which")
-                .arg("winetricks")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                return "winetricks".to_string();
-            }
+    if std::process::Command::new("which")
+        .arg("winetricks")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "winetricks".to_string();
+    }
 
-            "winetricks".to_string()
-        })
-        .clone()
+    let local_path = get_local_winetricks_path();
+    if std::path::Path::new(&local_path).exists() {
+        return local_path;
+    }
+
+    "winetricks".to_string()
 }
 
-/// Returns `true` when `winetricks` is actually available.
+/// Returns `true` when `winetricks` is actually available (system PATH or local
+/// download). Not cached — always re-checks so a download started during the
+/// session is detected immediately.
 pub fn is_winetricks_available() -> bool {
-    *WINETRICKS_AVAILABLE.get_or_init(|| {
-        std::process::Command::new("which")
-            .arg("winetricks")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    })
+    if std::process::Command::new("which")
+        .arg("winetricks")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    std::path::Path::new(&get_local_winetricks_path()).exists()
+}
+
+/// Downloads the latest winetricks script from GitHub into the local data directory.
+pub fn download_winetricks() -> Result<(), UmuError> {
+    let dest_dir = get_winetricks_dir();
+    fs::create_dir_all(&dest_dir)?;
+    let dest_path = format!("{}/winetricks", dest_dir);
+
+    let status = std::process::Command::new("curl")
+        .args([
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail",
+            "--retry",
+            "3",
+            "--retry-delay",
+            "1",
+            "-o",
+            &dest_path,
+            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
+        ])
+        .status()
+        .map_err(|e| UmuError::DownloadError(e.to_string()))?;
+
+    if !status.success() {
+        let _ = fs::remove_file(&dest_path);
+        return Err(UmuError::DownloadError(
+            "Failed to download winetricks".to_string(),
+        ));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&dest_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&dest_path, perms);
+        }
+    }
+
+    Ok(())
 }
 
 /// Checks whether `umu-run` is available.
@@ -204,6 +268,41 @@ pub fn check_or_install_umu() {
             UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
         }
         UMU_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
+    });
+}
+
+/// Checks whether `winetricks` is available.
+/// If it is not found in the system PATH or in the local leyen data directory,
+/// spawns a background thread that downloads the latest winetricks script
+/// from GitHub to `~/.local/share/leyen/core/winetricks/`.
+pub fn check_or_install_winetricks() {
+    if is_nixos() {
+        return;
+    }
+
+    if is_winetricks_available() {
+        return;
+    }
+
+    if WINETRICKS_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    WINETRICKS_DOWNLOADING.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    info!("[dbg] winetricks not found, starting background download");
+    glib::spawn_future_local(async move {
+        let result = tokio::task::spawn_blocking(|| download_winetricks())
+            .await
+            .unwrap();
+        match &result {
+            Ok(()) => info!("[dbg] winetricks download completed"),
+            Err(e) => warn!("[dbg] winetricks download failed: {e}"),
+        }
+        if result.is_err() {
+            WINETRICKS_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        WINETRICKS_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
     });
 }
 

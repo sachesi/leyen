@@ -14,8 +14,8 @@ use tokio::process::Command as AsyncCommand;
 
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{
-    UMU_DOWNLOADING, get_umu_run_path, get_winetricks_path, is_umu_run_available,
-    is_winetricks_available,
+    UMU_DOWNLOADING, WINETRICKS_DOWNLOADING, download_winetricks, get_umu_run_path,
+    get_winetricks_path, is_umu_run_available, is_winetricks_available,
 };
 
 use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
@@ -755,15 +755,33 @@ async fn ensure_umu_ready(
         return Err("umu-launcher not available".to_string());
     }
 
-    if check_winetricks
-        && !tokio::task::spawn_blocking(is_winetricks_available)
+    if check_winetricks {
+        if WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+            overlay.add_toast(adw::Toast::new(
+                "winetricks is still downloading, please wait…",
+            ));
+            return Err("winetricks not ready".to_string());
+        }
+
+        if !tokio::task::spawn_blocking(is_winetricks_available)
             .await
             .unwrap()
-    {
-        overlay.add_toast(adw::Toast::new(
-            "winetricks is not installed. Please install it using your package manager.",
-        ));
-        return Err("winetricks not available".to_string());
+        {
+            overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
+            tokio::task::spawn_blocking(|| download_winetricks())
+                .await
+                .unwrap()
+                .map_err(|_| {
+                    "Failed to download winetricks. Check your internet connection.".to_string()
+                })?;
+
+            if !tokio::task::spawn_blocking(is_winetricks_available)
+                .await
+                .unwrap()
+            {
+                return Err("winetricks not available after download".to_string());
+            }
+        }
     }
 
     Ok(())

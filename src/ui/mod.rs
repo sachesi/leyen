@@ -24,7 +24,7 @@ use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
 
-use crate::runtime::umu::UMU_DOWNLOADING;
+use crate::runtime::umu::{UMU_DOWNLOADING, WINETRICKS_DOWNLOADING};
 
 pub fn build_ui(app: &adw::Application) {
     let css = gtk4::CssProvider::new();
@@ -215,18 +215,33 @@ pub fn build_ui(app: &adw::Application) {
 
     let download_banner = adw::Banner::builder()
         .title("Downloading umu-launcher… Please wait before starting games.")
-        .revealed(UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed))
+        .revealed(
+            UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed)
+                || WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed),
+        )
         .build();
     toolbar_view.add_top_bar(&download_banner);
     toolbar_view.set_content(Some(&toast_overlay));
 
     let banner_for_update = download_banner.clone();
     glib::timeout_add_seconds_local(1, move || {
-        let downloading = UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
-        banner_for_update.set_revealed(downloading);
-        if downloading {
+        let umu_down = UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
+        let wt_down = WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
+        let any_down = umu_down || wt_down;
+
+        if any_down {
+            banner_for_update.set_revealed(true);
+            let title = if umu_down && wt_down {
+                "Downloading umu-launcher & winetricks… Please wait before starting games."
+            } else if umu_down {
+                "Downloading umu-launcher… Please wait before starting games."
+            } else {
+                "Downloading winetricks…"
+            };
+            banner_for_update.set_title(title);
             glib::ControlFlow::Continue
         } else {
+            banner_for_update.set_revealed(false);
             glib::ControlFlow::Break
         }
     });

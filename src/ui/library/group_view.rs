@@ -24,9 +24,12 @@ pub async fn populate_group_view(
     let Some(group_id) = ui.current_group_id.borrow().clone() else {
         return;
     };
-    let items = ui.library_state.borrow();
-    let Some(group) = find_group(&items, &group_id).cloned() else {
-        return;
+    let group = {
+        let items = ui.library_state.borrow();
+        match find_group(&items, &group_id).cloned() {
+            Some(g) => g,
+            None => return,
+        }
     };
 
     ui.title.set_title(&group.title);

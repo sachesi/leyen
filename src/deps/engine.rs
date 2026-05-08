@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::Ordering;
 use std::time::UNIX_EPOCH;
 
 use gtk4::glib;
@@ -69,7 +70,6 @@ pub enum DepStepAction {
 #[derive(Clone)]
 pub enum VerifyAction {
     RegistryKeyExists { path: &'static str },
-    FileExistsInPrefix { relative_path: &'static str },
 }
 
 #[derive(Clone)]
@@ -78,15 +78,7 @@ pub struct DepStep {
     pub action: DepStepAction,
 }
 
-pub enum DepInstallMsg {
-    Progress {
-        step: usize,
-        total: usize,
-        description: String,
-    },
-    Done(Option<String>),
-    Failed(String),
-}
+
 
 #[derive(Default, Debug)]
 pub struct StepChanges {
@@ -132,7 +124,7 @@ enum CleanupAction {
     RemoveCreatedFiles(Vec<String>),
 }
 
-pub const DEP_ASYNC_POLL_MS: u64 = 50;
+
 
 pub async fn execute_dep_step(
     step: &DepStep,
@@ -418,7 +410,8 @@ pub async fn execute_dep_step(
                 .await
                 .unwrap()?;
 
-            changes.created_files = merge_unique_strings(&[], &changes.created_files);
+            changes.created_files.sort();
+            changes.created_files.dedup();
             Ok(changes)
         }
 
@@ -464,9 +457,7 @@ pub async fn execute_dep_step(
                     .await
                     .unwrap()?
                 }
-                VerifyAction::FileExistsInPrefix { relative_path } => {
-                    super::verify::check_file_exists_in_prefix(prefix_path, relative_path)
-                }
+
             };
 
             if !verified {
@@ -491,7 +482,7 @@ fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton
 }
 
 fn maybe_silence_command_async(cmd: &mut AsyncCommand) {
-    if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
 }
@@ -738,7 +729,7 @@ async fn ensure_umu_ready(
     overlay: &adw::ToastOverlay,
     check_winetricks: bool,
 ) -> Result<(), String> {
-    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
         ));
@@ -756,7 +747,7 @@ async fn ensure_umu_ready(
     }
 
     if check_winetricks {
-        if WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+        if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
             overlay.add_toast(adw::Toast::new(
                 "winetricks is still downloading, please wait…",
             ));
@@ -768,7 +759,7 @@ async fn ensure_umu_ready(
             .unwrap()
         {
             overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
-            tokio::task::spawn_blocking(|| download_winetricks())
+            tokio::task::spawn_blocking(download_winetricks)
                 .await
                 .unwrap()
                 .map_err(|_| {
@@ -801,7 +792,7 @@ fn configure_umu_command(cmd: &mut std::process::Command, prefix_path: &str, pro
 }
 
 fn maybe_silence_command(cmd: &mut std::process::Command) {
-    if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
 }

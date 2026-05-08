@@ -7,6 +7,8 @@ use log::info;
 use gtk4::gio;
 use gtk4::prelude::*;
 
+use std::sync::atomic::Ordering;
+
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
@@ -32,7 +34,7 @@ pub async fn pick_and_run_in_prefix(
         return;
     }
 
-    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
         ));
@@ -98,7 +100,7 @@ fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> R
     {
         cmd.current_dir(parent);
     }
-    if !LOG_OPERATIONS.load(std::sync::atomic::Ordering::Relaxed) {
+    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
     }
 

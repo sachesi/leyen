@@ -12,21 +12,8 @@ use crate::icons::game_icon_file;
 use crate::launch::running_games_snapshot;
 
 use super::log_window::show_log_window;
+use super::utils::format_duration_brief;
 use crate::ui::components::icon::build_library_icon;
-
-fn format_duration_brief(total_seconds: u64) -> String {
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    let seconds = total_seconds % 60;
-
-    if hours > 0 {
-        format!("{}h {}m", hours, minutes)
-    } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
-    } else {
-        format!("{}s", seconds)
-    }
-}
 
 async fn rebuild_running_games(
     list_box: &gtk4::Box,
@@ -158,7 +145,6 @@ async fn rebuild_running_games(
 
         let overlay_for_stop = overlay.clone();
         let game_id_for_stop = snapshot.game_id.clone();
-        let _title_for_stop = title.clone();
         stop_btn.connect_clicked(move |_| {
             let game_id = game_id_for_stop.clone();
             let overlay = overlay_for_stop.clone();
@@ -279,7 +265,6 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     });
     window.present();
 
-    let _window_ref = window.clone();
     let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
     let list_box_ref = list_box.clone();
     let content_stack_ref = content_stack.clone();

@@ -1,10 +1,10 @@
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::get_data_dir;
 use crate::models::GlobalSettings;
 
-static PROTONGE_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static PROTONGE_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Resolves a Proton value stored in config.
 /// Returns `None` when the value represents the "Default" / unset state.
@@ -20,7 +20,7 @@ pub fn resolve_proton_path(proton: &str) -> Option<String> {
 /// release from GitHub into the leyen data directory in a background
 /// thread.  Only one download attempt is made per application lifetime.
 pub fn check_or_install_protonge() {
-    if PROTONGE_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    if PROTONGE_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
         return;
     }
 

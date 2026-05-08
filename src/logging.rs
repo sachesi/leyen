@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -50,11 +50,7 @@ impl log::Log for LeyenLogger {
         }
 
         let target = record.target();
-        let game_id = if target.starts_with("game:") {
-            Some(target[5..].to_string())
-        } else {
-            None
-        };
+        let game_id = target.strip_prefix("game:").map(String::from);
 
         let level_str = match record.level() {
             Level::Error => "ERROR",
@@ -74,7 +70,7 @@ impl log::Log for LeyenLogger {
 
         let entry = LogEntry {
             timestamp: Local::now().to_rfc3339(),
-            line: line.clone(),
+            line,
             game_id,
         };
 
@@ -118,7 +114,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                         entries.pop_front();
                     }
                     entries.push_back(entry.clone());
-                    TOTAL_LOG_LINES_PRODUCED.fetch_add(1, Ordering::SeqCst);
+                    TOTAL_LOG_LINES_PRODUCED.fetch_add(1, Ordering::Relaxed);
                 }
 
             lines_since_check += 1;
@@ -126,7 +122,6 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                 lines_since_check = 0;
                 if let Ok(metadata) = fs::metadata(&path)
                     && metadata.len() > MAX_LOG_SIZE {
-                        file = None;
                         let mut old_path = path.clone();
                         old_path.set_extension("jsonl.old");
                         let _ = fs::rename(&path, &old_path);
@@ -181,7 +176,7 @@ pub fn clear_log_buffer() {
         && let Ok(mut entries) = buf.write() {
             entries.clear();
         }
-    TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::SeqCst);
+    TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::Relaxed);
 
     let path = log_path();
     let _ = fs::remove_file(&path);

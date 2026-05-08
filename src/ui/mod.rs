@@ -24,6 +24,8 @@ use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
 
+use std::sync::atomic::Ordering;
+
 use crate::runtime::umu::{UMU_DOWNLOADING, WINETRICKS_DOWNLOADING};
 
 pub fn build_ui(app: &adw::Application) {
@@ -216,8 +218,8 @@ pub fn build_ui(app: &adw::Application) {
     let download_banner = adw::Banner::builder()
         .title("Downloading umu-launcher… Please wait before starting games.")
         .revealed(
-            UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed)
-                || WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed),
+            UMU_DOWNLOADING.load(Ordering::Relaxed)
+                || WINETRICKS_DOWNLOADING.load(Ordering::Relaxed),
         )
         .build();
     toolbar_view.add_top_bar(&download_banner);
@@ -225,8 +227,8 @@ pub fn build_ui(app: &adw::Application) {
 
     let banner_for_update = download_banner.clone();
     glib::timeout_add_seconds_local(1, move || {
-        let umu_down = UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
-        let wt_down = WINETRICKS_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed);
+        let umu_down = UMU_DOWNLOADING.load(Ordering::Relaxed);
+        let wt_down = WINETRICKS_DOWNLOADING.load(Ordering::Relaxed);
         let any_down = umu_down || wt_down;
 
         if any_down {
@@ -273,7 +275,7 @@ pub fn build_ui(app: &adw::Application) {
         add_button_stack: add_button_stack.clone(),
         back_btn: back_btn.clone(),
         title,
-        search_bar: search_bar.clone(),
+        _search_bar: search_bar.clone(),
         search_entry: search_entry.clone(),
         library_state: Rc::new(RefCell::new(Vec::new())),
         current_group_id: Rc::new(RefCell::new(None)),
@@ -419,12 +421,9 @@ pub fn build_ui(app: &adw::Application) {
 
     window.present();
 
-    let open_logs_on_start = crate::cli::take_open_logs_on_start();
-    if open_logs_on_start {
+    if crate::cli::take_open_logs_on_start() {
         glib::spawn_future_local(async move {
-            glib::spawn_future_local(async move {
-                show_log_window(&window, None).await;
-            });
+            show_log_window(&window, None).await;
         });
     }
 }

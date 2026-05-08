@@ -78,10 +78,6 @@ pub enum LaunchError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Game '{0}' is not running")]
-    GameNotRunning(String),
-    #[error("Prefix error: {0}")]
-    PrefixError(String),
     #[error("Launch failed: {0}")]
     Other(String),
 }
@@ -369,7 +365,7 @@ pub async fn read_running_games_snapshot() -> Result<Vec<RunningGameSnapshot>, L
 pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
     get_running_sessions_cache()
         .read()
-        .map(|c| c.clone())
+        .map(|guard| guard.clone())
         .unwrap_or_default()
 }
 
@@ -589,9 +585,11 @@ fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
     map
 }
 
-static PROCESS_CHILDREN_MAP_CACHE: OnceLock<RwLock<(HashMap<u32, Vec<u32>>, u64)>> = OnceLock::new();
+type ChildrenMapCache = RwLock<(HashMap<u32, Vec<u32>>, u64)>;
 
-fn get_process_children_cache() -> &'static RwLock<(HashMap<u32, Vec<u32>>, u64)> {
+static PROCESS_CHILDREN_MAP_CACHE: OnceLock<ChildrenMapCache> = OnceLock::new();
+
+fn get_process_children_cache() -> &'static ChildrenMapCache {
     PROCESS_CHILDREN_MAP_CACHE.get_or_init(|| RwLock::new((HashMap::new(), 0)))
 }
 
@@ -817,7 +815,7 @@ async fn launch_game_managed(
     let mut notices = Vec::new();
 
     // Block launch while umu-launcher is being downloaded.
-    if UMU_DOWNLOADING.load(std::sync::atomic::Ordering::Relaxed) {
+    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         return Err(LaunchError::Other(
             "umu-launcher is still downloading, please wait…".to_string(),
         ));
@@ -973,12 +971,20 @@ async fn launch_game_managed(
         "{} {}",
         env_vars
             .iter()
-            .map(|(k, v)| format!("{}={}", k, shlex::quote(v)))
+            .map(|(k, v)| format!(
+                "{}={}",
+                k,
+                shlex::try_quote(v).unwrap_or(std::borrow::Cow::Borrowed(v))
+            ))
             .collect::<Vec<_>>()
             .join(" "),
         cmd_args
             .iter()
-            .map(|a| shlex::quote(a).to_string())
+            .map(|a| {
+                shlex::try_quote(a)
+                    .unwrap_or(std::borrow::Cow::Borrowed(a))
+                    .to_string()
+            })
             .collect::<Vec<_>>()
             .join(" ")
     );

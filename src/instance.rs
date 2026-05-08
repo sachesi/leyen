@@ -24,6 +24,7 @@ impl InstanceLock {
 
         let file = OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(&lock_path)?;
 

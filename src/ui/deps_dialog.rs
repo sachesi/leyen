@@ -359,10 +359,12 @@ pub async fn show_dependencies_dialog(
                         let title = title3.clone();
                         let handles = row_handles3.clone();
                         glib::spawn_future_local(async move {
-                            refresh_dep_rows(&prefix3, &title, &handles.borrow()).await;
+                            let snapshot = handles.borrow().clone();
+                            refresh_dep_rows(&prefix3, &title, &snapshot).await;
                         });
                         dialog_busy3.set(false);
-                        set_dialog_busy(false, &close_btn3, &search_entry3, &row_handles3.borrow());
+                        let busy_snapshot = row_handles3.borrow().clone();
+                        set_dialog_busy(false, &close_btn3, &search_entry3, &busy_snapshot);
                         if success {
                             badge3.set_visible(true);
                             let message = note_or_error
@@ -448,10 +450,12 @@ pub async fn show_dependencies_dialog(
                         let title = title3.clone();
                         let handles = row_handles3.clone();
                         glib::spawn_future_local(async move {
-                            refresh_dep_rows(&prefix3, &title, &handles.borrow()).await;
+                            let snapshot = handles.borrow().clone();
+                            refresh_dep_rows(&prefix3, &title, &snapshot).await;
                         });
                         dialog_busy3.set(false);
-                        set_dialog_busy(false, &close_btn3, &search_entry3, &row_handles3.borrow());
+                        let busy_snapshot = row_handles3.borrow().clone();
+                        set_dialog_busy(false, &close_btn3, &search_entry3, &busy_snapshot);
                         if success {
                             badge3.set_visible(true);
                             let message = note_or_error
@@ -586,15 +590,17 @@ pub async fn show_dependencies_dialog(
                                         let title = title4.clone();
                                         let handles = row_handles4.clone();
                                         glib::spawn_future_local(async move {
-                                            refresh_dep_rows(&prefix4, &title, &handles.borrow())
+                                            let snapshot = handles.borrow().clone();
+                                            refresh_dep_rows(&prefix4, &title, &snapshot)
                                                 .await;
                                         });
                                         dialog_busy4.set(false);
+                                        let busy_snapshot = row_handles4.borrow().clone();
                                         set_dialog_busy(
                                             false,
                                             &close_btn4,
                                             &search_entry4,
-                                            &row_handles4.borrow(),
+                                            &busy_snapshot,
                                         );
                                         if success {
                                             badge4.set_visible(false);
@@ -670,6 +676,7 @@ pub async fn show_dependencies_dialog(
     let dialog_close = dialog.clone();
     close_btn.connect_clicked(move |_| dialog_close.destroy());
 
-    refresh_dep_rows(&resolved_prefix, &title_widget, &row_handles.borrow()).await;
+    let initial_snapshot = row_handles.borrow().clone();
+    refresh_dep_rows(&resolved_prefix, &title_widget, &initial_snapshot).await;
     dialog.present();
 }

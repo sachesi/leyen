@@ -71,9 +71,7 @@ pub async fn maybe_run_from_args() -> Option<glib::ExitCode> {
         }
     };
 
-    let Some(command) = cli.command else {
-        return None;
-    };
+    let command = cli.command?;
 
     let result = match command {
         Commands::List => list_games().await,

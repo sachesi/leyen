@@ -71,18 +71,14 @@ pub async fn load_games() -> Vec<Game> {
 }
 
 pub fn flatten_games(items: &[LibraryItem]) -> Vec<Game> {
-    let mut games = Vec::new();
-    for item in items {
-        match item {
-            LibraryItem::Game(game) => games.push(game.clone()),
-            LibraryItem::Group(group) => {
-                for game in &group.games {
-                    games.push(game.clone());
-                }
-            }
-        }
-    }
-    games
+    items
+        .iter()
+        .flat_map(|item| match item {
+            LibraryItem::Game(game) => std::slice::from_ref(game),
+            LibraryItem::Group(group) => &group.games,
+        })
+        .cloned()
+        .collect()
 }
 
 pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSettings {
@@ -95,23 +91,18 @@ pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> Globa
         };
 
         let fresh = crate::runtime::detect_proton_versions();
-        let mut merged = std::collections::HashSet::new();
-        for v in &settings.available_proton_versions {
-            merged.insert(v.clone());
-        }
-        for v in &fresh.available_proton_versions {
-            merged.insert(v.clone());
-        }
-        let mut merged_vec: Vec<String> = merged.into_iter().collect();
-        if merged_vec.len() > 1 {
-            merged_vec.sort();
-        }
-        if !merged_vec.contains(&"Default".to_string()) {
-            merged_vec.insert(0, "Default".to_string());
-        } else {
-            merged_vec.retain(|v| v != "Default");
-            merged_vec.insert(0, "Default".to_string());
-        }
+        let merged: HashSet<String> = settings
+            .available_proton_versions
+            .iter()
+            .chain(&fresh.available_proton_versions)
+            .cloned()
+            .collect();
+        let mut merged_vec: Vec<String> = merged
+            .into_iter()
+            .filter(|v| v != "Default")
+            .collect();
+        merged_vec.sort();
+        merged_vec.insert(0, "Default".to_string());
         settings.available_proton_versions = merged_vec;
         if settings.default_prefix_path.is_empty() {
             settings.default_prefix_path = fresh.default_prefix_path;
@@ -368,7 +359,8 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
     }
 }
 
-pub fn is_valid_leyen_id(id: &str) -> bool {
+#[cfg(test)]
+fn is_valid_leyen_id(id: &str) -> bool {
     id.starts_with(LEYEN_ID_PREFIX)
         && id.len() == LEYEN_ID_PREFIX.len() + LEYEN_ID_DIGITS
         && id[LEYEN_ID_PREFIX.len()..]

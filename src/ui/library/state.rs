@@ -30,7 +30,7 @@ pub struct LibraryUi {
     pub add_button_stack: gtk4::Stack,
     pub back_btn: gtk4::Button,
     pub title: adw::WindowTitle,
-    pub search_bar: gtk4::SearchBar,
+    pub _search_bar: gtk4::SearchBar,
     pub search_entry: gtk4::SearchEntry,
     pub library_state: Rc<RefCell<Vec<LibraryItem>>>,
     pub current_group_id: Rc<RefCell<Option<String>>>,

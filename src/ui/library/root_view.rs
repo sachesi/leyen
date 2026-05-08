@@ -23,14 +23,17 @@ pub async fn populate_root_view(
     ui.root_running_duration_labels.borrow_mut().clear();
     ui.root_group_running_duration_labels.borrow_mut().clear();
 
-    let items = ui.library_state.borrow();
-    if items.is_empty() {
-        ui.root_content_stack.set_visible_child_name("empty");
-        return;
-    }
+    let cloned_items = {
+        let items = ui.library_state.borrow();
+        if items.is_empty() {
+            ui.root_content_stack.set_visible_child_name("empty");
+            return;
+        }
+        items.clone()
+    };
 
     let running_games = running_game_map().await;
-    let mut sorted_items: Vec<LibraryItem> = items.clone();
+    let mut sorted_items: Vec<LibraryItem> = cloned_items;
     sorted_items.sort_by(|left, right| root_library_item_cmp(left, right, &running_games));
 
     for item in &sorted_items {

@@ -1,5 +1,4 @@
 use crate::runtime::umu::get_umu_run_path;
-use std::path::Path;
 use std::process::Command;
 
 pub fn check_registry_key_exists(
@@ -26,7 +25,4 @@ pub fn check_registry_key_exists(
     Ok(status.success())
 }
 
-pub fn check_file_exists_in_prefix(prefix_path: &str, relative_path: &str) -> bool {
-    let path = Path::new(prefix_path).join(relative_path);
-    path.exists()
-}
+

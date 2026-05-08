@@ -29,7 +29,6 @@ Requires:       tar
 Requires:       hicolor-icon-theme
 Recommends:     mangohud
 Recommends:     gamemode
-Recommends:     winetricks
 
 %description
 Leyen is a modern GTK4/libadwaita frontend for managing Wine/Proton games

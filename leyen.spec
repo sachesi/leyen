@@ -6,7 +6,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.8
+Version:        0.2.9
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -122,6 +122,10 @@ test -f %{buildroot}%{_datadir}/zsh/site-functions/_%{name}
 %{_datadir}/zsh/site-functions/_%{name}
 
 %changelog
+* Fri May 08 2026 sachesi <xsachesi@pm.me> - 0.2.9-1
+- Fix OnceLock cache poison preventing umu/winetricks download on fresh install
+- Add winetricks auto-download with background download and UI banner
+
 * Thu Apr 30 2026 sachesi <xsachesi@pm.me> - 0.2.3-1
 - Bump version to 0.2.3
 

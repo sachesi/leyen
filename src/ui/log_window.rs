@@ -155,10 +155,11 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     window.present();
 
     let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));
+    let initial_filter = selected_filter.borrow().clone();
     let rendered_count = Rc::new(Cell::new(
         rebuild_buffer(
             &buffer,
-            selected_filter.borrow().clone(),
+            initial_filter,
             &content_stack,
             &scroll,
             &text_view,

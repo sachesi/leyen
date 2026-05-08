@@ -2,16 +2,7 @@
 mod tests {
     use super::super::engine::{DepStep, DepStepAction, execute_dep_step};
     use std::fs;
-    use std::path::PathBuf;
     use tempfile::tempdir;
-
-    #[test]
-    fn test_snapshot_logic() {
-        let prefix_dir = tempdir().unwrap();
-        let cache_dir = tempdir().unwrap();
-        let _prefix_path = prefix_dir.path().to_string_lossy().to_string();
-        let _cache_path = cache_dir.path().to_string_lossy().to_string();
-    }
 
     #[tokio::test]
     async fn test_sha256_verification() {

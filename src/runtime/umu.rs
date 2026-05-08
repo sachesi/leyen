@@ -3,34 +3,31 @@ use directories::ProjectDirs;
 use gtk4::glib;
 use log::{info, warn};
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
-pub static UMU_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static UMU_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// `true` while the background download thread is actively running.
 /// The UI polls this to show/hide the download status banner.
-pub static UMU_DOWNLOADING: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static UMU_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
-pub static WINETRICKS_DOWNLOAD_STARTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static WINETRICKS_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// `true` while the background winetricks download thread is actively running.
 /// The UI polls this to show/hide the download status banner.
-pub static WINETRICKS_DOWNLOADING: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub static WINETRICKS_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Error, Debug)]
 pub enum UmuError {
     #[error("Failed to create directory: {0}")]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
     #[error("Failed to resolve latest version: {0}")]
-    VersionResolveError(String),
+    VersionResolve(String),
     #[error("Download failed: {0}")]
-    DownloadError(String),
+    Download(String),
     #[error("Extraction failed: {0}")]
-    ExtractionError(String),
+    Extraction(String),
 }
 
 /// Directory where the umu-launcher zipapp is extracted.
@@ -55,6 +52,17 @@ pub fn get_umu_runtime_dir() -> String {
         })
         .to_string_lossy()
         .to_string()
+}
+
+/// Returns `true` if `cmd` is found in `$PATH` via `which`.
+fn is_in_path(cmd: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Returns true if running on NixOS.
@@ -87,12 +95,7 @@ pub fn get_umu_run_path() -> String {
         return "umu-run".to_string();
     }
 
-    if std::process::Command::new("which")
-        .arg("umu-run")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
+    if is_in_path("umu-run") {
         return "umu-run".to_string();
     }
 
@@ -110,19 +113,12 @@ pub fn get_umu_run_path() -> String {
 /// Not cached — always re-checks so a download started during the
 /// session is detected immediately.
 pub fn is_umu_run_available() -> bool {
-    if std::process::Command::new("which")
-        .arg("umu-run")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
+    if is_in_path("umu-run") {
         return true;
     }
-
     if is_nixos() {
         return false;
     }
-
     std::path::Path::new(&get_local_umu_run_path()).exists()
 }
 
@@ -149,12 +145,7 @@ pub fn get_winetricks_path() -> String {
         return "winetricks".to_string();
     }
 
-    if std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
+    if is_in_path("winetricks") {
         return "winetricks".to_string();
     }
 
@@ -170,12 +161,7 @@ pub fn get_winetricks_path() -> String {
 /// download). Not cached — always re-checks so a download started during the
 /// session is detected immediately.
 pub fn is_winetricks_available() -> bool {
-    if std::process::Command::new("which")
-        .arg("winetricks")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
+    if is_in_path("winetricks") {
         return true;
     }
     std::path::Path::new(&get_local_winetricks_path()).exists()
@@ -205,11 +191,11 @@ pub fn download_winetricks() -> Result<(), UmuError> {
             "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
         ])
         .status()
-        .map_err(|e| UmuError::DownloadError(e.to_string()))?;
+        .map_err(|e| UmuError::Download(e.to_string()))?;
 
     if !status.success() {
         let _ = fs::remove_file(&dest_path);
-        return Err(UmuError::DownloadError(
+        return Err(UmuError::Download(
             "Failed to download winetricks".to_string(),
         ));
     }
@@ -243,11 +229,11 @@ pub fn check_or_install_umu() {
         return;
     }
 
-    if UMU_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    if UMU_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
         return;
     }
 
-    UMU_DOWNLOADING.store(true, std::sync::atomic::Ordering::Relaxed);
+    UMU_DOWNLOADING.store(true, Ordering::Relaxed);
 
     let umu_core_dir = get_umu_core_dir();
 
@@ -265,9 +251,9 @@ pub fn check_or_install_umu() {
         }
         if result.is_err() {
             // Reset so the next application start can retry.
-            UMU_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
+            UMU_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
         }
-        UMU_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
+        UMU_DOWNLOADING.store(false, Ordering::Relaxed);
     });
 }
 
@@ -284,15 +270,15 @@ pub fn check_or_install_winetricks() {
         return;
     }
 
-    if WINETRICKS_DOWNLOAD_STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    if WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
         return;
     }
 
-    WINETRICKS_DOWNLOADING.store(true, std::sync::atomic::Ordering::Relaxed);
+    WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
 
     info!("[dbg] winetricks not found, starting background download");
     glib::spawn_future_local(async move {
-        let result = tokio::task::spawn_blocking(|| download_winetricks())
+        let result = tokio::task::spawn_blocking(download_winetricks)
             .await
             .unwrap();
         match &result {
@@ -300,9 +286,9 @@ pub fn check_or_install_winetricks() {
             Err(e) => warn!("[dbg] winetricks download failed: {e}"),
         }
         if result.is_err() {
-            WINETRICKS_DOWNLOAD_STARTED.store(false, std::sync::atomic::Ordering::Relaxed);
+            WINETRICKS_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
         }
-        WINETRICKS_DOWNLOADING.store(false, std::sync::atomic::Ordering::Relaxed);
+        WINETRICKS_DOWNLOADING.store(false, Ordering::Relaxed);
     });
 }
 
@@ -329,7 +315,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
             "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
         ])
         .output()
-        .map_err(|e| UmuError::VersionResolveError(e.to_string()))?;
+        .map_err(|e| UmuError::VersionResolve(e.to_string()))?;
 
     let version = if tag_output.status.success() {
         let url = String::from_utf8_lossy(&tag_output.stdout);
@@ -340,13 +326,13 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
             .unwrap_or("")
             .to_string()
     } else {
-        return Err(UmuError::VersionResolveError(
+        return Err(UmuError::VersionResolve(
             "Failed to fetch latest version tag".to_string(),
         ));
     };
 
     if version.is_empty() {
-        return Err(UmuError::VersionResolveError(
+        return Err(UmuError::VersionResolve(
             "Resolved version tag is empty".to_string(),
         ));
     }
@@ -378,12 +364,12 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
             &download_url,
         ])
         .status()
-        .map_err(|e| UmuError::DownloadError(e.to_string()))?
+        .map_err(|e| UmuError::Download(e.to_string()))?
         .success();
 
     if !ok {
         let _ = fs::remove_file(&tarball_path);
-        return Err(UmuError::DownloadError("Download failed".to_string()));
+        return Err(UmuError::Download("Download failed".to_string()));
     }
 
     info!("[dbg] download_and_install_umu: download done, extracting");
@@ -391,7 +377,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     let extracted = std::process::Command::new("tar")
         .args(["-xf", &tarball_path, "-C", dest_dir])
         .status()
-        .map_err(|e| UmuError::ExtractionError(e.to_string()))?
+        .map_err(|e| UmuError::Extraction(e.to_string()))?
         .success();
 
     let _ = fs::remove_file(&tarball_path);
@@ -412,57 +398,8 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         }
         Ok(())
     } else {
-        Err(UmuError::ExtractionError("Extraction failed".to_string()))
+        Err(UmuError::Extraction("Extraction failed".to_string()))
     }
 }
 
-/// Returns the current local version of umu-launcher.
-pub fn get_local_umu_version() -> Option<String> {
-    let core_dir = get_umu_core_dir();
-    let version_file = std::path::Path::new(&core_dir).join("version");
-    fs::read_to_string(version_file)
-        .ok()
-        .map(|s| s.trim().to_string())
-}
 
-/// Checks if an update for umu-launcher is available.
-pub fn check_for_umu_updates() -> Result<bool, UmuError> {
-    let current_version = get_local_umu_version();
-
-    let tag_output = std::process::Command::new("curl")
-        .args([
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--fail",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{url_effective}",
-            "https://github.com/Open-Wine-Components/umu-launcher/releases/latest",
-        ])
-        .output()
-        .map_err(|e| UmuError::VersionResolveError(e.to_string()))?;
-
-    let latest_version = if tag_output.status.success() {
-        let url = String::from_utf8_lossy(&tag_output.stdout);
-        url.trim()
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .to_string()
-    } else {
-        return Err(UmuError::VersionResolveError(
-            "Failed to fetch latest version tag".to_string(),
-        ));
-    };
-
-    match current_version {
-        Some(version) => Ok(version != latest_version),
-        None => Ok(true),
-    }
-}

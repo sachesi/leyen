@@ -6,7 +6,7 @@
 %global app_id com.github.sachesi.leyen
 
 Name:           leyen
-Version:        0.2.9
+Version:        0.2.10
 Release:        1%{?dist}
 Summary:        umu-launcher GUI for managing Wine/Proton games
 
@@ -122,6 +122,12 @@ test -f %{buildroot}%{_datadir}/zsh/site-functions/_%{name}
 %{_datadir}/zsh/site-functions/_%{name}
 
 %changelog
+* Fri May 08 2026 sachesi <xsachesi@pm.me> - 0.2.10-1
+- Full codebase refactor: dead code removal, idiomatic Rust, zero clippy warnings
+- Fix RefCell borrow-across-await in UI dialogs and library views
+- Replace deprecated shlex::quote with shlex::try_quote
+- Simplify atomic ordering imports across all modules
+
 * Fri May 08 2026 sachesi <xsachesi@pm.me> - 0.2.9-1
 - Fix OnceLock cache poison preventing umu/winetricks download on fresh install
 - Add winetricks auto-download with background download and UI banner

@@ -2,6 +2,7 @@ use directories::ProjectDirs;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
@@ -15,20 +16,27 @@ pub fn get_project_dirs() -> ProjectDirs {
         .expect("Could not determine home directory")
 }
 
+static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
 pub fn get_config_dir() -> PathBuf {
-    let config_dir = get_project_dirs().config_dir().to_path_buf();
-    if !config_dir.exists() {
-        let _ = fs::create_dir_all(&config_dir);
-    }
-    config_dir
+    CONFIG_DIR
+        .get_or_init(|| {
+            let dir = get_project_dirs().config_dir().to_path_buf();
+            let _ = fs::create_dir_all(&dir);
+            dir
+        })
+        .clone()
 }
 
 pub fn get_data_dir() -> PathBuf {
-    let data_dir = get_project_dirs().data_dir().to_path_buf();
-    if !data_dir.exists() {
-        let _ = fs::create_dir_all(&data_dir);
-    }
-    data_dir
+    DATA_DIR
+        .get_or_init(|| {
+            let dir = get_project_dirs().data_dir().to_path_buf();
+            let _ = fs::create_dir_all(&dir);
+            dir
+        })
+        .clone()
 }
 
 pub fn get_config_path() -> PathBuf {

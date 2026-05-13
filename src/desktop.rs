@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::config::normalize_game_id_from_executable;
 use crate::icons::game_icon_file;
 use crate::models::{Game, GameGroup};
+use crate::tools::join_err;
 
 pub fn desktop_entry_exists(leyen_id: &str) -> bool {
     !desktop_entry_paths_for_leyen_id(leyen_id).is_empty()
@@ -42,7 +43,8 @@ pub async fn create_game_desktop_entry(
         Ok(path)
     })
     .await
-    .unwrap()
+    .map_err(|e| join_err(e))
+    .and_then(|r| r)
 }
 
 pub async fn update_game_desktop_entry_if_present(
@@ -52,7 +54,10 @@ pub async fn update_game_desktop_entry_if_present(
     let leyen_id = game.leyen_id.clone();
     if !tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id))
         .await
-        .unwrap()
+        .unwrap_or_else(|e| {
+            log::warn!("desktop_entry_exists task failed: {e}");
+            false
+        })
     {
         return Ok(false);
     }
@@ -88,7 +93,8 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
         Ok(had_desktop_file)
     })
     .await
-    .unwrap()
+    .map_err(|e| join_err(e))
+    .and_then(|r| r)
 }
 
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {

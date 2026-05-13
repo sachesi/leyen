@@ -346,7 +346,7 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
         .map(|g| g.leyen_id)
         .collect();
 
-    loop {
+    for _ in 0..100 {
         let id = format!(
             "{}{:0width$}",
             LEYEN_ID_PREFIX,
@@ -357,6 +357,22 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
             return id;
         }
     }
+
+    // Sequential fallback if random attempts exhausted
+    for n in 1..10u32.pow(LEYEN_ID_DIGITS as u32) {
+        let id = format!("{}{:0width$}", LEYEN_ID_PREFIX, n, width = LEYEN_ID_DIGITS);
+        if !existing_ids.contains(&id) {
+            return id;
+        }
+    }
+
+    // All IDs exhausted — generate a longer fallback ID
+    format!(
+        "{}{:0width$}",
+        LEYEN_ID_PREFIX,
+        fastrand::u32(9999..u32::MAX),
+        width = LEYEN_ID_DIGITS + 4
+    )
 }
 
 #[cfg(test)]

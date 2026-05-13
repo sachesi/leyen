@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use crate::config::{
 use crate::models::{Game, GameGroup};
 use crate::runtime::proton::resolve_proton_path;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
-use crate::tools::{gamemode_available, mangohud_available};
+use crate::tools::{gamemode_available, join_err, mangohud_available};
 
 #[derive(Debug, Clone)]
 pub struct LaunchReport {
@@ -233,8 +233,7 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
         let children_map = build_process_children_map_cached();
-        let all_envs = build_all_envs_map();
-
+        let all_envs = build_all_envs_map_cached();
         with_running_registry(|registry| {
             let original_sessions = registry.sessions.clone();
             let mut active_sessions = Vec::new();
@@ -254,7 +253,8 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
         })
     })
     .await
-    .unwrap()?;
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r)?;
 
     for session in &finished_sessions {
         finalize_finished_session(session).await;
@@ -280,7 +280,8 @@ async fn try_register_running_session(session: RunningGameSession) -> Result<boo
         })
     })
     .await
-    .unwrap()
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r)
 }
 
 fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, LaunchError> {
@@ -312,17 +313,29 @@ fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
 
 pub fn start_running_sessions_monitor() {
     tokio::spawn(async move {
+        let mut consecutive_errors: u32 = 0;
         loop {
-            if let Ok(sessions) = synchronize_running_sessions().await {
-                let snapshots = running_sessions_to_snapshots(&sessions);
-                let version = running_sessions_version(&sessions);
+            match synchronize_running_sessions().await {
+                Ok(sessions) => {
+                    let snapshots = running_sessions_to_snapshots(&sessions);
+                    let version = running_sessions_version(&sessions);
 
-                if let Ok(mut cache) = get_running_sessions_cache().write() {
-                    *cache = snapshots;
+                    if let Ok(mut cache) = get_running_sessions_cache().write() {
+                        *cache = snapshots;
+                    }
+                    RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Relaxed);
+                    consecutive_errors = 0;
                 }
-                RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Relaxed);
+                Err(e) => {
+                    consecutive_errors = consecutive_errors.saturating_add(1);
+                    warn!("Session monitor sync failed (attempt {consecutive_errors}): {e}");
+                }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let base_delay = 2;
+            let max_backoff = 30;
+            let delay = base_delay * (1u64 << consecutive_errors.min(4));
+            let delay = delay.min(max_backoff);
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
         }
     });
 }
@@ -357,7 +370,8 @@ pub async fn read_running_games_snapshot() -> Result<Vec<RunningGameSnapshot>, L
         with_running_registry(|registry| (registry.sessions.clone(), false))
     })
     .await
-    .unwrap()?;
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r)?;
 
     Ok(running_sessions_to_snapshots(&sessions))
 }
@@ -389,7 +403,7 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
     tokio::task::spawn_blocking(move || {
         let children_map = build_process_children_map_cached();
-        let all_envs = build_all_envs_map();
+        let all_envs = build_all_envs_map_cached();
         let mut session = session;
         let tracked_pids = refresh_known_pids(&mut session, &children_map, &all_envs);
         let mut killed_any = false;
@@ -428,15 +442,12 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         Err(LaunchError::Other(format!(
             "Failed to stop pid {}: {}",
             session.pid,
-            if group_error.kind() == std::io::ErrorKind::NotFound {
-                std::io::Error::last_os_error().to_string()
-            } else {
-                group_error.to_string()
-            }
+            group_error.to_string()
         )))
     })
     .await
-    .unwrap()
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r)
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -484,12 +495,18 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
     }
 
     let path_clone = prefix_path.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone))
-        .await
-        .unwrap()
-    {
-        warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
-        return PrefixLockState::Unavailable;
+    let create_result = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone))
+        .await;
+    match create_result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
+            return PrefixLockState::Unavailable;
+        }
+        Err(e) => {
+            warn!("spawn_blocking task failed while creating prefix directory '{}': {e}", prefix_path);
+            return PrefixLockState::Unavailable;
+        }
     }
 
     match synchronize_running_sessions().await {
@@ -522,12 +539,10 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
 }
 
 fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
-    let mut file = fs::File::open(format!("/proc/{pid}/environ")).ok()?;
-    let mut buffer = [0u8; 8192];
-    let bytes_read = file.read(&mut buffer).ok()?;
+    let bytes = fs::read(format!("/proc/{pid}/environ")).ok()?;
     let mut env = HashMap::new();
 
-    for entry in buffer[..bytes_read].split(|&byte| byte == 0) {
+    for entry in bytes.split(|&byte| byte == 0) {
         if entry.is_empty() {
             continue;
         }
@@ -545,6 +560,28 @@ fn read_process_comm(pid: u32) -> Option<String> {
     fs::read_to_string(format!("/proc/{pid}/comm"))
         .ok()
         .map(|s| s.trim().to_string())
+}
+
+type EnvsMapCache = RwLock<(HashMap<u32, HashMap<String, String>>, u64)>;
+
+static PROCESS_ENVS_MAP_CACHE: OnceLock<EnvsMapCache> = OnceLock::new();
+
+fn get_process_envs_cache() -> &'static EnvsMapCache {
+    PROCESS_ENVS_MAP_CACHE.get_or_init(|| RwLock::new((HashMap::new(), 0)))
+}
+
+fn build_all_envs_map_cached() -> HashMap<u32, HashMap<String, String>> {
+    let now = current_epoch_seconds();
+    if let Ok(cache) = get_process_envs_cache().read()
+        && now.saturating_sub(cache.1) < 1
+    {
+        return cache.0.clone();
+    }
+    let map = build_all_envs_map();
+    if let Ok(mut cache) = get_process_envs_cache().write() {
+        *cache = (map.clone(), now);
+    }
+    map
 }
 
 fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
@@ -824,7 +861,10 @@ async fn launch_game_managed(
     // Block launch if umu-run is simply not available.
     if !tokio::task::spawn_blocking(is_umu_run_available)
         .await
-        .unwrap()
+        .unwrap_or_else(|e| {
+            warn!("is_umu_run_available task failed: {e}");
+            false
+        })
     {
         return Err(LaunchError::Other(
             "umu-launcher is not installed. Please check your internet connection and restart."
@@ -935,7 +975,7 @@ async fn launch_game_managed(
     let exe_path_clone = game.exe_path.clone();
     let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
         .await
-        .unwrap();
+        .unwrap_or_default();
     match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
         PrefixLockState::Busy => {

@@ -199,7 +199,7 @@ async fn list_games() -> Result<()> {
 }
 
 async fn run_game(requested_leyen_id: &str) -> Result<()> {
-    ensure_umu_available_for_cli()?;
+    ensure_umu_available_for_cli().await?;
 
     let items = load_library().await;
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
@@ -314,7 +314,7 @@ fn print_list_row(game: &Game, running: bool) {
     );
 }
 
-fn ensure_umu_available_for_cli() -> Result<()> {
+async fn ensure_umu_available_for_cli() -> Result<()> {
     if is_umu_run_available() {
         return Ok(());
     }
@@ -322,8 +322,13 @@ fn ensure_umu_available_for_cli() -> Result<()> {
     eprintln!("umu-launcher not found. Installing local runtime...");
     check_or_install_umu();
 
+    let mut waited = 0u64;
     while UMU_DOWNLOADING.load(Relaxed) {
-        std::thread::sleep(std::time::Duration::from_millis(250));
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        waited += 250;
+        if waited > 120_000 {
+            anyhow::bail!("umu-launcher download timed out after {}s", waited / 1000);
+        }
     }
 
     if is_umu_run_available() {

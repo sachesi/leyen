@@ -34,6 +34,14 @@ pub fn gamemode_available() -> bool {
     command_available("gamemoderun")
 }
 
+pub fn join_err(e: tokio::task::JoinError) -> String {
+    if e.is_panic() {
+        format!("blocking task panicked: {e}")
+    } else {
+        format!("blocking task cancelled: {e}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

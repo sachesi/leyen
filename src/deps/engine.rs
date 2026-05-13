@@ -25,6 +25,14 @@ use super::{
     remove_installed_dep, upsert_installed_dep,
 };
 
+fn join_err(e: tokio::task::JoinError) -> String {
+    if e.is_panic() {
+        format!("blocking task panicked: {e}")
+    } else {
+        format!("blocking task cancelled: {e}")
+    }
+}
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub enum DepStepAction {
@@ -150,8 +158,8 @@ pub async fn execute_dep_step(
                 let cache_dir_clone = cache_dir.to_string();
                 tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
                     .await
-                    .unwrap()
-                    .map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
+                    .map_err(join_err)
+                    .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
 
                 let status = AsyncCommand::new("curl")
                     .args([
@@ -162,6 +170,10 @@ pub async fn execute_dep_step(
                         "--show-error",
                         "--fail",
                         "--location",
+                        "--connect-timeout",
+                        "15",
+                        "--max-time",
+                        "300",
                         "--retry",
                         "3",
                         "--retry-delay",
@@ -206,7 +218,7 @@ pub async fn execute_dep_step(
                     Ok(())
                 })
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
             }
 
             Ok(StepChanges::default())
@@ -221,7 +233,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -262,7 +274,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
             Ok(diff_snapshots(&before, &after))
         }
 
@@ -271,7 +283,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -305,7 +317,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
             Ok(diff_snapshots(&before, &after))
         }
 
@@ -328,14 +340,14 @@ pub async fn execute_dep_step(
             let dest_path_clone = dest_path.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&dest_path_clone))
                 .await
-                .unwrap()
-                .map_err(|err| {
+                .map_err(join_err)
+                .and_then(|r| r.map_err(|err| {
                     format!(
                         "Failed to create extraction directory '{}': {}",
                         dest_path.display(),
                         err
                     )
-                })?;
+                }))?;
 
             let mut cmd = AsyncCommand::new("tar");
             if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
@@ -372,14 +384,14 @@ pub async fn execute_dep_step(
             let dst_dir_clone = dst_dir.clone();
             tokio::task::spawn_blocking(move || fs::create_dir_all(&dst_dir_clone))
                 .await
-                .unwrap()
-                .map_err(|err| {
+                .map_err(join_err)
+                .and_then(|r| r.map_err(|err| {
                     format!(
                         "Failed to create target directory '{}': {}",
                         dst_dir.display(),
                         err
                     )
-                })?;
+                }))?;
 
             let prefix_path = prefix_path.to_string();
             let dlls = split_csv_values(dlls);
@@ -408,7 +420,7 @@ pub async fn execute_dep_step(
                     Ok(changes)
                 })
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
 
             changes.created_files.sort();
             changes.created_files.dedup();
@@ -419,7 +431,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
 
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -437,7 +449,7 @@ pub async fn execute_dep_step(
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
-                .unwrap()?;
+                .map_err(join_err).and_then(|r| r)?;
             Ok(diff_snapshots(&before, &after))
         }
 
@@ -455,7 +467,7 @@ pub async fn execute_dep_step(
                         super::verify::check_registry_key_exists(&prefix_path, &proton_path, &path)
                     })
                     .await
-                    .unwrap()?
+                    .map_err(join_err).and_then(|r| r)?
                 }
 
             };
@@ -519,7 +531,7 @@ pub fn install_dep_async(
         let state =
             tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
                 .await
-                .unwrap();
+                .unwrap_or_default();
 
         let install_plan = match build_install_plan(&dep_id, &state) {
             Ok(plan) if !plan.is_empty() => plan,
@@ -632,7 +644,7 @@ pub fn uninstall_dep_async(
         let state =
             tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
                 .await
-                .unwrap();
+                .unwrap_or_default();
 
         let installed = match state.installed.get(&dep_id).cloned() {
             Some(installed) => installed,
@@ -694,7 +706,8 @@ pub fn uninstall_dep_async(
                 }
             })
             .await
-            .unwrap();
+            .map_err(join_err)
+            .and_then(|r| r);
 
             if let Err(error) = result {
                 error!("[dep:{}] removal failed: {}", dep_id, error);
@@ -738,7 +751,10 @@ async fn ensure_umu_ready(
 
     if !tokio::task::spawn_blocking(is_umu_run_available)
         .await
-        .unwrap()
+        .unwrap_or_else(|e| {
+            log::warn!("is_umu_run_available task failed: {}", join_err(e));
+            false
+        })
     {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is not installed. Please check your internet connection and restart.",
@@ -756,19 +772,23 @@ async fn ensure_umu_ready(
 
         if !tokio::task::spawn_blocking(is_winetricks_available)
             .await
-            .unwrap()
+            .unwrap_or_else(|e| {
+                log::warn!("is_winetricks_available task failed: {}", join_err(e));
+                false
+            })
         {
             overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
             tokio::task::spawn_blocking(download_winetricks)
                 .await
-                .unwrap()
-                .map_err(|_| {
-                    "Failed to download winetricks. Check your internet connection.".to_string()
-                })?;
+                .map_err(join_err)
+                .and_then(|r| r.map_err(|_| "Failed to download winetricks. Check your internet connection.".to_string()))?;
 
             if !tokio::task::spawn_blocking(is_winetricks_available)
                 .await
-                .unwrap()
+                .unwrap_or_else(|e| {
+                    log::warn!("is_winetricks_available task failed: {}", join_err(e));
+                    false
+                })
             {
                 return Err("winetricks not available after download".to_string());
             }

@@ -23,7 +23,7 @@ use crate::icons::{
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::prefix_tools::pick_and_run_in_prefix;
 use crate::runtime::proton::resolve_proton_path;
-use crate::tools::{gamemode_available, mangohud_available};
+use crate::tools::{gamemode_available, join_err, mangohud_available};
 
 use super::deps_dialog::show_dependencies_dialog;
 use super::{
@@ -114,7 +114,8 @@ async fn apply_game_icon(
         }
     })
     .await
-    .unwrap()
+    .map_err(join_err)
+    .and_then(|r| r)
 }
 
 async fn apply_group_icon(
@@ -135,7 +136,8 @@ async fn apply_group_icon(
         }
     })
     .await
-    .unwrap()
+    .map_err(join_err)
+    .and_then(|r| r)
 }
 
 fn group_custom_prefix_games(group: &GameGroup) -> Vec<String> {
@@ -1459,7 +1461,10 @@ pub async fn show_edit_game_dialog(
     let lid = game.leyen_id.clone();
     let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&lid))
         .await
-        .unwrap();
+        .unwrap_or_else(|e| {
+            log::warn!("desktop_entry_exists task failed: {}", join_err(e));
+            false
+        });
     let menu_btn = gtk4::Button::builder()
         .label(if exists {
             "Remove from menu"
@@ -1610,7 +1615,10 @@ pub async fn show_edit_game_dialog(
             let leyen_id = game.leyen_id.clone();
             let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id))
                 .await
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    log::warn!("desktop_entry_exists task failed: {}", join_err(e));
+                    false
+                });
             if exists {
                 match remove_game_desktop_entry(game.leyen_id.clone()).await {
                     Ok(_) => {

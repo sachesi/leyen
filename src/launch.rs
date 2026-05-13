@@ -894,16 +894,22 @@ async fn launch_game_managed(
     }
 
     let proton_path = match resolve_launch_proton(game, parent_group, &settings.default_proton) {
-        Some(path) if path.starts_with('/') && !Path::new(&path).exists() => {
-            error!(
-                target: &format!("game:{}", game.id),
-                "Proton path for '{}' does not exist: {}", game.title, path
-            );
-            return Err(LaunchError::Other(
-                "Selected Proton version was not found".to_string(),
-            ));
-        }
         Some(path) => {
+            if path.starts_with('/') {
+                let p = path.clone();
+                if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
+                    .await
+                    .unwrap_or(true)
+                {
+                    error!(
+                        target: &format!("game:{}", game.id),
+                        "Proton path for '{}' does not exist: {}", game.title, path
+                    );
+                    return Err(LaunchError::Other(
+                        "Selected Proton version was not found".to_string(),
+                    ));
+                }
+            }
             env_vars.push(("PROTONPATH".to_string(), path.clone()));
             path
         }

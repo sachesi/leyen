@@ -713,9 +713,15 @@ pub async fn show_add_library_item_dialog(
                     .cloned()
                     .unwrap_or_else(|| "Default".to_string());
 
-                if proton != "Default" && !std::path::Path::new(&proton).exists() {
-                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
-                    return;
+                if proton != "Default" {
+                    let p = proton.clone();
+                    if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
+                        .await
+                        .unwrap_or(true)
+                    {
+                        overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                        return;
+                    }
                 }
 
                 let group_id = uuid::Uuid::new_v4().to_string();
@@ -753,9 +759,15 @@ pub async fn show_add_library_item_dialog(
                         .unwrap_or_else(|| "Default".to_string())
                 };
 
-                if proton != "Default" && !std::path::Path::new(&proton).exists() {
-                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
-                    return;
+                if proton != "Default" {
+                    let p = proton.clone();
+                    if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
+                        .await
+                        .unwrap_or(true)
+                    {
+                        overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                        return;
+                    }
                 }
                 let exe = path_row_val.text().to_string();
                 if exe.trim().is_empty() {
@@ -1194,9 +1206,15 @@ pub async fn show_edit_group_dialog(
                 .cloned()
                 .unwrap_or_else(|| "Default".to_string());
 
-            if proton != "Default" && !std::path::Path::new(&proton).exists() {
-                overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
-                return;
+            if proton != "Default" {
+                let p = proton.clone();
+                if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
+                    .await
+                    .unwrap_or(true)
+                {
+                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    return;
+                }
             }
 
             let mut items = crate::config::load_library().await;
@@ -1834,9 +1852,15 @@ pub async fn show_edit_game_dialog(
                     .unwrap_or_else(|| "Default".to_string())
             };
 
-            if proton != "Default" && !std::path::Path::new(&proton).exists() {
-                overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
-                return;
+            if proton != "Default" {
+                let p = proton.clone();
+                if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
+                    .await
+                    .unwrap_or(true)
+                {
+                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    return;
+                }
             }
 
             let mut items = crate::config::load_library().await;

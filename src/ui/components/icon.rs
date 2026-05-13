@@ -40,7 +40,7 @@ pub fn build_library_icon(
     wrapper.append(&fallback_widget);
     overlay.set_child(Some(&wrapper));
 
-    if let Some(path) = icon_path.filter(|p| p.is_file()) {
+    if let Some(path) = icon_path {
         let wrapper_clone = wrapper.clone();
         gtk4::glib::spawn_future_local(async move {
             let result = tokio::task::spawn_blocking(move || {

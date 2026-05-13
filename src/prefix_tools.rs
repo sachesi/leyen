@@ -41,7 +41,10 @@ pub async fn pick_and_run_in_prefix(
         return;
     }
 
-    if !is_umu_run_available() {
+    if !tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or_default()
+    {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
@@ -69,12 +72,21 @@ pub async fn pick_and_run_in_prefix(
             return;
         };
 
-        match launch_path_in_prefix(&path, &prefix_path, &proton_path) {
-            Ok(()) => overlay.add_toast(adw::Toast::new("Launched in prefix")),
-            Err(err) => {
-                overlay.add_toast(adw::Toast::new(&format!("Failed to run in prefix: {err}")))
+        let prefix_path = prefix_path.clone();
+        let proton_path = proton_path.clone();
+        gtk4::glib::spawn_future_local(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                launch_path_in_prefix(&path, &prefix_path, &proton_path)
+            })
+            .await
+            .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+            match result {
+                Ok(()) => overlay.add_toast(adw::Toast::new("Launched in prefix")),
+                Err(err) => {
+                    overlay.add_toast(adw::Toast::new(&format!("Failed to run in prefix: {err}")))
+                }
             }
-        }
+        });
     });
 }
 

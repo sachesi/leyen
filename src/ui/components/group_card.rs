@@ -43,7 +43,6 @@ pub fn build_group_card(
         group_icon_file(&group.id),
         "folder",
         gtk4::Align::Start,
-        group_running_elapsed_seconds(group, running_games).is_some(),
     );
 
     let info_column = gtk4::Box::builder()

@@ -7,7 +7,6 @@ pub fn build_library_icon(
     icon_path: Option<std::path::PathBuf>,
     fallback_icon: &str,
     valign: gtk4::Align,
-    is_running: bool,
 ) -> gtk4::Widget {
     let overlay = gtk4::Overlay::builder()
         .halign(gtk4::Align::Center)
@@ -58,16 +57,6 @@ pub fn build_library_icon(
                 wrapper_clone.append(&picture);
             }
         });
-    }
-
-    if is_running {
-        let badge = gtk4::Box::builder()
-            .css_classes(["running-badge"])
-            .halign(gtk4::Align::End)
-            .valign(gtk4::Align::End)
-            .build();
-        badge.set_size_request(12, 12);
-        overlay.add_overlay(&badge);
     }
 
     overlay.upcast()

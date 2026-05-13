@@ -67,7 +67,6 @@ async fn rebuild_running_games(
             icon_paths.get(&snapshot.game_id).cloned(),
             "application-x-executable-symbolic",
             gtk4::Align::Center,
-            true,
         );
 
         let info = gtk4::Box::builder()

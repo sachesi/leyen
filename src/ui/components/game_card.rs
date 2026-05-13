@@ -47,7 +47,6 @@ pub fn build_game_card(
         game_icon_file(&game.id),
         "application-x-executable-symbolic",
         gtk4::Align::Start,
-        game_running,
     );
 
     let info_column = gtk4::Box::builder()

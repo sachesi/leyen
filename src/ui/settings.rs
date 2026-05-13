@@ -287,7 +287,10 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                         glib::spawn_future_local(async move {
                             let result = tokio::task::spawn_blocking(move || {
                                 fs::remove_dir_all(&runtime_dir)
-                            }).await.unwrap();
+                            }).await.unwrap_or_else(|e| {
+                                log::warn!("runtime reset task failed: {e}");
+                                Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                            });
 
                             match result {
                                 Ok(_) => {

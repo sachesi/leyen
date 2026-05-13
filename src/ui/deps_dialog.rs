@@ -79,7 +79,10 @@ async fn refresh_dep_rows(
     let prefix_path = prefix_path.to_string();
     let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path))
         .await
-        .unwrap();
+        .unwrap_or_else(|e| {
+            log::warn!("deps dialog: read state task failed: {e}");
+            Default::default()
+        });
     let installed = state
         .installed
         .keys()
@@ -148,7 +151,10 @@ pub async fn show_dependencies_dialog(
     let installed =
         tokio::task::spawn_blocking(move || read_installed_deps(&prefix_path_for_state))
             .await
-            .unwrap();
+            .unwrap_or_else(|e| {
+                log::warn!("deps dialog: read installed deps task failed: {e}");
+                Default::default()
+            });
 
     let dialog = adw::Window::builder()
         .transient_for(parent)
@@ -541,7 +547,10 @@ pub async fn show_dependencies_dialog(
                                 })
                         })
                         .await
-                        .unwrap();
+                        .unwrap_or_else(|e| {
+                            log::warn!("deps dialog: get dep detail task failed: {e}");
+                            "This dependency could not be located.".to_string()
+                        });
 
                         let confirm = confirm_builder.detail(&detail).build();
                         confirm.choose(Some(&dialog3), gio::Cancellable::NONE, move |result| {

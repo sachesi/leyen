@@ -154,7 +154,11 @@ pub async fn execute_dep_step(
             }
 
             let dest = Path::new(cache_dir).join(file_name);
-            if !dest.exists() {
+            let d = dest.clone();
+            let exists = tokio::task::spawn_blocking(move || d.exists())
+                .await
+                .unwrap_or(true);
+            if !exists {
                 let cache_dir_clone = cache_dir.to_string();
                 tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
                     .await

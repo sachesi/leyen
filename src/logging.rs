@@ -178,9 +178,11 @@ pub fn clear_log_buffer() {
         }
     TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::Relaxed);
 
-    let path = log_path();
-    let _ = fs::remove_file(&path);
-    let mut old_path = path.clone();
-    old_path.set_extension("jsonl.old");
-    let _ = fs::remove_file(old_path);
+    tokio::task::spawn_blocking(|| {
+        let path = log_path();
+        let _ = fs::remove_file(&path);
+        let mut old_path = path.clone();
+        old_path.set_extension("jsonl.old");
+        let _ = fs::remove_file(old_path);
+    });
 }

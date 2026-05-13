@@ -4,6 +4,7 @@ use gtk4::glib;
 use log::{info, warn};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use thiserror::Error;
 
 pub static UMU_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
@@ -65,22 +66,23 @@ fn is_in_path(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+static NIXOS: OnceLock<bool> = OnceLock::new();
+
 /// Returns true if running on NixOS.
 pub fn is_nixos() -> bool {
-    if std::path::Path::new("/etc/NIXOS").exists() {
-        return true;
-    }
-
-    // Fallback: check /etc/os-release for ID=nixos
-    if let Ok(content) = fs::read_to_string("/etc/os-release") {
-        for line in content.lines() {
-            if line == "ID=nixos" || line == "ID=\"nixos\"" {
-                return true;
+    *NIXOS.get_or_init(|| {
+        if std::path::Path::new("/etc/NIXOS").exists() {
+            return true;
+        }
+        if let Ok(content) = fs::read_to_string("/etc/os-release") {
+            for line in content.lines() {
+                if line == "ID=nixos" || line == "ID=\"nixos\"" {
+                    return true;
+                }
             }
         }
-    }
-
-    false
+        false
+    })
 }
 
 /// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).

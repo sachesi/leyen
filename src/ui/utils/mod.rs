@@ -1,5 +1,6 @@
 use crate::launch::RunningGameSnapshot;
 use crate::models::{Game, GameGroup, LibraryItem};
+use gtk4::prelude::*;
 use std::cmp::Ordering;
 
 pub type RunningGameMap = std::collections::HashMap<String, RunningGameSnapshot>;
@@ -16,7 +17,6 @@ pub async fn running_game_map() -> RunningGameMap {
 }
 
 pub fn clear_list_box(list_box: &gtk4::Box) {
-    use gtk4::prelude::*;
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
@@ -41,6 +41,10 @@ pub fn finish_list_swap(
 ) {
     list_stack.set_visible_child_name(visible_page);
     showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
+    // Force re-layout: cards built on hidden page may have stale allocation sizes
+    if let Some(child) = list_stack.visible_child() {
+        child.queue_resize();
+    }
 }
 
 pub fn find_group<'a>(items: &'a [LibraryItem], group_id: &str) -> Option<&'a GameGroup> {

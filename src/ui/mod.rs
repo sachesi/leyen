@@ -197,23 +197,27 @@ pub fn build_ui(app: &adw::Application) {
         .child(&group_content_stack)
         .build();
 
+    let root_scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .child(&root_clamp)
+        .build();
+    let group_scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .child(&group_clamp)
+        .build();
+
     let stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::SlideLeftRight)
         .transition_duration(260)
         .hexpand(true)
         .vexpand(true)
         .build();
-    stack.add_named(&root_clamp, Some("root"));
-    stack.add_named(&group_clamp, Some("group"));
+    stack.add_named(&root_scroll, Some("root"));
+    stack.add_named(&group_scroll, Some("group"));
     stack.set_visible_child_name("root");
 
-    let scroll = gtk4::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .child(&stack)
-        .build();
-
     let toast_overlay = adw::ToastOverlay::new();
-    toast_overlay.set_child(Some(&scroll));
+    toast_overlay.set_child(Some(&stack));
 
     let download_banner = adw::Banner::builder()
         .title("Downloading umu-launcher… Please wait before starting games.")

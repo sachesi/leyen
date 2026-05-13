@@ -98,14 +98,19 @@ pub async fn refresh_library_view(
         }
 
         *ui_clone.library_state.borrow_mut() = items;
-        populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
-        populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
+
+        let entering_group = ui_clone.current_group_id.borrow().is_some();
+
+        if entering_group {
+            populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
+        } else {
+            populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
+        }
 
         if let Some(group_id) = ui_clone.current_group_id.borrow().clone() {
             if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
                 *ui_clone.current_group_id.borrow_mut() = None;
-                ui_clone.stack.set_visible_child_name("root");
-                ui_clone.back_btn.set_visible(false);
+                populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
             } else {
                 ui_clone.stack.set_visible_child_name("group");
                 ui_clone.back_btn.set_visible(true);

@@ -118,7 +118,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .editable(false)
         .cursor_visible(false)
         .monospace(true)
-        .wrap_mode(gtk4::WrapMode::None) // DISABLE WORD WRAP FOR SPEED
+        .wrap_mode(gtk4::WrapMode::WordChar)
         .top_margin(4)
         .bottom_margin(4)
         .left_margin(20)

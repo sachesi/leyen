@@ -23,12 +23,7 @@ pub fn build_library_icon(
     wrapper.set_overflow(gtk4::Overflow::Hidden);
     wrapper.add_css_class("library-icon-frame");
 
-    let icon_widget: gtk4::Widget = if let Some(path) =
-        icon_path.as_deref().filter(|path| path.is_file())
-        && let Some(icon) = build_scaled_art_icon(path)
-    {
-        icon.upcast()
-    } else if fallback_icon == "folder"
+    let fallback_widget: gtk4::Widget = if fallback_icon == "folder"
         && let Some(icon) = build_themed_folder_icon()
     {
         icon.upcast()
@@ -42,8 +37,28 @@ pub fn build_library_icon(
             .upcast()
     };
 
-    wrapper.append(&icon_widget);
+    wrapper.append(&fallback_widget);
     overlay.set_child(Some(&wrapper));
+
+    if let Some(path) = icon_path.filter(|p| p.is_file()) {
+        let wrapper_clone = wrapper.clone();
+        gtk4::glib::spawn_future_local(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                process_icon_file(&path)
+            })
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((width, height, rgba)) = result {
+                let picture = picture_from_rgba(width, height, &rgba);
+                if let Some(old) = wrapper_clone.first_child() {
+                    wrapper_clone.remove(&old);
+                }
+                wrapper_clone.append(&picture);
+            }
+        });
+    }
 
     if is_running {
         let badge = gtk4::Box::builder()
@@ -58,7 +73,7 @@ pub fn build_library_icon(
     overlay.upcast()
 }
 
-fn build_scaled_art_icon(path: &Path) -> Option<gtk4::Picture> {
+fn process_icon_file(path: &Path) -> Option<(i32, i32, Vec<u8>)> {
     let image = image::open(path).ok()?;
     let image = crop_transparent_padding(image);
     let image = image.resize(
@@ -69,8 +84,12 @@ fn build_scaled_art_icon(path: &Path) -> Option<gtk4::Picture> {
     let rgba = image.to_rgba8();
     let width = i32::try_from(rgba.width()).ok()?;
     let height = i32::try_from(rgba.height()).ok()?;
-    let stride = usize::try_from(width).ok()?.checked_mul(4)?;
-    let bytes = gtk4::glib::Bytes::from_owned(rgba.into_raw());
+    Some((width, height, rgba.into_raw()))
+}
+
+fn picture_from_rgba(width: i32, height: i32, rgba: &[u8]) -> gtk4::Picture {
+    let stride = usize::try_from(width).ok().and_then(|w| w.checked_mul(4)).unwrap_or(0);
+    let bytes = gtk4::glib::Bytes::from_owned(rgba.to_vec());
     let texture = gtk4::gdk::MemoryTexture::new(
         width,
         height,
@@ -86,8 +105,7 @@ fn build_scaled_art_icon(path: &Path) -> Option<gtk4::Picture> {
     picture.set_halign(gtk4::Align::Fill);
     picture.set_valign(gtk4::Align::Fill);
     picture.add_css_class("library-icon-media");
-
-    Some(picture)
+    picture
 }
 
 fn build_themed_folder_icon() -> Option<gtk4::Picture> {

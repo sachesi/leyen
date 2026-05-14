@@ -78,6 +78,10 @@ pub fn build_ui(app: &adw::Application) {
     menu_model.append(Some("Preferences"), Some("win.show-preferences"));
     menu_model.append(Some("Running Games"), Some("win.show-running-games"));
     menu_model.append(Some("Logs"), Some("win.show-logs"));
+    let menu_section = gio::Menu::new();
+    menu_section.append(Some("Keyboard Shortcuts"), Some("win.show-shortcuts"));
+    menu_section.append(Some("About Leyen"), Some("win.show-about"));
+    menu_model.append_section(None, &menu_section);
     let menu_btn = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu_model)
@@ -412,6 +416,40 @@ pub fn build_ui(app: &adw::Application) {
         });
     });
     window.add_action(&running_games_action);
+
+    let shortcuts_action = gio::SimpleAction::new("show-shortcuts", None);
+    shortcuts_action.connect_activate(move |_, _| {
+        let win = gtk4::ShortcutsWindow::builder().build();
+        let quit_shortcut = gtk4::ShortcutsShortcut::builder()
+            .title("Quit Leyen")
+            .accelerator("<Ctrl>Q")
+            .build();
+        let general_group = gtk4::ShortcutsGroup::builder()
+            .title("General")
+            .build();
+        general_group.append(&quit_shortcut);
+        let general_section = gtk4::ShortcutsSection::builder()
+            .title("General")
+            .max_height(2)
+            .build();
+        general_section.append(&general_group);
+        win.add_section(&general_section);
+        win.present();
+    });
+    window.add_action(&shortcuts_action);
+
+    let about_action = gio::SimpleAction::new("show-about", None);
+    about_action.connect_activate(move |_, _| {
+        let about = adw::AboutWindow::builder()
+            .application_name("Leyen")
+            .application_icon("com.github.sachesi.leyen")
+            .version(env!("CARGO_PKG_VERSION"))
+            .developer_name("sachesi")
+            .license_type(gtk4::License::Unknown)
+            .build();
+        about.present();
+    });
+    window.add_action(&about_action);
 
     window.connect_close_request(move |win| {
         if crate::launch::is_any_game_running() {

@@ -192,11 +192,23 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         .active(settings.global_ntsync)
         .build();
 
+    let hdr_row = adw::SwitchRow::builder()
+        .title("HDR")
+        .active(settings.global_hdr)
+        .build();
+
+    let proton_log_row = adw::SwitchRow::builder()
+        .title("Proton Log")
+        .active(settings.global_proton_log)
+        .build();
+
     environment_group.add(&mangohud_row);
     environment_group.add(&gamemode_row);
     environment_group.add(&wayland_row);
     environment_group.add(&wow64_row);
     environment_group.add(&ntsync_row);
+    environment_group.add(&hdr_row);
+    environment_group.add(&proton_log_row);
 
     // ── Logging ────────────────────────────────────────────────────────────
     let logging_group = adw::PreferencesGroup::builder()
@@ -356,6 +368,8 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
             global_wayland: wayland_row.is_active(),
             global_wow64: wow64_row.is_active(),
             global_ntsync: ntsync_row.is_active(),
+            global_hdr: hdr_row.is_active(),
+            global_proton_log: proton_log_row.is_active(),
             available_proton_versions: available_versions.clone(),
             log_errors: log_errors_row.is_active(),
             log_warnings: log_warnings_row.is_active(),

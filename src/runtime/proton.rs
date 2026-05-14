@@ -149,6 +149,8 @@ pub fn detect_proton_versions() -> GlobalSettings {
         global_wayland: false,
         global_wow64: false,
         global_ntsync: false,
+        global_hdr: false,
+        global_proton_log: false,
         available_proton_versions: versions,
         log_errors: true,
         log_warnings: false,

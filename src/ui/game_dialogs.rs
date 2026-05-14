@@ -353,6 +353,8 @@ pub async fn show_add_library_item_dialog(
     let wayland_row = build_env_row("Wayland", settings.global_wayland);
     let wow64_row = build_env_row("WoW64", settings.global_wow64);
     let ntsync_row = build_env_row("NTSync", settings.global_ntsync);
+    let hdr_row = build_env_row("HDR", settings.global_hdr);
+    let proton_log_row = build_env_row("Proton Log", settings.global_proton_log);
 
     let game_group = adw::PreferencesGroup::builder().title("Item").build();
     game_group.add(&title_row);
@@ -435,6 +437,8 @@ pub async fn show_add_library_item_dialog(
     env_group.add(&wayland_row);
     env_group.add(&wow64_row);
     env_group.add(&ntsync_row);
+    env_group.add(&hdr_row);
+    env_group.add(&proton_log_row);
 
     page.add(&game_group);
     if inside_group && kind == AddLibraryItemKind::Game {
@@ -696,6 +700,8 @@ pub async fn show_add_library_item_dialog(
         let wayland_row_val = wayland_row.clone();
         let wow64_row_val = wow64_row.clone();
         let ntsync_row_val = ntsync_row.clone();
+        let hdr_row_val = hdr_row.clone();
+        let proton_log_row_val = proton_log_row.clone();
 
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
@@ -814,6 +820,8 @@ pub async fn show_add_library_item_dialog(
                     wayland: wayland_row_val.is_active(),
                     wow64: wow64_row_val.is_active(),
                     ntsync: ntsync_row_val.is_active(),
+                    hdr: hdr_row_val.is_active(),
+                    proton_log: proton_log_row_val.is_active(),
                     leyen_id,
                     game_id: normalized_game_id,
                     custom_icon,
@@ -1436,6 +1444,8 @@ pub async fn show_edit_game_dialog(
     let wayland_row = build_env_row("Wayland", game.wayland);
     let wow64_row = build_env_row("WoW64", game.wow64);
     let ntsync_row = build_env_row("NTSync", game.ntsync);
+    let hdr_row = build_env_row("HDR", game.hdr);
+    let proton_log_row = build_env_row("Proton Log", game.proton_log);
 
     let page = adw::PreferencesPage::builder().build();
     let game_group = adw::PreferencesGroup::builder().title("Game").build();
@@ -1469,6 +1479,8 @@ pub async fn show_edit_game_dialog(
     env_group.add(&wayland_row);
     env_group.add(&wow64_row);
     env_group.add(&ntsync_row);
+    env_group.add(&hdr_row);
+    env_group.add(&proton_log_row);
 
     let tools = adw::PreferencesGroup::builder().title("Tools").build();
     let tools_stack = gtk4::Stack::builder()
@@ -1833,6 +1845,8 @@ pub async fn show_edit_game_dialog(
         let wayland_row_val = wayland_row.clone();
         let wow64_row_val = wow64_row.clone();
         let ntsync_row_val = ntsync_row.clone();
+        let hdr_row_val = hdr_row.clone();
+        let proton_log_row_val = proton_log_row.clone();
         let game_icon_row_val = game_icon_row.clone();
         let game_icon_override_row_val = game_icon_override_row.clone();
         let current_parent_group = current_parent_group.clone();
@@ -1897,6 +1911,8 @@ pub async fn show_edit_game_dialog(
                 wayland: wayland_row_val.is_active(),
                 wow64: wow64_row_val.is_active(),
                 ntsync: ntsync_row_val.is_active(),
+                hdr: hdr_row_val.is_active(),
+                proton_log: proton_log_row_val.is_active(),
                 leyen_id: original_game.leyen_id.clone(),
                 game_id: normalized_game_id,
                 custom_icon,

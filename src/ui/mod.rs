@@ -448,7 +448,6 @@ pub fn build_ui(app: &adw::Application) {
             .website("https://github.com/sachesi/leyen")
             .issue_url("https://github.com/sachesi/leyen/issues")
             .license_type(gtk4::License::Gpl30)
-            .copyright("\u{a9} 2024-2026 sachesi")
             .build();
         about.present();
     });

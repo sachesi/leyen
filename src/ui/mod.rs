@@ -124,8 +124,6 @@ pub fn build_ui(app: &adw::Application) {
         .hexpand(true)
         .build();
     let root_list_stack = gtk4::Stack::builder()
-        .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(180)
         .hexpand(true)
         .build();
     root_list_stack.add_named(&root_list_box_primary, Some(LIST_PAGE_PRIMARY));
@@ -143,8 +141,6 @@ pub fn build_ui(app: &adw::Application) {
         .hexpand(true)
         .build();
     let group_list_stack = gtk4::Stack::builder()
-        .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(180)
         .hexpand(true)
         .build();
     group_list_stack.add_named(&group_list_box_primary, Some(LIST_PAGE_PRIMARY));

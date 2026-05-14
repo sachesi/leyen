@@ -203,12 +203,10 @@ pub async fn show_dependencies_dialog(
     // Re-present the modal dialog when the parent becomes active
     // (e.g. returning from GNOME overview, which can hide modal dialogs)
     {
-        let parent_weak = parent.downgrade();
         let dialog_weak = dialog.downgrade();
         parent.connect_is_active_notify(move |p| {
             if p.is_active()
-                && let (Some(dialog), _) = (dialog_weak.upgrade(), parent_weak.upgrade())
-                && dialog.is_visible()
+                && let Some(dialog) = dialog_weak.upgrade()
             {
                 dialog.present();
             }

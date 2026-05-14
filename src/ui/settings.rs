@@ -28,9 +28,6 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         .title_widget(&adw::WindowTitle::new("Global Settings", ""))
         .build();
 
-    let close_btn = gtk4::Button::builder().label("Close").build();
-    header.pack_start(&close_btn);
-
     let page = adw::PreferencesPage::builder().build();
 
     let paths_group = adw::PreferencesGroup::builder()
@@ -401,9 +398,6 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     overlay.set_child(Some(&toolbar_view));
     dialog.set_content(Some(&overlay));
-
-    let dialog_clone = dialog.clone();
-    close_btn.connect_clicked(move |_| dialog_clone.close());
 
     // Save settings when window is closed
     dialog.connect_close_request(move |_| {

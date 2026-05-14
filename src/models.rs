@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Game {
     pub id: String,
     pub title: String,
@@ -13,6 +14,8 @@ pub struct Game {
     pub wayland: bool,
     pub wow64: bool,
     pub ntsync: bool,
+    pub hdr: bool,
+    pub proton_log: bool,
     pub custom_icon: bool,
     pub leyen_id: String,
     pub game_id: String,
@@ -23,12 +26,14 @@ pub struct Game {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct GroupLaunchDefaults {
     pub prefix_path: String,
     pub proton: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct GameGroup {
     pub id: String,
     pub title: String,
@@ -44,6 +49,7 @@ pub enum LibraryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct GlobalSettings {
     pub default_prefix_path: String,
     pub default_proton: String,
@@ -52,13 +58,16 @@ pub struct GlobalSettings {
     pub global_wayland: bool,
     pub global_wow64: bool,
     pub global_ntsync: bool,
+    pub global_hdr: bool,
+    pub global_proton_log: bool,
     pub available_proton_versions: Vec<String>,
     pub log_errors: bool,
     pub log_warnings: bool,
     pub log_operations: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct GamesConfig {
     pub items: Vec<LibraryItem>,
 }

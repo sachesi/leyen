@@ -942,6 +942,14 @@ async fn launch_game_managed(
     env_vars.push(("PROTON_USE_NTSYNC".to_string(), ntsync_val.to_string()));
     env_vars.push(("WINENTSYNC".to_string(), ntsync_val.to_string()));
 
+    if game.hdr {
+        env_vars.push(("PROTON_ENABLE_HDR".to_string(), "1".to_string()));
+    }
+
+    if game.proton_log {
+        env_vars.push(("PROTON_LOG".to_string(), "1".to_string()));
+    }
+
     let umu = get_umu_run_path();
     let mut cmd_args: Vec<String> = Vec::new();
 

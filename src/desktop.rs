@@ -223,6 +223,8 @@ mod tests {
             wayland: false,
             wow64: false,
             ntsync: false,
+            hdr: false,
+            proton_log: false,
             custom_icon: false,
             leyen_id: "ly-1234".to_string(),
             game_id: "nier.exe".to_string(),

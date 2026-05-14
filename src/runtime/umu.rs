@@ -93,20 +93,25 @@ pub fn get_local_umu_run_path() -> String {
 /// Returns the command / path to use when invoking `umu-run`.
 /// Prefers the system-wide binary; falls back to the locally downloaded copy.
 pub fn get_umu_run_path() -> String {
-    if is_nixos() {
-        return "umu-run".to_string();
-    }
+    static CACHED_PATH: OnceLock<String> = OnceLock::new();
+    CACHED_PATH
+        .get_or_init(|| {
+            if is_nixos() {
+                return "umu-run".to_string();
+            }
 
-    if is_in_path("umu-run") {
-        return "umu-run".to_string();
-    }
+            if is_in_path("umu-run") {
+                return "umu-run".to_string();
+            }
 
-    let local_path = get_local_umu_run_path();
-    if std::path::Path::new(&local_path).exists() {
-        return local_path;
-    }
+            let local_path = get_local_umu_run_path();
+            if std::path::Path::new(&local_path).exists() {
+                return local_path;
+            }
 
-    "umu-run".to_string()
+            "umu-run".to_string()
+        })
+        .clone()
 }
 
 /// Returns `true` when `umu-run` is actually available (system PATH or local
@@ -143,20 +148,25 @@ pub fn get_local_winetricks_path() -> String {
 /// Not cached — always re-checks so a download started during the
 /// session is detected immediately.
 pub fn get_winetricks_path() -> String {
-    if is_nixos() {
-        return "winetricks".to_string();
-    }
+    static CACHED_PATH: OnceLock<String> = OnceLock::new();
+    CACHED_PATH
+        .get_or_init(|| {
+            if is_nixos() {
+                return "winetricks".to_string();
+            }
 
-    if is_in_path("winetricks") {
-        return "winetricks".to_string();
-    }
+            if is_in_path("winetricks") {
+                return "winetricks".to_string();
+            }
 
-    let local_path = get_local_winetricks_path();
-    if std::path::Path::new(&local_path).exists() {
-        return local_path;
-    }
+            let local_path = get_local_winetricks_path();
+            if std::path::Path::new(&local_path).exists() {
+                return local_path;
+            }
 
-    "winetricks".to_string()
+            "winetricks".to_string()
+        })
+        .clone()
 }
 
 /// Returns `true` when `winetricks` is actually available (system PATH or local
@@ -224,14 +234,20 @@ pub fn download_winetricks() -> Result<(), UmuError> {
 /// PATH or in the local leyen data directory, spawns a background thread that
 /// downloads the latest zipapp release from the umu-launcher GitHub repository
 /// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
-pub fn check_or_install_umu() {
+pub async fn check_or_install_umu() {
     // If we're on NixOS, we expect umu-run to be provided by the system/flake.
     // We don't want to download a generic linux zipapp.
     if is_nixos() {
         return;
     }
 
-    if is_umu_run_available() {
+    let available = tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or(false);
+
+    if available {
+        // Prime the OnceLock cache so first game launch doesn't block the UI.
+        let _ = tokio::task::spawn_blocking(get_umu_run_path).await;
         return;
     }
 
@@ -267,12 +283,18 @@ pub fn check_or_install_umu() {
 /// If it is not found in the system PATH or in the local leyen data directory,
 /// spawns a background thread that downloads the latest winetricks script
 /// from GitHub to `~/.local/share/leyen/core/winetricks/`.
-pub fn check_or_install_winetricks() {
+pub async fn check_or_install_winetricks() {
     if is_nixos() {
         return;
     }
 
-    if is_winetricks_available() {
+    let available = tokio::task::spawn_blocking(is_winetricks_available)
+        .await
+        .unwrap_or(false);
+
+    if available {
+        // Prime the OnceLock cache so first use doesn't block the UI.
+        let _ = tokio::task::spawn_blocking(get_winetricks_path).await;
         return;
     }
 

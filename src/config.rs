@@ -1,6 +1,7 @@
 use directories::ProjectDirs;
 use std::collections::HashSet;
 use std::fs;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -47,6 +48,45 @@ pub fn get_settings_path() -> PathBuf {
     get_config_dir().join("settings.toml")
 }
 
+fn config_lock_path() -> PathBuf {
+    get_config_dir().join(".games.lock")
+}
+
+fn with_library_exclusive<F, T>(f: F) -> T
+where
+    F: FnOnce(&mut Vec<LibraryItem>) -> T,
+{
+    let lock_path = config_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let lock_file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .expect("Failed to open games config lock");
+    if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        panic!("Failed to acquire games config lock");
+    }
+
+    let path = get_config_path();
+    let mut items = fs::read_to_string(&path)
+        .ok()
+        .and_then(|data| toml::from_str::<GamesConfig>(&data).ok())
+        .map(|config| config.items)
+        .unwrap_or_default();
+
+    let result = f(&mut items);
+
+    if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
+        let _ = fs::write(path, data);
+    }
+
+    let _ = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) };
+    result
+}
+
 pub async fn load_library() -> Vec<LibraryItem> {
     let path = get_config_path();
     tokio::task::spawn_blocking(move || {
@@ -63,12 +103,10 @@ pub async fn load_library() -> Vec<LibraryItem> {
 }
 
 pub async fn save_library(items: Vec<LibraryItem>) {
-    let path = get_config_path();
     tokio::task::spawn_blocking(move || {
-        let config = GamesConfig { items };
-        if let Ok(data) = toml::to_string_pretty(&config) {
-            let _ = fs::write(path, data);
-        }
+        with_library_exclusive(|lib| {
+            *lib = items;
+        });
     })
     .await
     .ok();
@@ -143,39 +181,48 @@ pub async fn save_settings(settings: GlobalSettings) {
 }
 
 pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {
-    let mut items = load_library().await;
-    let total;
-    if let Some(game) = find_game_mut(&mut items, game_id) {
-        game.playtime_seconds += seconds;
-        total = game.playtime_seconds;
-    } else {
-        return None;
-    }
-    save_library(items).await;
-    Some(total)
+    let game_id = game_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        with_library_exclusive(|items| {
+            find_game_mut(items, &game_id).map(|game| {
+                game.playtime_seconds += seconds;
+                game.playtime_seconds
+            })
+        })
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 pub async fn record_game_launch_start(game_id: &str, epoch_seconds: u64) -> bool {
-    let mut items = load_library().await;
-    if let Some(game) = find_game_mut(&mut items, game_id) {
-        game.last_played_epoch_seconds = epoch_seconds;
-    } else {
-        return false;
-    }
-    save_library(items).await;
-    true
+    let game_id = game_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        with_library_exclusive(|items| {
+            find_game_mut(items, &game_id).map(|game| {
+                game.last_played_epoch_seconds = epoch_seconds;
+            })
+        })
+        .is_some()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 pub async fn record_game_launch_result(game_id: &str, duration_seconds: u64, status: &str) -> bool {
-    let mut items = load_library().await;
-    if let Some(game) = find_game_mut(&mut items, game_id) {
-        game.last_run_duration_seconds = duration_seconds;
-        game.last_run_status = status.to_string();
-    } else {
-        return false;
-    }
-    save_library(items).await;
-    true
+    let game_id = game_id.to_string();
+    let status = status.to_string();
+    tokio::task::spawn_blocking(move || {
+        with_library_exclusive(|items| {
+            find_game_mut(items, &game_id).map(|game| {
+                game.last_run_duration_seconds = duration_seconds;
+                game.last_run_status = status;
+            })
+        })
+        .is_some()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 fn find_game_mut<'a>(items: &'a mut [LibraryItem], game_id: &str) -> Option<&'a mut Game> {
@@ -374,12 +421,12 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
         }
     }
 
-    // All IDs exhausted — generate a longer fallback ID
+    // All IDs exhausted — use a wider range but still 4 digits
     format!(
         "{}{:0width$}",
         LEYEN_ID_PREFIX,
-        fastrand::u32(9999..u32::MAX),
-        width = LEYEN_ID_DIGITS + 4
+        fastrand::u32(10000..100000),
+        width = LEYEN_ID_DIGITS
     )
 }
 

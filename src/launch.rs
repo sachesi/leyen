@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader};
 use std::os::fd::AsRawFd;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command as StdCommand, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use tokio::io::{AsyncBufReadExt, BufReader as AsyncBufReader};
+
 
 use gtk4::glib;
 use libadwaita as adw;
@@ -442,7 +443,7 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         Err(LaunchError::Other(format!(
             "Failed to stop pid {}: {}",
             session.pid,
-            group_error.to_string()
+            group_error
         )))
     })
     .await
@@ -774,27 +775,17 @@ fn refresh_known_pids(
 
 fn pipe_process_output<R>(reader: R, game_id: String, game_title: String, stream_name: &'static str)
 where
-    R: std::io::Read + Send + 'static,
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    std::thread::spawn(move || {
-        let reader = BufReader::new(reader);
-        for line in reader.lines() {
-            match line {
-                Ok(line) if !line.trim().is_empty() => {
-                    info!(
-                        target: &format!("game:{}", game_id),
-                        "[{}:{}] {}", game_title, stream_name, line
-                    );
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    warn!(
-                        target: &format!("game:{}", game_id),
-                        "Failed to read {} output for '{}': {}",
-                        stream_name, game_title, e
-                    );
-                    break;
-                }
+    tokio::spawn(async move {
+        let reader = AsyncBufReader::new(reader);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                info!(
+                    target: &format!("game:{}", game_id),
+                    "[{}:{}] {}", game_title, stream_name, line
+                );
             }
         }
     });
@@ -828,7 +819,7 @@ fn spawn_detached_monitor(game_id: &str) {
         return;
     };
 
-    if let Err(e) = Command::new(current_exe)
+    match StdCommand::new(&current_exe)
         .arg("internal-monitor")
         .arg(game_id)
         .stdin(Stdio::null())
@@ -836,10 +827,20 @@ fn spawn_detached_monitor(game_id: &str) {
         .stderr(Stdio::null())
         .spawn()
     {
-        warn!(
-            target: &format!("game:{game_id}"),
-            "Failed to start the runtime monitor: {}", e
-        );
+        Ok(child) => {
+            let pid = child.id();
+            // Detach immediately — the monitor handles its own lifecycle.
+            info!(
+                target: &format!("game:{game_id}"),
+                "Spawned detached runtime monitor (pid {pid})"
+            );
+        }
+        Err(e) => {
+            warn!(
+                target: &format!("game:{game_id}"),
+                "Failed to start the runtime monitor: {}", e
+            );
+        }
     }
 }
 
@@ -1044,7 +1045,7 @@ async fn launch_game_managed(
     );
     info!(target: &format!("game:{}", game.id), "Command: {}", full_cmd);
 
-    let mut command = Command::new(&cmd_args[0]);
+    let mut command = tokio::process::Command::new(&cmd_args[0]);
     command.args(&cmd_args[1..]);
     command.stdin(Stdio::null());
     command.stdout(if capture_output {
@@ -1073,7 +1074,7 @@ async fn launch_game_managed(
 
     match command.spawn() {
         Ok(mut child) => {
-            let child_pid = child.id();
+            let child_pid = child.id().ok_or_else(|| LaunchError::Other("Failed to get child PID".to_string()))?;
             let started_at_epoch_seconds = current_epoch_seconds();
             let session = RunningGameSession {
                 game_id: game.id.clone(),
@@ -1087,7 +1088,7 @@ async fn launch_game_managed(
 
             if !try_register_running_session(session).await? {
                 let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
-                let _ = child.wait();
+                let _ = child.wait().await;
                 return Err(LaunchError::Other(
                     "This game is already running".to_string(),
                 ));
@@ -1109,8 +1110,18 @@ async fn launch_game_managed(
             }
 
             if reap_child_locally {
-                std::thread::spawn(move || {
-                    let _ = child.wait();
+                let game_id_log = game.id.clone();
+                let game_title_log = game.title.clone();
+                tokio::spawn(async move {
+                    match child.wait().await {
+                        Ok(status) => {
+                            let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string());
+                            info!(target: &format!("game:{}", game_id_log), "'{}' exited with status {}", game_title_log, code);
+                        }
+                        Err(e) => {
+                            warn!(target: &format!("game:{}", game_id_log), "'{}' wait error: {}", game_title_log, e);
+                        }
+                    }
                 });
             }
 

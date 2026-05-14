@@ -211,6 +211,8 @@ pub async fn show_dependencies_dialog(
                 && !dialog_dead.get()
                 && let Some(dialog) = dialog_weak.upgrade()
             {
+                // Force surface recreation after GNOME overview teardown
+                dialog.set_visible(false);
                 dialog.present();
             }
         });

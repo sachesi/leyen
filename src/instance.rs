@@ -46,6 +46,12 @@ impl InstanceLock {
     }
 }
 
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(get_lock_path());
+    }
+}
+
 fn get_lock_path() -> PathBuf {
     get_config_dir().join(".instance.lock")
 }

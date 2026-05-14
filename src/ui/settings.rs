@@ -301,7 +301,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                                 fs::remove_dir_all(&runtime_dir)
                             }).await.unwrap_or_else(|e| {
                                 log::warn!("runtime reset task failed: {e}");
-                                Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                                Err(std::io::Error::other(e.to_string()))
                             });
 
                             match result {

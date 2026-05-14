@@ -315,12 +315,15 @@ fn print_list_row(game: &Game, running: bool) {
 }
 
 async fn ensure_umu_available_for_cli() -> Result<()> {
-    if is_umu_run_available() {
+    let available = tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or(false);
+    if available {
         return Ok(());
     }
 
     eprintln!("umu-launcher not found. Installing local runtime...");
-    check_or_install_umu();
+    check_or_install_umu().await;
 
     let mut waited = 0u64;
     while UMU_DOWNLOADING.load(Relaxed) {
@@ -331,7 +334,10 @@ async fn ensure_umu_available_for_cli() -> Result<()> {
         }
     }
 
-    if is_umu_run_available() {
+    let available = tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or(false);
+    if available {
         Ok(())
     } else {
         anyhow::bail!("umu-launcher is not installed and automatic installation failed")

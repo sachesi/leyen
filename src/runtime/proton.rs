@@ -103,7 +103,7 @@ pub fn check_or_install_protonge() {
                 .unwrap_or(false);
 
             if ok {
-                let _ = std::process::Command::new("tar")
+                let status = std::process::Command::new("tar")
                     .args([
                         "-xzf",
                         &tarball_path.to_string_lossy(),
@@ -111,6 +111,20 @@ pub fn check_or_install_protonge() {
                         &proton_dir_str,
                     ])
                     .status();
+
+                match status {
+                    Ok(s) if s.success() => {
+                        log::info!("Successfully extracted ProtonGE");
+                    }
+                    Ok(s) => {
+                        log::error!("Failed to extract ProtonGE: tar exited with status {}", s);
+                        let _ = fs::remove_dir_all(&proton_dir);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to extract ProtonGE: failed to spawn tar: {}", e);
+                        let _ = fs::remove_dir_all(&proton_dir);
+                    }
+                }
                 let _ = fs::remove_file(&tarball_path);
             }
         })

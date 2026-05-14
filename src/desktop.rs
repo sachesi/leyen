@@ -43,7 +43,7 @@ pub async fn create_game_desktop_entry(
         Ok(path)
     })
     .await
-    .map_err(|e| join_err(e))
+    .map_err(join_err)
     .and_then(|r| r)
 }
 
@@ -93,7 +93,7 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
         Ok(had_desktop_file)
     })
     .await
-    .map_err(|e| join_err(e))
+    .map_err(join_err)
     .and_then(|r| r)
 }
 

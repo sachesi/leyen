@@ -107,7 +107,8 @@ pub async fn refresh_library_view(
             populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
         }
 
-        if let Some(group_id) = ui_clone.current_group_id.borrow().clone() {
+        let group_id = ui_clone.current_group_id.borrow().clone();
+        if let Some(group_id) = group_id {
             if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
                 *ui_clone.current_group_id.borrow_mut() = None;
                 populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;

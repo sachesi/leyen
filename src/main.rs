@@ -44,8 +44,8 @@ async fn main() -> glib::ExitCode {
     let settings = config::load_settings().await;
     logging::apply_log_settings(&settings);
 
-    runtime::check_or_install_umu();
-    runtime::check_or_install_winetricks();
+    runtime::check_or_install_umu().await;
+    runtime::check_or_install_winetricks().await;
     launch::start_running_sessions_monitor();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(ui::build_ui);

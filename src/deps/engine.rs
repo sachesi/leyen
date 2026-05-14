@@ -15,8 +15,8 @@ use tokio::process::Command as AsyncCommand;
 
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{
-    UMU_DOWNLOADING, WINETRICKS_DOWNLOADING, download_winetricks, get_umu_run_path,
-    get_winetricks_path, is_umu_run_available, is_winetricks_available,
+    UMU_DOWNLOADING, WINETRICKS_DOWNLOAD_STARTED, WINETRICKS_DOWNLOADING, download_winetricks,
+    get_umu_run_path, get_winetricks_path, is_umu_run_available, is_winetricks_available,
 };
 
 use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
@@ -34,7 +34,6 @@ fn join_err(e: tokio::task::JoinError) -> String {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub enum DepStepAction {
     DownloadFile {
         url: &'static str,
@@ -52,19 +51,8 @@ pub enum DepStepAction {
     },
     OverrideDlls {
         dlls: &'static str,
+        #[allow(dead_code)]
         override_type: &'static str,
-    },
-    RegisterDll {
-        dll: &'static str,
-    },
-    ExtractArchive {
-        archive_name: &'static str,
-        dest_subdir: &'static str,
-    },
-    CopyDllsToPrefix {
-        src_subdir: &'static str,
-        dlls: &'static str,
-        wine_dir: &'static str,
     },
     RunWinetricks {
         verb: String,
@@ -329,107 +317,6 @@ pub async fn execute_dep_step(
             dll_overrides: split_csv_values(dlls),
             ..StepChanges::default()
         }),
-
-        DepStepAction::RegisterDll { dll } => Ok(StepChanges {
-            registered_dlls: vec![dll.to_string()],
-            ..StepChanges::default()
-        }),
-
-        DepStepAction::ExtractArchive {
-            archive_name,
-            dest_subdir,
-        } => {
-            let archive_path = Path::new(cache_dir).join(archive_name);
-            let dest_path = Path::new(cache_dir).join(dest_subdir);
-            let dest_path_clone = dest_path.clone();
-            tokio::task::spawn_blocking(move || fs::create_dir_all(&dest_path_clone))
-                .await
-                .map_err(join_err)
-                .and_then(|r| r.map_err(|err| {
-                    format!(
-                        "Failed to create extraction directory '{}': {}",
-                        dest_path.display(),
-                        err
-                    )
-                }))?;
-
-            let mut cmd = AsyncCommand::new("tar");
-            if archive_name.ends_with(".tar.zst") || archive_name.ends_with(".tzst") {
-                cmd.args(["-I", "zstd", "-xf"]);
-            } else {
-                cmd.arg("-xf");
-            }
-            cmd.arg(archive_path.as_os_str());
-            cmd.args(["-C"]);
-            cmd.arg(dest_path.as_os_str());
-            cmd.args(["--strip-components=1"]);
-
-            let status = cmd
-                .status()
-                .await
-                .map_err(|err| format!("tar unavailable: {err}"))?;
-            if !status.success() {
-                return Err(format!("Failed to extract '{}'", archive_name));
-            }
-
-            Ok(StepChanges::default())
-        }
-
-        DepStepAction::CopyDllsToPrefix {
-            src_subdir,
-            dlls,
-            wine_dir,
-        } => {
-            let src_dir = Path::new(cache_dir).join(src_subdir);
-            let dst_dir = Path::new(prefix_path)
-                .join("drive_c")
-                .join("windows")
-                .join(wine_dir);
-            let dst_dir_clone = dst_dir.clone();
-            tokio::task::spawn_blocking(move || fs::create_dir_all(&dst_dir_clone))
-                .await
-                .map_err(join_err)
-                .and_then(|r| r.map_err(|err| {
-                    format!(
-                        "Failed to create target directory '{}': {}",
-                        dst_dir.display(),
-                        err
-                    )
-                }))?;
-
-            let prefix_path = prefix_path.to_string();
-            let dlls = split_csv_values(dlls);
-
-            // File operations are generally fast but let's be safe and wrap the copy loop if it's many files.
-            // For now just wrap the whole loop to avoid any blocking on the async thread.
-            let mut changes =
-                tokio::task::spawn_blocking(move || -> Result<StepChanges, String> {
-                    let mut changes = StepChanges::default();
-                    for dll in dlls {
-                        let src = src_dir.join(format!("{dll}.dll"));
-                        let dst = dst_dir.join(format!("{dll}.dll"));
-                        let existed_before = dst.exists();
-
-                        fs::copy(&src, &dst)
-                            .map_err(|err| format!("Failed to copy {}.dll: {}", dll, err))?;
-
-                        if existed_before {
-                            changes.touched_existing_files = true;
-                        } else if let Some(relative) =
-                            path_to_prefix_relative(Path::new(&prefix_path), &dst)
-                        {
-                            changes.created_files.push(relative);
-                        }
-                    }
-                    Ok(changes)
-                })
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-
-            changes.created_files.sort();
-            changes.created_files.dedup();
-            Ok(changes)
-        }
 
         DepStepAction::RunWinetricks { verb } => {
             let prefix_path_clone = prefix_path.to_string();
@@ -782,10 +669,27 @@ async fn ensure_umu_ready(
             })
         {
             overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
-            tokio::task::spawn_blocking(download_winetricks)
-                .await
-                .map_err(join_err)
-                .and_then(|r| r.map_err(|_| "Failed to download winetricks. Check your internet connection.".to_string()))?;
+
+            if !WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+                WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
+                let result = tokio::task::spawn_blocking(download_winetricks)
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r.map_err(|e| e.to_string()));
+                if result.is_err() {
+                    WINETRICKS_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                }
+                WINETRICKS_DOWNLOADING.store(false, Ordering::Relaxed);
+                result.map_err(|_| {
+                    "Failed to download winetricks. Check your internet connection."
+                        .to_string()
+                })?;
+            }
+
+            // Wait for the download to complete if another caller started it
+            while WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
 
             if !tokio::task::spawn_blocking(is_winetricks_available)
                 .await

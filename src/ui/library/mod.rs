@@ -5,7 +5,6 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::AnimationExt;
 use std::collections::HashSet;
 
 pub use self::group_view::populate_group_view;
@@ -133,7 +132,6 @@ pub async fn refresh_library_view(
             ui_clone.back_btn.set_visible(false);
             ui_clone.title.set_title("Leyen");
             ui_clone.title.set_subtitle("");
-            animate_scroll_to_top(&ui_clone);
         } else {
             let group_id = ui_clone.current_group_id.borrow().clone();
             if let Some(group_id) = group_id {
@@ -181,32 +179,4 @@ pub fn open_group(
     glib::spawn_future_local(async move {
         refresh_library_view(&u, &o, &w).await;
     });
-}
-
-fn animate_scroll_to_top(ui: &LibraryUi) {
-    let content = ui.toolbar_view.content();
-    let Some(sw) = content.and_then(|c| c.ancestor(gtk4::ScrolledWindow::static_type()))
-    else {
-        return;
-    };
-    let Ok(sw) = sw.downcast::<gtk4::ScrolledWindow>() else {
-        return;
-    };
-    let vadj = sw.vadjustment();
-    let current = vadj.value();
-    if current <= 0.01 {
-        return;
-    }
-
-    let target = adw::CallbackAnimationTarget::new(move |value| {
-        vadj.set_value(value);
-    });
-    let anim = adw::TimedAnimation::builder()
-        .widget(&ui.toolbar_view)
-        .value_from(current)
-        .value_to(0.0)
-        .duration(200)
-        .target(&target)
-        .build();
-    anim.play();
 }

@@ -34,5 +34,4 @@ pub struct LibraryUi {
     pub search_entry: gtk4::SearchEntry,
     pub library_state: Rc<RefCell<Vec<LibraryItem>>>,
     pub current_group_id: Rc<RefCell<Option<String>>>,
-    pub toolbar_view: adw::ToolbarView,
 }

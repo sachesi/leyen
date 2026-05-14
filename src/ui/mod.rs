@@ -290,6 +290,8 @@ pub fn build_ui(app: &adw::Application) {
 
     search_bar.set_key_capture_widget(Some(&window));
 
+    let debounce_token = Rc::new(Cell::new(0u64));
+
     let ui_c = ui.clone();
     let overlay_c = toast_overlay.clone();
     let window_c = window.clone();
@@ -297,7 +299,17 @@ pub fn build_ui(app: &adw::Application) {
         let u = ui_c.clone();
         let o = overlay_c.clone();
         let w = window_c.clone();
+        let token = {
+            let t = debounce_token.get();
+            debounce_token.set(t.wrapping_add(1));
+            t.wrapping_add(1)
+        };
+        let dt = debounce_token.clone();
         glib::spawn_future_local(async move {
+            glib::timeout_future(std::time::Duration::from_millis(200)).await;
+            if dt.get() != token {
+                return;
+            }
             refresh_library_view(&u, &o, &w).await;
         });
     });

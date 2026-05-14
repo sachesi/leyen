@@ -5,7 +5,6 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::AnimationExt;
 use std::collections::HashSet;
 
 pub use self::group_view::populate_group_view;
@@ -199,15 +198,17 @@ pub fn animate_scroll_to_top(toolbar_view: &adw::ToolbarView) {
         return;
     }
 
-    let target = adw::CallbackAnimationTarget::new(move |value| {
-        vadj.set_value(value);
+    let start = std::time::Instant::now();
+    let duration = std::time::Duration::from_millis(200);
+    glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
+        let elapsed = start.elapsed().as_secs_f64();
+        let t = (elapsed / duration.as_secs_f64()).min(1.0);
+        let eased = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+        vadj.set_value(current * (1.0 - eased));
+        if t < 1.0 {
+            glib::ControlFlow::Continue
+        } else {
+            glib::ControlFlow::Break
+        }
     });
-    let anim = adw::TimedAnimation::builder()
-        .widget(toolbar_view)
-        .value_from(current)
-        .value_to(0.0)
-        .duration(200)
-        .target(&target)
-        .build();
-    anim.play();
 }

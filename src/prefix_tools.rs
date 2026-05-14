@@ -12,6 +12,115 @@ use std::sync::atomic::Ordering;
 use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 
+pub async fn run_winecfg_in_prefix(
+    overlay: &adw::ToastOverlay,
+    prefix_path: &str,
+    proton_path: &str,
+) {
+    let snapshots = crate::launch::running_games_snapshot().await;
+    if !snapshots.is_empty() {
+        overlay.add_toast(adw::Toast::new(
+            "Blocked: Cannot run winecfg while games are running.",
+        ));
+        return;
+    }
+    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        return;
+    }
+    if !tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or(false)
+    {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
+    let proton = proton_path.trim().to_string();
+    let prefix = prefix_path.trim().to_string();
+    if prefix.is_empty() {
+        overlay.add_toast(adw::Toast::new("Prefix path is required"));
+        return;
+    }
+
+    let overlay_clone = overlay.clone();
+    let result = tokio::task::spawn_blocking(move || launch_wine_command("winecfg", &prefix, &proton))
+        .await
+        .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+    match result {
+        Ok(()) => overlay_clone.add_toast(adw::Toast::new("Wine Configuration launched")),
+        Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
+    }
+}
+
+pub async fn run_regedit_in_prefix(
+    overlay: &adw::ToastOverlay,
+    prefix_path: &str,
+    proton_path: &str,
+) {
+    let snapshots = crate::launch::running_games_snapshot().await;
+    if !snapshots.is_empty() {
+        overlay.add_toast(adw::Toast::new(
+            "Blocked: Cannot run regedit while games are running.",
+        ));
+        return;
+    }
+    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is still downloading, please wait…",
+        ));
+        return;
+    }
+    if !tokio::task::spawn_blocking(is_umu_run_available)
+        .await
+        .unwrap_or(false)
+    {
+        overlay.add_toast(adw::Toast::new(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        ));
+        return;
+    }
+
+    let proton = proton_path.trim().to_string();
+    let prefix = prefix_path.trim().to_string();
+    if prefix.is_empty() {
+        overlay.add_toast(adw::Toast::new("Prefix path is required"));
+        return;
+    }
+
+    let overlay_clone = overlay.clone();
+    let result = tokio::task::spawn_blocking(move || launch_wine_command("regedit", &prefix, &proton))
+        .await
+        .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+    match result {
+        Ok(()) => overlay_clone.add_toast(adw::Toast::new("Registry Editor launched")),
+        Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
+    }
+}
+
+fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Result<(), String> {
+    let mut cmd = Command::new(get_umu_run_path());
+    cmd.arg(name);
+    cmd.env("WINEPREFIX", prefix_path);
+    if !proton_path.is_empty() {
+        cmd.env("PROTONPATH", proton_path);
+    }
+    cmd.env("GAMEID", format!("leyen-{name}"));
+    cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+    cmd.env("WINEDEBUG", "fixme-all");
+    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    }
+    cmd.spawn()
+        .map_err(|err| format!("Failed to launch {}: {}", name, err))?;
+    info!("Launched '{}' inside prefix '{}'", name, prefix_path);
+    Ok(())
+}
+
 pub async fn pick_and_run_in_prefix(
     parent: &adw::ApplicationWindow,
     overlay: &adw::ToastOverlay,

@@ -204,8 +204,14 @@ pub async fn show_dependencies_dialog(
     // (e.g. returning from GNOME overview, which can hide modal dialogs)
     {
         let dialog_weak = dialog.downgrade();
+        let dialog_dead = Rc::new(Cell::new(false));
+        {
+            let dialog_dead = dialog_dead.clone();
+            dialog.connect_destroy(move |_| dialog_dead.set(true));
+        }
         parent.connect_is_active_notify(move |p| {
             if p.is_active()
+                && !dialog_dead.get()
                 && let Some(dialog) = dialog_weak.upgrade()
             {
                 dialog.present();

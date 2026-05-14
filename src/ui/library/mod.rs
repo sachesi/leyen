@@ -5,7 +5,6 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::AnimationExt;
 use std::collections::HashSet;
 
 pub use self::group_view::populate_group_view;
@@ -188,11 +187,9 @@ pub fn animate_scroll_to_top(toolbar_view: &adw::ToolbarView) {
     let content = toolbar_view.content();
     let Some(sw) = content.and_then(|c| c.ancestor(gtk4::ScrolledWindow::static_type()))
     else {
-        log::info!("animate_scroll_to_top: no ScrolledWindow ancestor");
         return;
     };
     let Ok(sw) = sw.downcast::<gtk4::ScrolledWindow>() else {
-        log::info!("animate_scroll_to_top: downcast failed");
         return;
     };
     let vadj = sw.vadjustment();
@@ -201,21 +198,17 @@ pub fn animate_scroll_to_top(toolbar_view: &adw::ToolbarView) {
         return;
     }
 
-    // Use a repeating timeout that drives the animation frame-by-frame
-    // so the GtkAdjustment updates are seen by the compositor.
-    let target = adw::CallbackAnimationTarget::new(move |value| {
-        vadj.set_value(value);
-    });
-    let anim = adw::TimedAnimation::builder()
-        .widget(toolbar_view)
-        .value_from(current)
-        .value_to(0.0)
-        .duration(200)
-        .target(&target)
-        .build();
-    anim.play();
-    // Keep animation alive for its duration
-    glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
-        drop((anim, target));
+    let start = std::time::Instant::now();
+    let duration = std::time::Duration::from_millis(200);
+    glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
+        let elapsed = start.elapsed().as_secs_f64();
+        let t = (elapsed / duration.as_secs_f64()).min(1.0);
+        let eased = 1.0 - (1.0 - t).powi(3); // ease-out cubic
+        vadj.set_value(current * (1.0 - eased));
+        if t < 1.0 {
+            glib::ControlFlow::Continue
+        } else {
+            glib::ControlFlow::Break
+        }
     });
 }

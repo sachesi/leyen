@@ -105,11 +105,9 @@ async fn refresh_dep_rows(
 
 fn set_dialog_busy(
     busy: bool,
-    close_btn: &gtk4::Button,
     search_entry: &gtk4::SearchEntry,
     handles: &[DepRowHandle],
 ) {
-    close_btn.set_sensitive(!busy);
     search_entry.set_sensitive(!busy);
     for handle in handles {
         handle.install_btn.set_sensitive(!busy);
@@ -170,12 +168,7 @@ pub async fn show_dependencies_dialog(
 
     let header = adw::HeaderBar::builder()
         .title_widget(&title_widget)
-        .show_end_title_buttons(false)
-        .show_start_title_buttons(false)
         .build();
-
-    let close_btn = gtk4::Button::builder().label("Close").build();
-    header.pack_start(&close_btn);
 
     let search_entry = gtk4::SearchEntry::builder()
         .placeholder_text("Search dependencies…")
@@ -207,6 +200,21 @@ pub async fn show_dependencies_dialog(
     overlay.set_child(Some(&toolbar_view));
     dialog.set_content(Some(&overlay));
 
+    // Re-present the modal dialog when the parent becomes active
+    // (e.g. returning from GNOME overview, which can hide modal dialogs)
+    {
+        let parent_weak = parent.downgrade();
+        let dialog_weak = dialog.downgrade();
+        parent.connect_is_active_notify(move |p| {
+            if p.is_active()
+                && let (Some(dialog), _) = (dialog_weak.upgrade(), parent_weak.upgrade())
+                && dialog.is_visible()
+            {
+                dialog.present();
+            }
+        });
+    }
+
     let dialog_busy = Rc::new(Cell::new(false));
     {
         let dialog_busy = dialog_busy.clone();
@@ -236,6 +244,9 @@ pub async fn show_dependencies_dialog(
             categories.push(e.category);
         }
     }
+    if entries.iter().any(|e| installed.contains(e.id)) {
+        categories.insert(0, "Installed");
+    }
 
     let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)> = Vec::new();
     let row_handles = std::rc::Rc::new(std::cell::RefCell::new(Vec::<DepRowHandle>::new()));
@@ -244,9 +255,15 @@ pub async fn show_dependencies_dialog(
         let group = adw::PreferencesGroup::builder().title(*cat).build();
         let mut rows_in_group: Vec<(adw::ActionRow, &'static str)> = Vec::new();
 
-        for entry in entries.iter().filter(|e| e.category == *cat) {
+        for entry in entries.iter().filter(|e| {
+            if *cat == "Installed" {
+                installed.contains(e.id)
+            } else {
+                e.category == *cat && !installed.contains(e.id)
+            }
+        }) {
             let dep_id = entry.id;
-            let is_installed = installed.contains(dep_id);
+            let is_installed = *cat == "Installed";
 
             let row = adw::ActionRow::builder()
                 .title(entry.name)
@@ -324,13 +341,12 @@ pub async fn show_dependencies_dialog(
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
                 let row_handles2 = row_handles.clone();
-                let close_btn2 = close_btn.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
 
                 install_btn.connect_clicked(move |_| {
                     dialog_busy2.set(true);
-                    set_dialog_busy(true, &close_btn2, &search_entry2, &row_handles2.borrow());
+                    set_dialog_busy(true, &search_entry2, &row_handles2.borrow());
                     install_btn2.set_visible(false);
                     spinner2.set_visible(true);
                     spinner2.start();
@@ -348,7 +364,6 @@ pub async fn show_dependencies_dialog(
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
                     let row_handles3 = row_handles2.clone();
-                    let close_btn3 = close_btn2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
 
@@ -370,7 +385,7 @@ pub async fn show_dependencies_dialog(
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
-                        set_dialog_busy(false, &close_btn3, &search_entry3, &busy_snapshot);
+                        set_dialog_busy(false, &search_entry3, &busy_snapshot);
                         if success {
                             badge3.set_visible(true);
                             let message = note_or_error
@@ -414,13 +429,12 @@ pub async fn show_dependencies_dialog(
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
                 let row_handles2 = row_handles.clone();
-                let close_btn2 = close_btn.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
 
                 reinstall_btn.connect_clicked(move |_| {
                     dialog_busy2.set(true);
-                    set_dialog_busy(true, &close_btn2, &search_entry2, &row_handles2.borrow());
+                    set_dialog_busy(true, &search_entry2, &row_handles2.borrow());
                     reinstall_btn2.set_visible(false);
                     remove_btn2.set_visible(false);
                     spinner2.set_visible(true);
@@ -439,7 +453,6 @@ pub async fn show_dependencies_dialog(
                     let prefix3 = prefix2.clone();
                     let overlay3 = overlay2.clone();
                     let row_handles3 = row_handles2.clone();
-                    let close_btn3 = close_btn2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
 
@@ -461,7 +474,7 @@ pub async fn show_dependencies_dialog(
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
-                        set_dialog_busy(false, &close_btn3, &search_entry3, &busy_snapshot);
+                        set_dialog_busy(false, &search_entry3, &busy_snapshot);
                         if success {
                             badge3.set_visible(true);
                             let message = note_or_error
@@ -508,7 +521,6 @@ pub async fn show_dependencies_dialog(
                 let overlay2 = overlay.clone();
                 let dialog2 = dialog.clone();
                 let row_handles2 = row_handles.clone();
-                let close_btn2 = close_btn.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
 
@@ -533,7 +545,6 @@ pub async fn show_dependencies_dialog(
                     let proton3 = proton2.clone();
                     let overlay3 = overlay2.clone();
                     let row_handles3 = row_handles2.clone();
-                    let close_btn3 = close_btn2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
                     let dialog3 = dialog2.clone();
@@ -556,10 +567,9 @@ pub async fn show_dependencies_dialog(
                         confirm.choose(Some(&dialog3), gio::Cancellable::NONE, move |result| {
                             if let Ok(1) = result {
                                 dialog_busy3.set(true);
-                                set_dialog_busy(
-                                    true,
-                                    &close_btn3,
-                                    &search_entry3,
+                                 set_dialog_busy(
+                                     true,
+                                     &search_entry3,
                                     &row_handles3.borrow(),
                                 );
                                 reinstall_btn3.set_visible(false);
@@ -580,7 +590,6 @@ pub async fn show_dependencies_dialog(
                                 let prefix4 = prefix3.clone();
                                 let overlay4 = overlay3.clone();
                                 let row_handles4 = row_handles3.clone();
-                                let close_btn4 = close_btn3.clone();
                                 let search_entry4 = search_entry3.clone();
                                 let dialog_busy4 = dialog_busy3.clone();
 
@@ -605,10 +614,9 @@ pub async fn show_dependencies_dialog(
                                         });
                                         dialog_busy4.set(false);
                                         let busy_snapshot = row_handles4.borrow().clone();
-                                        set_dialog_busy(
-                                            false,
-                                            &close_btn4,
-                                            &search_entry4,
+                                         set_dialog_busy(
+                                             false,
+                                             &search_entry4,
                                             &busy_snapshot,
                                         );
                                         if success {
@@ -681,9 +689,6 @@ pub async fn show_dependencies_dialog(
             group.set_visible(query.is_empty() || any_visible);
         }
     });
-
-    let dialog_close = dialog.clone();
-    close_btn.connect_clicked(move |_| dialog_close.destroy());
 
     let initial_snapshot = row_handles.borrow().clone();
     refresh_dep_rows(&resolved_prefix, &title_widget, &initial_snapshot).await;

@@ -75,10 +75,10 @@ pub fn build_ui(app: &adw::Application) {
     let header = adw::HeaderBar::builder().title_widget(&title).build();
     header.pack_start(&back_btn);
     let menu_model = gio::Menu::new();
-    menu_model.append(Some("Preferences"), Some("win.show-preferences"));
     menu_model.append(Some("Running Games"), Some("win.show-running-games"));
     menu_model.append(Some("Logs"), Some("win.show-logs"));
     let menu_section = gio::Menu::new();
+    menu_section.append(Some("Preferences"), Some("win.show-preferences"));
     menu_section.append(Some("Keyboard Shortcuts"), Some("win.show-shortcuts"));
     menu_section.append(Some("About Leyen"), Some("win.show-about"));
     menu_model.append_section(None, &menu_section);
@@ -445,7 +445,17 @@ pub fn build_ui(app: &adw::Application) {
             .application_icon("com.github.sachesi.leyen")
             .version(env!("CARGO_PKG_VERSION"))
             .developer_name("sachesi")
-            .license_type(gtk4::License::Unknown)
+            .website("https://github.com/sachesi/leyen")
+            .issue_url("https://github.com/sachesi/leyen/issues")
+            .license_type(gtk4::License::Gpl30)
+            .copyright(
+                "This program comes with ABSOLUTELY NO WARRANTY.\n\
+                 See the GNU General Public License, version 3 or later for details.\n\
+                 \n\
+                 Ця програма постачається БЕЗ БУДЬ-ЯКИХ ГАРАНТІЙ.\n\
+                 Щоб дізнатися більше, відвідайте Загальна громадська ліцензія GNU\n\
+                 (GNU GPL), версія 3 або новіша.",
+            )
             .build();
         about.present();
     });
@@ -459,6 +469,8 @@ pub fn build_ui(app: &adw::Application) {
             glib::Propagation::Proceed
         }
     });
+
+    app.set_accels_for_action("app.quit", &["<Ctrl>Q"]);
 
     window.present();
 

@@ -687,5 +687,6 @@ pub async fn show_dependencies_dialog(
 
     let initial_snapshot = row_handles.borrow().clone();
     refresh_dep_rows(&resolved_prefix, &title_widget, &initial_snapshot).await;
+    crate::ui::animate_scroll_to_top(&toolbar_view);
     dialog.present();
 }

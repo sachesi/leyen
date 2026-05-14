@@ -152,6 +152,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     toolbar_view.set_content(Some(&content_stack));
 
     window.set_content(Some(&toolbar_view));
+    crate::ui::animate_scroll_to_top(&toolbar_view);
     window.present();
 
     let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));

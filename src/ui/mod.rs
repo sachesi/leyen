@@ -424,10 +424,15 @@ pub fn build_ui(app: &adw::Application) {
             .title("Quit Leyen")
             .accelerator("<Ctrl>Q")
             .build();
+        let search_shortcut = gtk4::ShortcutsShortcut::builder()
+            .title("Search Games")
+            .accelerator("<Ctrl>F")
+            .build();
         let general_group = gtk4::ShortcutsGroup::builder()
             .title("General")
             .build();
         general_group.append(&quit_shortcut);
+        general_group.append(&search_shortcut);
         let general_section = gtk4::ShortcutsSection::builder()
             .title("General")
             .max_height(2)
@@ -453,6 +458,13 @@ pub fn build_ui(app: &adw::Application) {
     });
     window.add_action(&about_action);
 
+    let search_btn_clone = search_btn.clone();
+    let search_toggle_action = gio::SimpleAction::new("toggle-search", None);
+    search_toggle_action.connect_activate(move |_, _| {
+        search_btn_clone.set_active(!search_btn_clone.is_active());
+    });
+    window.add_action(&search_toggle_action);
+
     window.connect_close_request(move |win| {
         if crate::launch::is_any_game_running() {
             win.set_visible(false);
@@ -463,6 +475,7 @@ pub fn build_ui(app: &adw::Application) {
     });
 
     app.set_accels_for_action("app.quit", &["<Ctrl>Q"]);
+    app.set_accels_for_action("win.toggle-search", &["<Ctrl>F"]);
 
     window.present();
 

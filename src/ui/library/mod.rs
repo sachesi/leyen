@@ -5,6 +5,7 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use std::collections::HashSet;
 
 pub use self::group_view::populate_group_view;
 pub use self::root_view::populate_root_view;
@@ -82,24 +83,43 @@ pub async fn refresh_library_view(
     let search_text = ui.search_entry.text().to_string().to_lowercase();
 
     glib::spawn_future_local(async move {
-        let mut items = crate::config::load_library().await;
+        let items = crate::config::load_library().await;
 
-        if !search_text.is_empty() {
-            items.retain(|item| match item {
-                LibraryItem::Game(game) => game.title.to_lowercase().contains(&search_text),
-                LibraryItem::Group(group) => {
-                    group.title.to_lowercase().contains(&search_text)
-                        || group
-                            .games
-                            .iter()
-                            .any(|g| g.title.to_lowercase().contains(&search_text))
+        let is_searching = !search_text.is_empty();
+
+        if is_searching {
+            let mut flat = Vec::new();
+            let mut seen_ids = HashSet::new();
+            for item in items {
+                match item {
+                    LibraryItem::Game(game)
+                        if game.title.to_lowercase().contains(&search_text)
+                            && seen_ids.insert(game.id.clone()) =>
+                    {
+                        flat.push(LibraryItem::Game(game));
+                    }
+                    LibraryItem::Group(group) => {
+                        let group_matches =
+                            group.title.to_lowercase().contains(&search_text);
+                        for game in group.games {
+                            if (group_matches
+                                || game.title.to_lowercase().contains(&search_text))
+                                && seen_ids.insert(game.id.clone())
+                            {
+                                flat.push(LibraryItem::Game(game));
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-            });
+            }
+            *ui_clone.library_state.borrow_mut() = flat;
+        } else {
+            *ui_clone.library_state.borrow_mut() = items;
         }
 
-        *ui_clone.library_state.borrow_mut() = items;
-
-        let entering_group = ui_clone.current_group_id.borrow().is_some();
+        let entering_group =
+            !is_searching && ui_clone.current_group_id.borrow().is_some();
 
         if entering_group {
             populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
@@ -107,22 +127,30 @@ pub async fn refresh_library_view(
             populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
         }
 
-        let group_id = ui_clone.current_group_id.borrow().clone();
-        if let Some(group_id) = group_id {
-            if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
-                *ui_clone.current_group_id.borrow_mut() = None;
-                populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
-            } else {
-                ui_clone.stack.set_visible_child_name("group");
-                ui_clone.back_btn.set_visible(true);
-            }
-        }
-
-        if ui_clone.current_group_id.borrow().is_none() {
+        if is_searching {
             ui_clone.stack.set_visible_child_name("root");
             ui_clone.back_btn.set_visible(false);
             ui_clone.title.set_title("Leyen");
             ui_clone.title.set_subtitle("");
+        } else {
+            let group_id = ui_clone.current_group_id.borrow().clone();
+            if let Some(group_id) = group_id {
+                if find_group(&ui_clone.library_state.borrow(), &group_id).is_none()
+                {
+                    *ui_clone.current_group_id.borrow_mut() = None;
+                    populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
+                } else {
+                    ui_clone.stack.set_visible_child_name("group");
+                    ui_clone.back_btn.set_visible(true);
+                }
+            }
+
+            if ui_clone.current_group_id.borrow().is_none() {
+                ui_clone.stack.set_visible_child_name("root");
+                ui_clone.back_btn.set_visible(false);
+                ui_clone.title.set_title("Leyen");
+                ui_clone.title.set_subtitle("");
+            }
         }
 
         update_add_button_mode(&ui_clone);

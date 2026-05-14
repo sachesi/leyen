@@ -133,6 +133,7 @@ pub async fn refresh_library_view(
             ui_clone.back_btn.set_visible(false);
             ui_clone.title.set_title("Leyen");
             ui_clone.title.set_subtitle("");
+            animate_scroll_to_top(&ui_clone);
         } else {
             let group_id = ui_clone.current_group_id.borrow().clone();
             if let Some(group_id) = group_id {
@@ -153,8 +154,6 @@ pub async fn refresh_library_view(
                 ui_clone.title.set_subtitle("");
             }
         }
-
-        animate_scroll_to_top(&ui_clone.toolbar_view);
 
         update_add_button_mode(&ui_clone);
     });
@@ -184,8 +183,8 @@ pub fn open_group(
     });
 }
 
-pub fn animate_scroll_to_top(toolbar_view: &adw::ToolbarView) {
-    let content = toolbar_view.content();
+fn animate_scroll_to_top(ui: &LibraryUi) {
+    let content = ui.toolbar_view.content();
     let Some(sw) = content.and_then(|c| c.ancestor(gtk4::ScrolledWindow::static_type()))
     else {
         return;
@@ -203,7 +202,7 @@ pub fn animate_scroll_to_top(toolbar_view: &adw::ToolbarView) {
         vadj.set_value(value);
     });
     let anim = adw::TimedAnimation::builder()
-        .widget(toolbar_view)
+        .widget(&ui.toolbar_view)
         .value_from(current)
         .value_to(0.0)
         .duration(200)

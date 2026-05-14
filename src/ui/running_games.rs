@@ -262,7 +262,6 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     glib::spawn_future_local(async move {
         rebuild_running_games(&lbox, &cstack, &ov, &p, &rdl).await;
     });
-    crate::ui::animate_scroll_to_top(&toolbar_view);
     window.present();
 
     let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));

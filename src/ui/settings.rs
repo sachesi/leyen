@@ -382,6 +382,5 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         gtk4::glib::Propagation::Proceed
     });
 
-    crate::ui::animate_scroll_to_top(&toolbar_view);
     dialog.present();
 }

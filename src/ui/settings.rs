@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use super::deps_dialog::show_dependencies_dialog;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
-use crate::prefix_tools::pick_and_run_in_prefix;
+use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
 use crate::runtime::proton::resolve_proton_path;
 use crate::runtime::umu::get_umu_runtime_dir;
 use crate::tools::{gamemode_available, mangohud_available};
@@ -107,7 +107,17 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         .description("Manage the default prefix inherited by games and groups.")
         .build();
 
+    let winecfg_btn = gtk4::Button::builder()
+        .label("Wine Configuration")
+        .build();
+    winecfg_btn.set_margin_bottom(6);
+    let regedit_btn = gtk4::Button::builder()
+        .label("Registry Editor")
+        .build();
+    regedit_btn.set_margin_top(6);
+    regedit_btn.set_margin_bottom(6);
     let manage_deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    manage_deps_btn.set_margin_top(6);
     manage_deps_btn.set_margin_bottom(6);
     let run_prefix_btn = gtk4::Button::builder()
         .label("Run in default prefix")
@@ -115,6 +125,45 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     run_prefix_btn.set_margin_top(6);
 
     let overlay = adw::ToastOverlay::new();
+
+    let overlay_for_winecfg = overlay.clone();
+    let prefix_row_for_winecfg = prefix_row.clone();
+    let proton_row_for_winecfg = proton_row.clone();
+    let available_versions_for_winecfg = available_versions.clone();
+    winecfg_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_winecfg.text().to_string();
+        let proton_choice =
+            if (proton_row_for_winecfg.selected() as usize) < available_versions_for_winecfg.len()
+            {
+                available_versions_for_winecfg[proton_row_for_winecfg.selected() as usize].clone()
+            } else {
+                "Default".to_string()
+            };
+        let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
+        let o = overlay_for_winecfg.clone();
+        glib::spawn_future_local(async move {
+            run_winecfg_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
+
+    let overlay_for_regedit = overlay.clone();
+    let prefix_row_for_regedit = prefix_row.clone();
+    let proton_row_for_regedit = proton_row.clone();
+    let available_versions_for_regedit = available_versions.clone();
+    regedit_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_regedit.text().to_string();
+        let proton_choice =
+            if (proton_row_for_regedit.selected() as usize) < available_versions_for_regedit.len() {
+                available_versions_for_regedit[proton_row_for_regedit.selected() as usize].clone()
+            } else {
+                "Default".to_string()
+            };
+        let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
+        let o = overlay_for_regedit.clone();
+        glib::spawn_future_local(async move {
+            run_regedit_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
 
     let parent_for_deps = parent.clone();
     let overlay_for_deps = overlay.clone();
@@ -158,6 +207,8 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         });
     });
 
+    tools_group.add(&winecfg_btn);
+    tools_group.add(&regedit_btn);
     tools_group.add(&manage_deps_btn);
     tools_group.add(&run_prefix_btn);
 

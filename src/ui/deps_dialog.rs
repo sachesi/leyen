@@ -202,13 +202,10 @@ pub async fn show_dependencies_dialog(
 
     // Re-present the modal dialog when the parent becomes active
     // (e.g. returning from GNOME overview, which can hide modal dialogs)
+    let dialog_dead = Rc::new(Cell::new(false));
     {
         let dialog_weak = dialog.downgrade();
-        let dialog_dead = Rc::new(Cell::new(false));
-        {
-            let dialog_dead = dialog_dead.clone();
-            dialog.connect_destroy(move |_| dialog_dead.set(true));
-        }
+        let dialog_dead = dialog_dead.clone();
         parent.connect_is_active_notify(move |p| {
             if p.is_active()
                 && !dialog_dead.get()
@@ -223,6 +220,7 @@ pub async fn show_dependencies_dialog(
     {
         let dialog_busy = dialog_busy.clone();
         let overlay_for_close = overlay.clone();
+        let dialog_dead = dialog_dead.clone();
         dialog.connect_close_request(move |_| {
             if dialog_busy.get() {
                 overlay_for_close.add_toast(adw::Toast::new(
@@ -230,6 +228,7 @@ pub async fn show_dependencies_dialog(
                 ));
                 gtk4::glib::Propagation::Stop
             } else {
+                dialog_dead.set(true);
                 gtk4::glib::Propagation::Proceed
             }
         });

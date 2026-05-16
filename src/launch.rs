@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
+use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncBufReadExt, BufReader as AsyncBufReader};
@@ -57,11 +59,6 @@ pub struct RunningGameSnapshot {
 pub enum LaunchError {
     #[error("Failed to prepare runtime lock directory: {0}")]
     LockDirectoryError(#[from] std::io::Error),
-    #[error("Failed to open runtime lock '{path}': {source}")]
-    LockOpenError {
-        path: PathBuf,
-        source: std::io::Error,
-    },
     #[error("Failed to lock runtime state '{path}': {source}")]
     LockAcquireError {
         path: PathBuf,
@@ -104,30 +101,64 @@ fn running_registry_lock_path() -> PathBuf {
     get_config_dir().join(".running.lock")
 }
 
+/// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
+/// Releases the lock on Drop — panic-safe.
+struct FlockGuard {
+    file: File,
+}
+
+impl FlockGuard {
+    fn lock(path: &Path, timeout: Duration) -> io::Result<Self> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| io::Error::new(e.kind(), format!("create_dir_all '{}': {}", path.display(), e)))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(path)?;
+        let fd = file.as_raw_fd();
+
+        let start = std::time::Instant::now();
+        loop {
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if result == 0 {
+                return Ok(Self { file });
+            }
+            let err = io::Error::last_os_error();
+            if err.kind() != io::ErrorKind::WouldBlock {
+                return Err(err);
+            }
+            if start.elapsed() >= timeout {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!(
+                        "Timed out waiting for lock on '{}' after {:?}",
+                        path.display(),
+                        timeout
+                    ),
+                ));
+            }
+            sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+impl Drop for FlockGuard {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
 fn with_running_registry<R>(
     f: impl FnOnce(&mut RunningGamesRegistry) -> (R, bool),
 ) -> Result<R, LaunchError> {
-    let lock_path = running_registry_lock_path();
-    if let Some(parent) = lock_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let lock_file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)
-        .map_err(|e| LaunchError::LockOpenError {
-            path: lock_path.clone(),
+    let _guard = FlockGuard::lock(&running_registry_lock_path(), Duration::from_secs(5))
+        .map_err(|e| LaunchError::LockAcquireError {
+            path: running_registry_lock_path(),
             source: e,
         })?;
-
-    if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        return Err(LaunchError::LockAcquireError {
-            path: lock_path,
-            source: std::io::Error::last_os_error(),
-        });
-    }
 
     let registry_path = running_registry_path();
     let mut registry = match fs::read_to_string(&registry_path) {
@@ -153,7 +184,6 @@ fn with_running_registry<R>(
         })?;
     }
 
-    let _ = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) };
     Ok(result)
 }
 
@@ -233,8 +263,9 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
     let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
-        let children_map = build_process_children_map_cached();
-        let all_envs = build_all_envs_map_cached();
+        let scan = get_proc_scan();
+        let children_map = &scan.children;
+        let all_envs = &scan.envs;
         with_running_registry(|registry| {
             let original_sessions = registry.sessions.clone();
             let mut active_sessions = Vec::new();
@@ -403,10 +434,9 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     
 
     tokio::task::spawn_blocking(move || {
-        let children_map = build_process_children_map_cached();
-        let all_envs = build_all_envs_map_cached();
+        let scan = get_proc_scan();
         let mut session = session;
-        let tracked_pids = refresh_known_pids(&mut session, &children_map, &all_envs);
+        let tracked_pids = refresh_known_pids(&mut session, &scan.children, &scan.envs);
         let mut killed_any = false;
 
         let pgid = -(session.pid as i32);
@@ -563,106 +593,90 @@ fn read_process_comm(pid: u32) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-type EnvsMapCache = RwLock<(HashMap<u32, HashMap<String, String>>, u64)>;
-
-static PROCESS_ENVS_MAP_CACHE: OnceLock<EnvsMapCache> = OnceLock::new();
-
-fn get_process_envs_cache() -> &'static EnvsMapCache {
-    PROCESS_ENVS_MAP_CACHE.get_or_init(|| RwLock::new((HashMap::new(), 0)))
+/// Combined result of a single /proc scan: parent→children map + game-like envs map.
+struct ProcScan {
+    children: HashMap<u32, Vec<u32>>,
+    envs: HashMap<u32, HashMap<String, String>>,
 }
 
-fn build_all_envs_map_cached() -> HashMap<u32, HashMap<String, String>> {
+type ProcScanCache = RwLock<(ProcScan, u64)>;
+
+static PROC_SCAN_CACHE: OnceLock<ProcScanCache> = OnceLock::new();
+
+fn get_proc_scan_cache() -> &'static ProcScanCache {
+    PROC_SCAN_CACHE.get_or_init(|| RwLock::new((
+        ProcScan { children: HashMap::new(), envs: HashMap::new() },
+        0,
+    )))
+}
+
+/// Returns combined children + envs from a single /proc scan, cached with 1s TTL.
+fn get_proc_scan() -> ProcScan {
     let now = current_epoch_seconds();
-    if let Ok(cache) = get_process_envs_cache().read()
-        && now.saturating_sub(cache.1) < 1
-    {
-        return cache.0.clone();
-    }
-    let map = build_all_envs_map();
-    if let Ok(mut cache) = get_process_envs_cache().write() {
-        *cache = (map.clone(), now);
-    }
-    map
-}
-
-fn build_all_envs_map() -> HashMap<u32, HashMap<String, String>> {
-    let mut map = HashMap::new();
-    let Ok(entries) = fs::read_dir("/proc") else {
-        return map;
-    };
-
-    for entry in entries.flatten() {
-        let Ok(file_name) = entry.file_name().into_string() else {
-            continue;
-        };
-        let Ok(pid) = file_name.parse::<u32>() else {
-            continue;
-        };
-
-        if pid < 1000 {
-            continue;
-        }
-
-        // Smarter filtering: only read environment for processes that could be part of a game
-        if let Some(comm) = read_process_comm(pid) {
-            let comm_lower = comm.to_lowercase();
-            let looks_like_game = comm_lower.contains("wine")
-                || comm_lower.contains("steam")
-                || comm_lower.contains("proton")
-                || comm_lower.ends_with(".exe")
-                || comm_lower.contains("leyen");
-
-            if looks_like_game
-                && let Some(env) = read_process_env(pid)
-                    && (env.contains_key("WINEPREFIX") || env.contains_key("GAMEID")) {
-                        map.insert(pid, env);
-                    }
-        }
-    }
-
-    map
-}
-
-type ChildrenMapCache = RwLock<(HashMap<u32, Vec<u32>>, u64)>;
-
-static PROCESS_CHILDREN_MAP_CACHE: OnceLock<ChildrenMapCache> = OnceLock::new();
-
-fn get_process_children_cache() -> &'static ChildrenMapCache {
-    PROCESS_CHILDREN_MAP_CACHE.get_or_init(|| RwLock::new((HashMap::new(), 0)))
-}
-
-fn build_process_children_map_cached() -> HashMap<u32, Vec<u32>> {
-    let now = current_epoch_seconds();
-    if let Ok(cache) = get_process_children_cache().read()
+    if let Ok(cache) = get_proc_scan_cache().read()
         && now.saturating_sub(cache.1) < 1 {
-            return cache.0.clone();
+            return ProcScan {
+                children: cache.0.children.clone(),
+                envs: cache.0.envs.clone(),
+            };
         }
-    let map = build_process_children_map();
-    if let Ok(mut cache) = get_process_children_cache().write() {
-        *cache = (map.clone(), now);
+    let scan = scan_all_procs();
+    if let Ok(mut cache) = get_proc_scan_cache().write() {
+        *cache = (
+            ProcScan {
+                children: scan.children.clone(),
+                envs: scan.envs.clone(),
+            },
+            now,
+        );
     }
-    map
+    scan
 }
 
-fn build_process_children_map() -> HashMap<u32, Vec<u32>> {
-    let mut map: HashMap<u32, Vec<u32>> = HashMap::new();
+/// Single pass over /proc — collects both parent→children index and game-like process envs.
+fn scan_all_procs() -> ProcScan {
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut envs: HashMap<u32, HashMap<String, String>> = HashMap::new();
+
     let Ok(entries) = fs::read_dir("/proc") else {
-        return map;
+        return ProcScan { children, envs };
     };
 
     for entry in entries.flatten() {
         let Ok(file_name) = entry.file_name().into_string() else {
             continue;
         };
+
         let Ok(pid) = file_name.parse::<u32>() else {
             continue;
         };
+
+        // Build children map from parent PID (all PIDs)
         if let Some(ppid) = read_parent_pid(pid) {
-            map.entry(ppid).or_default().push(pid);
+            children.entry(ppid).or_default().push(pid);
+        }
+
+        // Build envs map for game-like processes (PID >= 1000)
+        if pid >= 1000
+            && let Some(comm) = read_process_comm(pid)
+            && is_game_process(&comm)
+            && let Some(env) = read_process_env(pid)
+            && (env.contains_key("WINEPREFIX") || env.contains_key("GAMEID"))
+        {
+            envs.insert(pid, env);
         }
     }
 
-    map
+    ProcScan { children, envs }
+}
+
+fn is_game_process(comm: &str) -> bool {
+    let lower = comm.to_lowercase();
+    lower.contains("wine")
+        || lower.contains("steam")
+        || lower.contains("proton")
+        || lower.ends_with(".exe")
+        || lower.contains("leyen")
 }
 
 fn is_pid_alive(pid: u32) -> bool {
@@ -1045,96 +1059,102 @@ async fn launch_game_managed(
     );
     info!(target: &format!("game:{}", game.id), "Command: {}", full_cmd);
 
-    let mut command = tokio::process::Command::new(&cmd_args[0]);
-    command.args(&cmd_args[1..]);
-    command.stdin(Stdio::null());
-    command.stdout(if capture_output {
-        Stdio::piped()
-    } else {
-        Stdio::null()
-    });
-    command.stderr(if capture_output {
-        Stdio::piped()
-    } else {
-        Stdio::null()
-    });
-    command.envs(env_vars.iter().map(|(k, v)| (k, v)));
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setpgid(0, 0) == 0 {
-                Ok(())
+    // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
+    let (mut child, child_pid, child_stdout, child_stderr) =
+        tokio::task::spawn_blocking(move || {
+            let mut cmd = tokio::process::Command::new(&cmd_args[0]);
+            cmd.args(&cmd_args[1..]);
+            cmd.stdin(Stdio::null());
+            cmd.stdout(if capture_output {
+                Stdio::piped()
             } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
-    }
-    if let Some(cwd) = &working_dir {
-        command.current_dir(cwd);
-    }
-
-    match command.spawn() {
-        Ok(mut child) => {
-            let child_pid = child.id().ok_or_else(|| LaunchError::Other("Failed to get child PID".to_string()))?;
-            let started_at_epoch_seconds = current_epoch_seconds();
-            let session = RunningGameSession {
-                game_id: game.id.clone(),
-                pid: child_pid,
-                known_pids: vec![child_pid],
-                started_at_epoch_seconds,
-                match_prefix_path: (!prefix_path.is_empty()).then_some(prefix_path.clone()),
-                match_game_id: (!launch_game_id.is_empty()).then_some(launch_game_id.clone()),
-                termination_requested: false,
-            };
-
-            if !try_register_running_session(session).await? {
-                let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
-                let _ = child.wait().await;
-                return Err(LaunchError::Other(
-                    "This game is already running".to_string(),
-                ));
-            }
-
-            if !record_game_launch_start(&game.id, started_at_epoch_seconds).await {
-                warn!(target: &format!("game:{}", game.id), "Failed to record game launch start");
-            }
-
-            if capture_output && let Some(stdout) = child.stdout.take() {
-                pipe_process_output(stdout, game.id.clone(), game.title.clone(), "stdout");
-            }
-            if capture_output && let Some(stderr) = child.stderr.take() {
-                pipe_process_output(stderr, game.id.clone(), game.title.clone(), "stderr");
-            }
-
-            if spawn_background_monitor {
-                spawn_detached_monitor(&game.id);
-            }
-
-            if reap_child_locally {
-                let game_id_log = game.id.clone();
-                let game_title_log = game.title.clone();
-                tokio::spawn(async move {
-                    match child.wait().await {
-                        Ok(status) => {
-                            let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string());
-                            info!(target: &format!("game:{}", game_id_log), "'{}' exited with status {}", game_title_log, code);
-                        }
-                        Err(e) => {
-                            warn!(target: &format!("game:{}", game_id_log), "'{}' wait error: {}", game_title_log, e);
-                        }
+                Stdio::null()
+            });
+            cmd.stderr(if capture_output {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            });
+            cmd.envs(env_vars.iter().map(|(k, v)| (k, v)));
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setpgid(0, 0) == 0 {
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::last_os_error())
                     }
                 });
             }
+            if let Some(ref cwd) = working_dir {
+                cmd.current_dir(cwd);
+            }
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
+            let pid = child
+                .id()
+                .ok_or_else(|| LaunchError::Other("Failed to get child PID".to_string()))?;
+            let child_stdout = child.stdout.take();
+            let child_stderr = child.stderr.take();
+            Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
+        })
+        .await
+        .map_err(|e| LaunchError::Other(join_err(e)))?
+        .map_err(|e| e)?;
+    let started_at_epoch_seconds = current_epoch_seconds();
+    let session = RunningGameSession {
+        game_id: game.id.clone(),
+        pid: child_pid,
+        known_pids: vec![child_pid],
+        started_at_epoch_seconds,
+        match_prefix_path: (!prefix_path.is_empty()).then_some(prefix_path.clone()),
+        match_game_id: (!launch_game_id.is_empty()).then_some(launch_game_id.clone()),
+        termination_requested: false,
+    };
 
-            info!(
-                target: &format!("game:{}", game.id),
-                "Spawned '{}' with pid {}", game.title, child_pid
-            );
-            notices.push(format!("Launching {}...", game.title));
-            Ok(LaunchReport { notices })
-        }
-        Err(e) => {
-            error!("Failed to launch '{}': {}", game.title, e);
-            Err(LaunchError::Other(format!("Failed to launch: {}", e)))
-        }
+    if !try_register_running_session(session).await? {
+        let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
+        let _ = child.wait().await;
+        return Err(LaunchError::Other(
+            "This game is already running".to_string(),
+        ));
     }
+
+    if !record_game_launch_start(&game.id, started_at_epoch_seconds).await {
+        warn!(target: &format!("game:{}", game.id), "Failed to record game launch start");
+    }
+
+    if let Some(stdout) = child_stdout {
+        pipe_process_output(stdout, game.id.clone(), game.title.clone(), "stdout");
+    }
+    if let Some(stderr) = child_stderr {
+        pipe_process_output(stderr, game.id.clone(), game.title.clone(), "stderr");
+    }
+
+    if spawn_background_monitor {
+        spawn_detached_monitor(&game.id);
+    }
+
+    if reap_child_locally {
+        let game_id_log = game.id.clone();
+        let game_title_log = game.title.clone();
+        tokio::spawn(async move {
+            match child.wait().await {
+                Ok(status) => {
+                    let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string());
+                    info!(target: &format!("game:{}", game_id_log), "'{}' exited with status {}", game_title_log, code);
+                }
+                Err(e) => {
+                    warn!(target: &format!("game:{}", game_id_log), "'{}' wait error: {}", game_title_log, e);
+                }
+            }
+        });
+    }
+
+    info!(
+        target: &format!("game:{}", game.id),
+        "Spawned '{}' with pid {}", game.title, child_pid
+    );
+    notices.push(format!("Launching {}...", game.title));
+    Ok(LaunchReport { notices })
 }

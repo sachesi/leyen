@@ -1,9 +1,12 @@
 use directories::ProjectDirs;
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File};
+use std::io;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::thread::sleep;
+use std::time::Duration;
 
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
@@ -52,23 +55,61 @@ fn config_lock_path() -> PathBuf {
     get_config_dir().join(".games.lock")
 }
 
+/// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
+/// Releases the lock on Drop — panic-safe.
+struct FlockGuard {
+    file: File,
+}
+
+impl FlockGuard {
+    fn lock(path: &Path, timeout: Duration) -> io::Result<Self> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(path)?;
+        let fd = file.as_raw_fd();
+
+        let start = std::time::Instant::now();
+        loop {
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if result == 0 {
+                return Ok(Self { file });
+            }
+            let err = io::Error::last_os_error();
+            if err.kind() != io::ErrorKind::WouldBlock {
+                return Err(err);
+            }
+            if start.elapsed() >= timeout {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!(
+                        "Timed out waiting for lock on '{}' after {:?}",
+                        path.display(),
+                        timeout
+                    ),
+                ));
+            }
+            sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+impl Drop for FlockGuard {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
 fn with_library_exclusive<F, T>(f: F) -> T
 where
     F: FnOnce(&mut Vec<LibraryItem>) -> T,
 {
-    let lock_path = config_lock_path();
-    if let Some(parent) = lock_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let lock_file = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)
-        .expect("Failed to open games config lock");
-    if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        panic!("Failed to acquire games config lock");
-    }
+    let _guard = FlockGuard::lock(&config_lock_path(), Duration::from_secs(5))
+        .expect("Failed to acquire games config lock (is another instance running?)");
 
     let path = get_config_path();
     let mut items = fs::read_to_string(&path)
@@ -82,8 +123,6 @@ where
     if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
         let _ = fs::write(path, data);
     }
-
-    let _ = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_UN) };
     result
 }
 

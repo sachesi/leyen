@@ -663,17 +663,53 @@ pub fn uninstall_dep_async(
 
         let actions = build_cleanup_actions(&installed);
 
+        // Detect winetricks-based deps and uninstall their registry markers first
+        // so reinstall doesn't fail with "already installed"
+        let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id).iter()
+            .filter_map(|step| match &step.action {
+                DepStepAction::RunWinetricks { verb } => Some(verb.clone()),
+                _ => None,
+            })
+            .collect();
+
         let requires_umu = actions.iter().any(|(_, action)| {
             matches!(
                 action,
                 CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
             )
         });
-        if requires_umu
+        let needs_umu = requires_umu || !winetricks_verbs.is_empty();
+        if needs_umu
             && let Err(message) = ensure_umu_ready(&overlay, false).await {
                 on_finish(false, Some(message));
                 return;
             }
+
+        // Async winetricks uninstall before sync cleanup loop
+        for verb in &winetricks_verbs {
+            on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
+            let prefix_path = prefix_path.clone();
+            let proton_path = proton_path.clone();
+            let verb = verb.clone();
+            let result: Result<(), String> = tokio::spawn(async move {
+                let mut cmd = AsyncCommand::new(get_umu_run_path());
+                configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
+                cmd.args([get_winetricks_path().as_str(), "--uninstall", &verb]);
+                let output = tokio::time::timeout(
+                    Duration::from_secs(COMMAND_TIMEOUT_SECS),
+                    cmd.output(),
+                ).await.map_err(|_| format!("winetricks --uninstall '{}' timed out", verb))?
+                 .map_err(|e| format!("Failed to run winetricks --uninstall {}: {}", verb, e))?;
+                if !output.status.success() {
+                    warn!("[dep] winetricks --uninstall {} failed, may leave stale registry: {}", verb, String::from_utf8_lossy(&output.stderr).trim());
+                }
+                Ok(())
+            }).await.map_err(|e| format!("Command task panicked: {e}"))
+             .and_then(|r| r);
+            if let Err(e) = result {
+                warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
+            }
+        }
 
         info!(
             "[dep:{}] starting removal ({} cleanup actions)",

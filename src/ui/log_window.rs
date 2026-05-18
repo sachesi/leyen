@@ -11,23 +11,31 @@ use crate::models::LibraryItem;
 fn full_rebuild(
     buffer: &gtk4::TextBuffer,
     filter: &Option<String>,
+    scroll: &gtk4::ScrolledWindow,
     empty_state: &adw::StatusPage,
 ) -> usize {
     let entries = get_log_entries();
     let lines: Vec<String> = entries
         .iter()
-        .filter(|entry| {
-            filter.is_none() || filter.as_deref() == entry.game_id.as_deref()
-        })
+        .filter(|entry| filter.is_none() || filter.as_deref() == entry.game_id.as_deref())
         .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
         .collect();
 
     if lines.is_empty() {
         buffer.set_text("");
+        scroll.set_visible(false);
         empty_state.set_visible(true);
     } else {
         buffer.set_text(&lines.join("\n"));
+        scroll.set_visible(false);
+        scroll.set_visible(true);
         empty_state.set_visible(false);
+        let sc = scroll.clone();
+        glib::idle_add_local(move || {
+            let adj = sc.vadjustment();
+            adj.set_value(adj.upper() - adj.page_size());
+            glib::ControlFlow::Break
+        });
     }
     get_log_entry_count()
 }
@@ -35,8 +43,8 @@ fn full_rebuild(
 fn try_append_new(
     buffer: &gtk4::TextBuffer,
     filter: &Option<String>,
-    empty_state: &adw::StatusPage,
     scroll: &gtk4::ScrolledWindow,
+    empty_state: &adw::StatusPage,
     last_total: usize,
 ) -> Option<usize> {
     let current_total = get_log_entry_count();
@@ -54,13 +62,16 @@ fn try_append_new(
     }
 
     let adj = scroll.vadjustment();
-    let at_bottom = (adj.upper() - adj.page_size() - adj.value()).abs() < 2.0;
+    let at_bottom = (adj.upper() - adj.page_size() - adj.value()).abs() < 4.0;
 
     let start_idx = entries.len() - delta;
     let mut appended = false;
     for entry in entries.iter().skip(start_idx) {
         if filter.is_none() || filter.as_deref() == entry.game_id.as_deref() {
             if !appended {
+                if !scroll.is_visible() {
+                    scroll.set_visible(true);
+                }
                 empty_state.set_visible(false);
                 appended = true;
             }
@@ -88,10 +99,11 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     }
 
     if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone())
-        && existing.is_visible() {
-            existing.present();
-            return;
-        }
+        && existing.is_visible()
+    {
+        existing.present();
+        return;
+    }
 
     let window = adw::Window::builder()
         .title("Leyen – Logs")
@@ -159,11 +171,13 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
 
     let buffer = text_view.buffer();
     let scroll = gtk4::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
+        .hexpand(true)
         .vexpand(true)
         .child(&text_view)
         .build();
+
     let empty_state = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")
         .title("No log lines to show")
@@ -172,16 +186,17 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .vexpand(true)
         .build();
 
-    let overlay = gtk4::Overlay::builder()
+    let content_box = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
         .hexpand(true)
         .vexpand(true)
-        .child(&scroll)
         .build();
-    overlay.add_overlay(&empty_state);
+    content_box.append(&scroll);
+    content_box.append(&empty_state);
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&overlay));
+    toolbar_view.set_content(Some(&content_box));
 
     window.set_content(Some(&toolbar_view));
     window.present();
@@ -190,45 +205,56 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         filter_ids[initial_selection as usize].clone(),
     ));
 
-    let rendered_count = Rc::new(Cell::new(
-        full_rebuild(&buffer, &selected_filter.borrow(), &empty_state),
-    ));
+    let rendered_count = Rc::new(Cell::new(full_rebuild(
+        &buffer,
+        &selected_filter.borrow(),
+        &scroll,
+        &empty_state,
+    )));
 
-    let b = buffer.clone();
-    let es = empty_state.clone();
-    let sf = selected_filter.clone();
-    let rc = rendered_count.clone();
-    filter_dropdown.connect_selected_notify(move |dropdown| {
-        let idx = dropdown.selected() as usize;
-        *sf.borrow_mut() = filter_ids.get(idx).cloned().unwrap_or(None);
-        let b = b.clone();
-        let es = es.clone();
-        let filter = sf.borrow().clone();
-        let rc = rc.clone();
-        glib::spawn_future_local(async move {
-            rc.set(full_rebuild(&b, &filter, &es));
+    {
+        let b = buffer.clone();
+        let sc = scroll.clone();
+        let es = empty_state.clone();
+        let sf = selected_filter.clone();
+        let rc = rendered_count.clone();
+        filter_dropdown.connect_selected_notify(move |dropdown| {
+            let idx = dropdown.selected() as usize;
+            *sf.borrow_mut() = filter_ids.get(idx).cloned().unwrap_or(None);
+            let b = b.clone();
+            let sc = sc.clone();
+            let es = es.clone();
+            let filter = sf.borrow().clone();
+            let rc = rc.clone();
+            glib::spawn_future_local(async move {
+                rc.set(full_rebuild(&b, &filter, &sc, &es));
+            });
         });
-    });
+    }
 
-    let b = buffer.clone();
-    let es = empty_state.clone();
-    let sf = selected_filter.clone();
-    let rc = rendered_count.clone();
-    clear_button.connect_clicked(move |_| {
-        clear_log_buffer();
-        let b = b.clone();
-        let es = es.clone();
-        let filter = sf.borrow().clone();
-        let rc = rc.clone();
-        glib::spawn_future_local(async move {
-            rc.set(full_rebuild(&b, &filter, &es));
+    {
+        let b = buffer.clone();
+        let sc = scroll.clone();
+        let es = empty_state.clone();
+        let sf = selected_filter.clone();
+        let rc = rendered_count.clone();
+        clear_button.connect_clicked(move |_| {
+            clear_log_buffer();
+            let b = b.clone();
+            let sc = sc.clone();
+            let es = es.clone();
+            let filter = sf.borrow().clone();
+            let rc = rc.clone();
+            glib::spawn_future_local(async move {
+                rc.set(full_rebuild(&b, &filter, &sc, &es));
+            });
         });
-    });
+    }
 
     let window_ref = window.clone();
     let b = buffer.clone();
-    let es = empty_state.clone();
     let sc = scroll.clone();
+    let es = empty_state.clone();
     let sf = selected_filter.clone();
     let rc = rendered_count.clone();
     glib::timeout_add_seconds_local(1, move || {
@@ -237,17 +263,17 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         }
 
         let b = b.clone();
-        let es = es.clone();
         let sc = sc.clone();
+        let es = es.clone();
         let filter = sf.borrow().clone();
         let rc = rc.clone();
 
         glib::spawn_future_local(async move {
             let last = rc.get();
-            if let Some(new_total) = try_append_new(&b, &filter, &es, &sc, last) {
+            if let Some(new_total) = try_append_new(&b, &filter, &sc, &es, last) {
                 rc.set(new_total);
             } else {
-                rc.set(full_rebuild(&b, &filter, &es));
+                rc.set(full_rebuild(&b, &filter, &sc, &es));
             }
         });
 

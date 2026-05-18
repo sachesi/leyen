@@ -119,8 +119,24 @@ fn managed_icons_dir_path() -> PathBuf {
 }
 
 fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<(), String> {
-    let bytes = fs::read(exe_path)
-        .map_err(|err| format!("Failed to read '{}': {}", exe_path.display(), err))?;
+    let mut file = fs::File::open(exe_path)
+        .map_err(|err| format!("Failed to open '{}': {}", exe_path.display(), err))?;
+
+    let metadata = file.metadata()
+        .map_err(|err| format!("Failed to get metadata for '{}': {}", exe_path.display(), err))?;
+
+    let bytes = if metadata.len() < 64 * 1024 * 1024 {
+        fs::read(exe_path)
+            .map_err(|err| format!("Failed to read '{}': {}", exe_path.display(), err))?
+    } else {
+        // For huge files, only read the first 16MB which usually contains all headers and resources
+        use std::io::Read;
+        let mut buffer = vec![0u8; 16 * 1024 * 1024];
+        let n = file.read(&mut buffer)
+            .map_err(|err| format!("Failed to read header of '{}': {}", exe_path.display(), err))?;
+        buffer.truncate(n);
+        buffer
+    };
 
     let decoded = find_best_group_icon(&bytes, size)
         .or_else(|| find_best_png_icon(&bytes, size))

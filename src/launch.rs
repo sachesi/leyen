@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Read};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
@@ -562,7 +562,10 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
 }
 
 fn read_parent_pid(pid: u32) -> Option<u32> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let mut file = File::open(format!("/proc/{pid}/stat")).ok()?;
+    let mut buf = [0u8; 1024];
+    let n = file.read(&mut buf).ok()?;
+    let stat = String::from_utf8_lossy(&buf[..n]);
     let after_name = stat.rsplit_once(") ")?.1;
     let mut fields = after_name.split_whitespace();
     let _state = fields.next()?;
@@ -588,9 +591,10 @@ fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
 }
 
 fn read_process_comm(pid: u32) -> Option<String> {
-    fs::read_to_string(format!("/proc/{pid}/comm"))
-        .ok()
-        .map(|s| s.trim().to_string())
+    let mut file = File::open(format!("/proc/{pid}/comm")).ok()?;
+    let mut buf = [0u8; 64];
+    let n = file.read(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf[..n]).trim().to_string())
 }
 
 /// Combined result of a single /proc scan: parent→children map + game-like envs map.
@@ -671,7 +675,7 @@ fn scan_all_procs() -> ProcScan {
 }
 
 fn is_game_process(comm: &str) -> bool {
-    let lower = comm.to_lowercase();
+    let lower = comm.to_ascii_lowercase();
     lower.contains("wine")
         || lower.contains("steam")
         || lower.contains("proton")
@@ -680,9 +684,14 @@ fn is_game_process(comm: &str) -> bool {
 }
 
 fn is_pid_alive(pid: u32) -> bool {
-    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+    let mut file = if let Ok(f) = File::open(format!("/proc/{pid}/stat")) {
+        f
+    } else {
         return false;
     };
+    let mut buf = [0u8; 1024];
+    let n = file.read(&mut buf).unwrap_or(0);
+    let stat = String::from_utf8_lossy(&buf[..n]);
     let after_name = match stat.rsplit_once(") ") {
         Some((_, after)) => after,
         None => return false,
@@ -888,7 +897,7 @@ async fn launch_game_managed(
     }
 
     let settings = load_settings_with_auto_install(false).await;
-    let library = load_library().await;
+    let library = load_library().await.map_err(LaunchError::Other)?;
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
     let launch_game_id = effective_game_id(game);

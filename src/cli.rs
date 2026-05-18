@@ -99,7 +99,7 @@ pub fn take_open_logs_on_start() -> bool {
 }
 
 async fn list_games() -> Result<()> {
-    let items = load_library().await;
+    let items = load_library().await.map_err(anyhow::Error::msg)?;
     let running_map = running_games_index().await;
 
     if items.is_empty() {
@@ -201,7 +201,7 @@ async fn list_games() -> Result<()> {
 async fn run_game(requested_leyen_id: &str) -> Result<()> {
     ensure_umu_available_for_cli().await?;
 
-    let items = load_library().await;
+    let items = load_library().await.map_err(anyhow::Error::msg)?;
     let Some((game, group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!(
             "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."
@@ -234,7 +234,7 @@ async fn run_game(requested_leyen_id: &str) -> Result<()> {
 }
 
 async fn internal_run(requested_leyen_id: &str) -> Result<()> {
-    let items = load_library().await;
+    let items = load_library().await.map_err(anyhow::Error::msg)?;
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!("No game found for Leyen ID '{requested_leyen_id}'.");
     };
@@ -250,7 +250,7 @@ async fn internal_run(requested_leyen_id: &str) -> Result<()> {
 }
 
 async fn kill_game(requested_leyen_id: &str) -> Result<()> {
-    let items = load_library().await;
+    let items = load_library().await.map_err(anyhow::Error::msg)?;
     let Some((game, _group)) = find_game_by_leyen_id(&items, requested_leyen_id) else {
         anyhow::bail!(
             "No game found for Leyen ID '{requested_leyen_id}'. Use `leyen list` to inspect available games."

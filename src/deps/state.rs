@@ -36,11 +36,16 @@ impl InstalledDependency {
             || !self.registered_dlls.is_empty()
     }
 
+    pub fn is_prefix_integration(&self) -> bool {
+        self.touched_existing_files
+            && !self.has_removable_changes()
+    }
+
     pub fn removal_detail(&self) -> String {
         match (self.has_removable_changes(), self.touched_existing_files) {
             (true, true) => "This will remove Leyen-tracked files and overrides from the prefix. Some existing prefix files were changed during installation and may remain.".to_string(),
             (true, false) => "This will remove Leyen-tracked files and overrides from the prefix.".to_string(),
-            (false, true) => "Leyen can remove this dependency from tracking, but it cannot automatically restore existing prefix files that were changed during installation.".to_string(),
+            (false, true) => "Leyen can remove this dependency from tracking, but it cannot undo registry changes. This component is integrated into the Wine prefix.".to_string(),
             (false, false) => "This removes the dependency from Leyen's tracking.".to_string(),
         }
     }

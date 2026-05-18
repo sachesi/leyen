@@ -959,6 +959,7 @@ async fn launch_game_managed(
 
     if game.hdr {
         env_vars.push(("PROTON_ENABLE_HDR".to_string(), "1".to_string()));
+        env_vars.push(("DXVK_HDR".to_string(), "1".to_string()));
     }
 
     if game.proton_log {

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::UNIX_EPOCH;
 
+use futures::future::join_all;
 use gtk4::glib;
 use log::{error, info};
 use sha2::{Digest, Sha256};
@@ -450,7 +451,34 @@ pub fn install_dep_async(
             let steps = get_dep_steps(profile.id);
             let mut recorded = StepChanges::default();
 
-            for step in &steps {
+            // Parallelize independent downloads
+            let download_steps: Vec<&DepStep> = steps.iter().filter(|s| matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
+            let execution_steps: Vec<&DepStep> = steps.iter().filter(|s| !matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
+
+            if !download_steps.is_empty() {
+                let description = "Downloading files…";
+                info!("[dep:{}] {} {}/{}", profile.id, description, completed_steps + 1, total_steps);
+                on_progress(completed_steps + 1, total_steps, description.to_string());
+
+                let futures: Vec<_> = download_steps.iter().map(|step| {
+                    execute_dep_step(step, &prefix_path, &proton_path, &cache_dir)
+                }).collect();
+
+                let results = join_all(futures).await;
+                for result in results {
+                    match result {
+                        Ok(changes) => recorded.merge(changes),
+                        Err(error) => {
+                            error!("[dep:{}] download failed: {}", profile.id, error);
+                            on_finish(false, Some(error));
+                            return;
+                        }
+                    }
+                }
+                completed_steps += download_steps.len();
+            }
+
+            for step in &execution_steps {
                 completed_steps += 1;
                 let description = if install_plan.len() > 1 {
                     format!("{}: {}", profile.name, step.description)

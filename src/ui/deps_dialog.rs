@@ -293,17 +293,24 @@ pub async fn show_dependencies_dialog(
 
     // Re-present the modal dialog when the parent becomes active
     // (e.g. returning from GNOME overview, which can hide modal dialogs)
+    // Use idle_add_local to defer present() until surface is ready
     let dialog_dead = Rc::new(Cell::new(false));
     {
         let dialog_weak = dialog.downgrade();
         let dialog_dead = dialog_dead.clone();
         parent.connect_is_active_notify(move |p| {
-            if p.is_active()
-                && !dialog_dead.get()
-                && let Some(dialog) = dialog_weak.upgrade()
-                && !dialog.is_mapped()
-            {
-                dialog.present();
+            if p.is_active() && !dialog_dead.get() {
+                let weak = dialog_weak.clone();
+                let dead = dialog_dead.clone();
+                glib::idle_add_local(move || {
+                    if !dead.get() {
+                        if let Some(dialog) = weak.upgrade() {
+                            dialog.set_visible(true);
+                            dialog.present();
+                        }
+                    }
+                    glib::ControlFlow::Break
+                });
             }
         });
     }

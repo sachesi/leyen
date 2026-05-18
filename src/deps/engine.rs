@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use futures::future::join_all;
 use gtk4::glib;
@@ -23,6 +23,8 @@ use super::{
     InstalledDependency, find_installed_dependents, get_deps_cache_dir, read_prefix_dep_state,
     remove_installed_dep, upsert_installed_dep,
 };
+
+const COMMAND_TIMEOUT_SECS: u64 = 600;
 
 fn join_err(e: tokio::task::JoinError) -> String {
     if e.is_panic() {
@@ -237,9 +239,9 @@ pub async fn execute_dep_step(
                 cmd.arg(arg);
             }
 
-            let output = cmd
-                .output()
+            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
                 .await
+                .map_err(|_| format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS))?
                 .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
 
             let exit_code = output.status.code();
@@ -284,9 +286,9 @@ pub async fn execute_dep_step(
                 cmd.arg(arg);
             }
 
-            let output = cmd
-                .output()
+            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
                 .await
+                .map_err(|_| format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS))?
                 .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
 
             let exit_code = output.status.code();
@@ -327,9 +329,9 @@ pub async fn execute_dep_step(
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
             cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
 
-            let output = cmd
-                .output()
+            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
                 .await
+                .map_err(|_| format!("winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS))?
                 .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -340,7 +342,11 @@ pub async fn execute_dep_step(
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
                 .map_err(join_err).and_then(|r| r)?;
-            Ok(diff_snapshots(&before, &after))
+            let mut changes = diff_snapshots(&before, &after);
+            // Winetricks verbs may set registry DLL overrides invisible to file snapshots
+            changes.dll_overrides =
+                merge_unique_strings(&changes.dll_overrides, &winetricks_known_dll_overrides(verb));
+            Ok(changes)
         }
 
         DepStepAction::Verify {
@@ -502,14 +508,18 @@ pub fn install_dep_async(
                 }
             }
 
-            if let Err(error) = upsert_installed_dep(
-                &prefix_path,
-                profile.id,
-                profile.dependencies,
-                &recorded.into_dependency_record(),
-            ) {
-                on_finish(false, Some(error));
-                return;
+            {
+                let upsert_prefix = prefix_path.clone();
+                let upsert_id = profile.id.to_string();
+                let upsert_deps: Vec<String> = profile.dependencies.iter().map(|d| d.to_string()).collect();
+                let upsert_record = recorded.into_dependency_record();
+                if let Err(error) = tokio::task::spawn_blocking(move || {
+                    let upsert_deps_refs: Vec<&str> = upsert_deps.iter().map(|d| d.as_str()).collect();
+                    upsert_installed_dep(&upsert_prefix, &upsert_id, &upsert_deps_refs, &upsert_record)
+                }).await.map_err(join_err).and_then(|r| r) {
+                    on_finish(false, Some(error));
+                    return;
+                }
             }
         }
 
@@ -627,9 +637,15 @@ pub fn uninstall_dep_async(
             }
         }
 
-        if let Err(error) = remove_installed_dep(&prefix_path, &dep_id) {
-            on_finish(false, Some(error));
-            return;
+        {
+            let remove_prefix = prefix_path.clone();
+            let remove_id = dep_id.clone();
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                remove_installed_dep(&remove_prefix, &remove_id)
+            }).await.map_err(join_err).and_then(|r| r) {
+                on_finish(false, Some(error));
+                return;
+            }
         }
 
         let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
@@ -840,10 +856,11 @@ fn collect_snapshot(
 
         // Skip temp/cache directories irrelevant to dependency state
         if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            let lower = n.to_ascii_lowercase();
             matches!(
-                n.to_ascii_lowercase().as_str(),
+                lower.as_str(),
                 "temp" | "tmp" | "cache" | "installer"
-            )
+            ) || lower.starts_with("gac")
         }) {
             continue;
         }
@@ -902,6 +919,26 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
     changes.created_files.sort();
     changes.created_files.dedup();
     changes
+}
+
+fn winetricks_known_dll_overrides(verb: &str) -> Vec<String> {
+    match verb {
+        "d3dcompiler_42" | "d3dcompiler_43" | "d3dcompiler_46" | "d3dcompiler_47" => {
+            vec![verb.to_string()]
+        }
+        "d3dx9" => (24..=43).map(|n| format!("d3dx9_{n}")).collect(),
+        "d3dx11" => (42..=43).map(|n| format!("d3dx11_{n}")).collect(),
+        "dx8vb" => vec!["dx8vb".to_string()],
+        "amstream" => vec!["amstream".to_string()],
+        "devenum" => vec!["devenum".to_string()],
+        "dmband" | "dmcompos" | "dmime" | "dmloader" | "dmscript" | "dmstyle" | "dmsynth"
+        | "dmusic" | "dmusic32" | "dsound" | "dswave" | "dsdmo" => vec![verb.to_string()],
+        "qasf" | "qcap" | "qdvd" | "qedit" => {
+            vec!["qasf".into(), "qcap".into(), "qdvd".into(), "qedit".into()]
+        }
+        "quartz" => vec!["quartz".to_string()],
+        _ => vec![],
+    }
 }
 
 fn path_to_prefix_relative(prefix_root: &Path, path: &Path) -> Option<String> {

@@ -122,11 +122,10 @@ pub fn get_umu_run_path() -> String {
 pub fn is_umu_run_available() -> bool {
     static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
-    if let Ok(guard) = cache.read() {
-        if guard.1.elapsed() < std::time::Duration::from_secs(1) {
+    if let Ok(guard) = cache.read()
+        && guard.1.elapsed() < std::time::Duration::from_secs(1) {
             return guard.0;
         }
-    }
     let result = is_umu_run_available_impl();
     if let Ok(mut guard) = cache.write() {
         *guard = (result, Instant::now());
@@ -189,11 +188,10 @@ pub fn get_winetricks_path() -> String {
 pub fn is_winetricks_available() -> bool {
     static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
-    if let Ok(guard) = cache.read() {
-        if guard.1.elapsed() < std::time::Duration::from_secs(1) {
+    if let Ok(guard) = cache.read()
+        && guard.1.elapsed() < std::time::Duration::from_secs(1) {
             return guard.0;
         }
-    }
     let result = is_winetricks_available_impl();
     if let Ok(mut guard) = cache.write() {
         *guard = (result, Instant::now());

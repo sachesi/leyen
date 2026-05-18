@@ -272,7 +272,7 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
             let mut finished_sessions = Vec::new();
 
             for mut session in registry.sessions.drain(..) {
-                if refresh_known_pids(&mut session, &children_map, &all_envs).is_empty() {
+                if refresh_known_pids(&mut session, children_map, all_envs).is_empty() {
                     finished_sessions.push(session);
                 } else {
                     active_sessions.push(session);
@@ -573,10 +573,13 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
 }
 
 fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
-    let bytes = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let mut file = File::open(format!("/proc/{pid}/environ")).ok()?;
+    let mut buf = [0u8; 4096];
+    let n = file.read(&mut buf).ok()?;
+    let slice = &buf[..n];
     let mut env = HashMap::new();
 
-    for entry in bytes.split(|&byte| byte == 0) {
+    for entry in slice.split(|&byte| byte == 0) {
         if entry.is_empty() {
             continue;
         }
@@ -1109,8 +1112,7 @@ async fn launch_game_managed(
             Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
         })
         .await
-        .map_err(|e| LaunchError::Other(join_err(e)))?
-        .map_err(|e| e)?;
+        .map_err(|e| LaunchError::Other(join_err(e)))??;
     let started_at_epoch_seconds = current_epoch_seconds();
     let session = RunningGameSession {
         game_id: game.id.clone(),

@@ -37,6 +37,7 @@ fn redistribute_rows(
     entries: &[&crate::deps::DepProfile],
     installed: &std::collections::BTreeSet<String>,
     handles: &[DepRowHandle],
+    search_query: &str,
 ) {
     let mut new_categories: Vec<&str> = Vec::new();
     for e in entries {
@@ -88,6 +89,26 @@ fn redistribute_rows(
     }
 
     *groups.borrow_mut() = new_groups;
+
+    // Re-apply search filter after rebuild
+    if !search_query.is_empty() {
+        let groups = groups.borrow();
+        for (group, rows) in groups.iter() {
+            let mut any_visible = false;
+            for (row, dep_id) in rows {
+                let visible = {
+                    let title = row.title().to_lowercase();
+                    let subtitle = row.subtitle().map(|s| s.to_lowercase()).unwrap_or_default();
+                    title.contains(search_query) || subtitle.contains(search_query) || dep_id.contains(search_query)
+                };
+                row.set_visible(visible);
+                if visible {
+                    any_visible = true;
+                }
+            }
+            group.set_visible(any_visible);
+        }
+    }
 }
 
 fn installed_subtitle(n: usize) -> String {
@@ -466,10 +487,11 @@ pub async fn show_dependencies_dialog(
                         let g = groups3.clone();
                         let pg = page3.clone();
                         let e = entries3.clone();
+                        let search_query = search_entry3.text().to_string();
                         glib::spawn_future_local(async move {
                             let snapshot = handles.borrow().clone();
                             let inst = refresh_dep_rows(&prefix3, &title, &snapshot).await;
-                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
+                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow(), &search_query);
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
@@ -565,10 +587,11 @@ pub async fn show_dependencies_dialog(
                         let g = groups3.clone();
                         let pg = page3.clone();
                         let e = entries3.clone();
+                        let search_query = search_entry3.text().to_string();
                         glib::spawn_future_local(async move {
                             let snapshot = handles.borrow().clone();
                             let inst = refresh_dep_rows(&prefix3, &title, &snapshot).await;
-                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
+                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow(), &search_query);
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
@@ -720,11 +743,12 @@ pub async fn show_dependencies_dialog(
                                         let g = groups5.clone();
                                         let pg = page5.clone();
                                         let e = entries5.clone();
+                                        let search_query = search_entry4.text().to_string();
                                         glib::spawn_future_local(async move {
                                             let snapshot = handles.borrow().clone();
                                             let inst = refresh_dep_rows(&prefix4, &title, &snapshot)
                                                 .await;
-                                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
+                                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow(), &search_query);
                                         });
                                         dialog_busy4.set(false);
                                         let busy_snapshot = row_handles4.borrow().clone();

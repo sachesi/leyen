@@ -71,7 +71,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
 
     ACTIVE_LOG_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
 
-    let library = crate::config::load_library().await;
+    let library = crate::config::load_library().await.unwrap_or_default();
     let mut filter_ids: Vec<Option<String>> = vec![None];
     let mut filter_labels: Vec<String> = vec!["All Logs".to_string()];
 

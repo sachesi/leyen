@@ -222,7 +222,16 @@ pub async fn show_add_library_item_dialog(
     kind: AddLibraryItemKind,
 ) {
     let settings = load_settings().await;
-    let library = crate::config::load_library().await;
+    let library = match crate::config::load_library().await {
+        Ok(lib) => lib,
+        Err(err) => {
+            // We should probably show an error toast here, but for now we unwrap
+            // and return early to prevent dialog from showing with empty library
+            // that might be saved back.
+            log::error!("Failed to load library: {}", err);
+            return;
+        }
+    };
     let current_group_id = ui.current_group_id.borrow().clone();
     let inside_group = current_group_id.is_some();
     let current_group = current_group_id
@@ -710,7 +719,13 @@ pub async fn show_add_library_item_dialog(
                 return;
             }
 
-            let mut items = crate::config::load_library().await;
+            let mut items = match crate::config::load_library().await {
+                Ok(items) => items,
+                Err(err) => {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
+            };
             let mut icon_notice = None;
 
             if kind == AddLibraryItemKind::Group {
@@ -1290,7 +1305,13 @@ pub async fn show_edit_group_dialog(
                 }
             }
 
-            let mut items = crate::config::load_library().await;
+            let mut items = match crate::config::load_library().await {
+                Ok(items) => items,
+                Err(err) => {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
+            };
             if let Err(err) = apply_group_icon(
                 group_id.clone(),
                 group_icon_override_row_val.enables_expansion(),
@@ -1347,7 +1368,14 @@ pub async fn show_edit_game_dialog(
     game: &Game,
 ) {
     let settings = load_settings().await;
-    let library = load_library().await;
+    let library = match load_library().await {
+        Ok(lib) => lib,
+        Err(err) => {
+            log::error!("Failed to load library for edit: {}", err);
+            overlay.add_toast(adw::Toast::new(&err));
+            return;
+        }
+    };
     let current_parent_group_id = game_parent_group_id(&library, &game.id);
     let current_parent_group = current_parent_group_id
         .as_deref()
@@ -2039,7 +2067,13 @@ pub async fn show_edit_game_dialog(
                 }
             }
 
-            let mut items = crate::config::load_library().await;
+            let mut items = match crate::config::load_library().await {
+                Ok(items) => items,
+                Err(err) => {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
+            };
             let normalized_game_id = normalize_game_id_from_executable(&exe);
             let custom_icon = game_icon_override_row_val.enables_expansion();
             let icon_notice = match apply_game_icon(
@@ -2123,7 +2157,13 @@ pub async fn show_delete_confirmation(
     overlay: &adw::ToastOverlay,
     item_id: &str,
 ) {
-    let items = crate::config::load_library().await;
+    let items = match crate::config::load_library().await {
+        Ok(items) => items,
+        Err(err) => {
+            overlay.add_toast(adw::Toast::new(&err));
+            return;
+        }
+    };
     let label = items
         .iter()
         .find_map(|item| match item {
@@ -2168,7 +2208,13 @@ pub async fn show_delete_confirmation(
             let item_id = item_id.clone();
 
             glib::spawn_future_local(async move {
-                let mut items = crate::config::load_library().await;
+                let mut items = match crate::config::load_library().await {
+                Ok(items) => items,
+                Err(err) => {
+                    overlay_clone.add_toast(adw::Toast::new(&err));
+                    return;
+                }
+            };
                 let mut delete_notice = None;
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();

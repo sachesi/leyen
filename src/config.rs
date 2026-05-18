@@ -104,12 +104,17 @@ impl Drop for FlockGuard {
     }
 }
 
-fn with_library_exclusive<F, T>(f: F) -> T
+fn with_library_exclusive<F, T>(f: F) -> Option<T>
 where
     F: FnOnce(&mut Vec<LibraryItem>) -> T,
 {
-    let _guard = FlockGuard::lock(&config_lock_path(), Duration::from_secs(5))
-        .expect("Failed to acquire games config lock (is another instance running?)");
+    let _guard = match FlockGuard::lock(&config_lock_path(), Duration::from_secs(5)) {
+        Ok(g) => g,
+        Err(e) => {
+            log::error!("Failed to acquire games config lock: {}", e);
+            return None;
+        }
+    };
 
     let path = get_config_path();
     let mut items = fs::read_to_string(&path)
@@ -126,22 +131,25 @@ where
             let _ = fs::rename(&temp_path, path);
         }
     }
-    result
+    Some(result)
 }
 
-pub async fn load_library() -> Vec<LibraryItem> {
+pub async fn load_library() -> Result<Vec<LibraryItem>, String> {
     let path = get_config_path();
     tokio::task::spawn_blocking(move || {
-        let Ok(data) = fs::read_to_string(path) else {
-            return Vec::new();
-        };
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let data = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read games config: {}", e))?;
 
         toml::from_str::<GamesConfig>(&data)
             .map(|config| config.items)
-            .unwrap_or_default()
+            .map_err(|e| format!("Failed to parse games config: {}", e))
     })
     .await
-    .unwrap_or_default()
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
 }
 
 pub async fn save_library(items: Vec<LibraryItem>) {
@@ -155,7 +163,7 @@ pub async fn save_library(items: Vec<LibraryItem>) {
 }
 
 pub async fn load_games() -> Vec<Game> {
-    flatten_games(&load_library().await)
+    flatten_games(&load_library().await.unwrap_or_default())
 }
 
 pub fn flatten_games(items: &[LibraryItem]) -> Vec<Game> {
@@ -237,7 +245,7 @@ pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {
     })
     .await
     .ok()
-    .flatten()
+    .and_then(|v| v.flatten())
 }
 
 pub async fn record_game_launch_start(game_id: &str, epoch_seconds: u64) -> bool {

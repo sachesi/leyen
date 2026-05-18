@@ -83,7 +83,13 @@ pub async fn refresh_library_view(
     let search_text = ui.search_entry.text().to_string().to_lowercase();
 
     glib::spawn_future_local(async move {
-        let items = crate::config::load_library().await;
+        let items = match crate::config::load_library().await {
+            Ok(items) => items,
+            Err(err) => {
+                overlay_clone.add_toast(adw::Toast::new(&err));
+                return;
+            }
+        };
 
         let is_searching = !search_text.is_empty();
 

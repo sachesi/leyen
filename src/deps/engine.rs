@@ -3,7 +3,6 @@ use libadwaita as adw;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use std::time::UNIX_EPOCH;
 
@@ -13,7 +12,6 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use tokio::process::Command as AsyncCommand;
 
-use crate::logging::LOG_OPERATIONS;
 use crate::runtime::umu::{
     UMU_DOWNLOADING, WINETRICKS_DOWNLOAD_STARTED, WINETRICKS_DOWNLOADING, download_winetricks,
     get_umu_run_path, get_winetricks_path, is_umu_run_available, is_winetricks_available,
@@ -153,7 +151,7 @@ pub async fn execute_dep_step(
                     .map_err(join_err)
                     .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
 
-                let status = AsyncCommand::new("curl")
+                let output = AsyncCommand::new("curl")
                     .args([
                         "--proto",
                         "=https",
@@ -174,13 +172,14 @@ pub async fn execute_dep_step(
                         dest.to_string_lossy().as_ref(),
                         url,
                     ])
-                    .status()
+                    .output()
                     .await
                     .map_err(|err| format!("curl unavailable: {err}"))?;
 
-                if !status.success() {
+                if !output.status.success() {
                     let _ = fs::remove_file(&dest);
-                    return Err(format!("Download failed for {}", file_name));
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!("Download failed for {}: {}", file_name, stderr.trim()));
                 }
             }
 
@@ -238,21 +237,22 @@ pub async fn execute_dep_step(
             for arg in args.split_whitespace() {
                 cmd.arg(arg);
             }
-            maybe_silence_command_async(&mut cmd);
 
-            let status = cmd
-                .status()
+            let output = cmd
+                .output()
                 .await
                 .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
 
-            let exit_code = status.code();
-            if !status.success() && exit_code != Some(3010) {
+            let exit_code = output.status.code();
+            if !output.status.success() && exit_code != Some(3010) {
+                let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
-                    "Installer '{}' exited with error code {}",
+                    "Installer '{}' failed (code {}): {}",
                     file_name,
                     exit_code
                         .map(|c| c.to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    stderr.trim()
                 ));
             }
 
@@ -284,18 +284,18 @@ pub async fn execute_dep_step(
             for arg in args.split_whitespace() {
                 cmd.arg(arg);
             }
-            maybe_silence_command_async(&mut cmd);
 
-            let status = cmd
-                .status()
+            let output = cmd
+                .output()
                 .await
                 .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
 
-            let exit_code = status.code();
-            if !status.success() && exit_code != Some(3010) {
+            let exit_code = output.status.code();
+            if !output.status.success() && exit_code != Some(3010) {
+                let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
-                    "MSI install '{}' failed (code {:?})",
-                    file_name, exit_code
+                    "MSI install '{}' failed (code {:?}): {}",
+                    file_name, exit_code, stderr.trim()
                 ));
             }
 
@@ -327,14 +327,14 @@ pub async fn execute_dep_step(
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, prefix_path, proton_path);
             cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
-            maybe_silence_command_async(&mut cmd);
 
-            let status = cmd
-                .status()
+            let output = cmd
+                .output()
                 .await
                 .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))?;
-            if !status.success() {
-                return Err(format!("winetricks '{}' failed", verb));
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("winetricks '{}' failed: {}", verb, stderr.trim()));
             }
 
             let prefix_path_clone = prefix_path.to_string();
@@ -382,12 +382,6 @@ fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton
         "mscoree=b;mshtml=b;winemenubuilder.exe=d",
     );
     cmd.env("WINEDEBUG", "fixme-all");
-}
-
-fn maybe_silence_command_async(cmd: &mut AsyncCommand) {
-    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    }
 }
 
 pub fn install_dep_async(
@@ -719,12 +713,6 @@ fn configure_umu_command(cmd: &mut std::process::Command, prefix_path: &str, pro
     cmd.env("WINEDEBUG", "fixme-all");
 }
 
-fn maybe_silence_command(cmd: &mut std::process::Command) {
-    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    }
-}
-
 fn build_install_plan(
     dep_id: &str,
     state: &super::PrefixDependencyState,
@@ -948,15 +936,15 @@ fn remove_dll_overrides(
     configure_umu_command(&mut cmd, prefix_path, proton_path);
     cmd.args(["regedit.exe", "/S"]);
     cmd.arg(reg_path.as_os_str());
-    maybe_silence_command(&mut cmd);
 
-    let status = cmd
-        .status()
+    let output = cmd
+        .output()
         .map_err(|err| format!("Failed to run regedit: {err}"))?;
     let _ = fs::remove_file(&reg_path);
 
-    if !status.success() {
-        return Err("Failed to remove DLL overrides".to_string());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to remove DLL overrides: {}", stderr.trim()));
     }
 
     Ok(())
@@ -967,13 +955,13 @@ fn unregister_dlls(prefix_path: &str, proton_path: &str, dlls: &[String]) -> Res
         let mut cmd = std::process::Command::new(get_umu_run_path());
         configure_umu_command(&mut cmd, prefix_path, proton_path);
         cmd.args(["regsvr32.exe", "/u", "/s", dll]);
-        maybe_silence_command(&mut cmd);
 
-        let status = cmd
-            .status()
+        let output = cmd
+            .output()
             .map_err(|err| format!("Failed to run regsvr32 for '{}': {}", dll, err))?;
-        if !status.success() {
-            return Err(format!("Failed to unregister '{}'", dll));
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to unregister '{}': {}", dll, stderr.trim()));
         }
     }
 

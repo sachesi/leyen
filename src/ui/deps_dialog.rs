@@ -17,6 +17,7 @@ use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 #[derive(Clone)]
 struct DepRowHandle {
     dep_id: &'static str,
+    action_row: adw::ActionRow,
     install_btn: gtk4::Button,
     reinstall_btn: gtk4::Button,
     remove_btn: gtk4::Button,
@@ -28,6 +29,65 @@ fn dep_category_order(cat: &str) -> usize {
         .iter()
         .position(|&c| c == cat)
         .unwrap_or(usize::MAX)
+}
+
+fn redistribute_rows(
+    groups: &Rc<std::cell::RefCell<Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>>>,
+    page: &adw::PreferencesPage,
+    entries: &[&crate::deps::DepProfile],
+    installed: &std::collections::BTreeSet<String>,
+    handles: &[DepRowHandle],
+) {
+    let mut new_categories: Vec<&str> = Vec::new();
+    for e in entries {
+        if !new_categories.contains(&e.category) {
+            new_categories.push(e.category);
+        }
+    }
+    if entries.iter().any(|e| installed.contains(e.id)) {
+        new_categories.insert(0, "Installed");
+    }
+
+    // Remove all existing groups from page
+    {
+        let old_groups = groups.borrow();
+        for (g, _) in old_groups.iter() {
+            page.remove(g);
+        }
+    }
+
+    // Build dep_id -> ActionRow map from handles
+    let mut row_map: std::collections::HashMap<&str, adw::ActionRow> =
+        std::collections::HashMap::new();
+    for h in handles {
+        row_map.insert(h.dep_id, h.action_row.clone());
+    }
+
+    // Build new groups
+    let mut new_groups = Vec::new();
+    for cat in &new_categories {
+        let group = adw::PreferencesGroup::builder().title(*cat).build();
+        let mut rows_in_group = Vec::new();
+
+        for entry in entries.iter().filter(|e| {
+            if *cat == "Installed" {
+                installed.contains(e.id)
+            } else {
+                e.category == *cat && !installed.contains(e.id)
+            }
+        }) {
+            if let Some(row) = row_map.get(entry.id) {
+                row.unparent();
+                group.add(row);
+                rows_in_group.push((row.clone(), entry.id));
+            }
+        }
+
+        page.add(&group);
+        new_groups.push((group, rows_in_group));
+    }
+
+    *groups.borrow_mut() = new_groups;
 }
 
 fn installed_subtitle(n: usize) -> String {
@@ -252,9 +312,10 @@ pub async fn show_dependencies_dialog(
             .cmp(&dep_category_order(b.category))
             .then(a.name.cmp(b.name))
     });
+    let entries = Rc::new(entries);
 
     let mut categories: Vec<&str> = Vec::new();
-    for e in &entries {
+    for e in entries.iter() {
         if !categories.contains(&e.category) {
             categories.push(e.category);
         }
@@ -263,7 +324,9 @@ pub async fn show_dependencies_dialog(
         categories.insert(0, "Installed");
     }
 
-    let mut groups: Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)> = Vec::new();
+    let groups = Rc::new(std::cell::RefCell::new(
+        Vec::<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>::new(),
+    ));
     let row_handles = std::rc::Rc::new(std::cell::RefCell::new(Vec::<DepRowHandle>::new()));
 
     for cat in &categories {
@@ -336,6 +399,7 @@ pub async fn show_dependencies_dialog(
             row.add_suffix(&remove_btn);
             row_handles.borrow_mut().push(DepRowHandle {
                 dep_id,
+                action_row: row.clone(),
                 install_btn: install_btn.clone(),
                 reinstall_btn: reinstall_btn.clone(),
                 remove_btn: remove_btn.clone(),
@@ -358,6 +422,9 @@ pub async fn show_dependencies_dialog(
                 let row_handles2 = row_handles.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
+                let groups2 = groups.clone();
+                let page2 = page.clone();
+                let entries2 = entries.clone();
 
                 install_btn.connect_clicked(move |_| {
                     dialog_busy2.set(true);
@@ -381,6 +448,9 @@ pub async fn show_dependencies_dialog(
                     let row_handles3 = row_handles2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
+                    let groups3 = groups2.clone();
+                    let page3 = page2.clone();
+                    let entries3 = entries2.clone();
 
                     let progress_label_p = progress_label2.clone();
                     let on_progress = move |_step: usize, _total: usize, desc: String| {
@@ -394,9 +464,13 @@ pub async fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         let title = title3.clone();
                         let handles = row_handles3.clone();
+                        let g = groups3.clone();
+                        let pg = page3.clone();
+                        let e = entries3.clone();
                         glib::spawn_future_local(async move {
                             let snapshot = handles.borrow().clone();
-                            refresh_dep_rows(&prefix3, &title, &snapshot).await;
+                            let inst = refresh_dep_rows(&prefix3, &title, &snapshot).await;
+                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
@@ -446,6 +520,9 @@ pub async fn show_dependencies_dialog(
                 let row_handles2 = row_handles.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
+                let groups2 = groups.clone();
+                let page2 = page.clone();
+                let entries2 = entries.clone();
 
                 reinstall_btn.connect_clicked(move |_| {
                     dialog_busy2.set(true);
@@ -470,6 +547,9 @@ pub async fn show_dependencies_dialog(
                     let row_handles3 = row_handles2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
+                    let groups3 = groups2.clone();
+                    let page3 = page2.clone();
+                    let entries3 = entries2.clone();
 
                     let progress_label_p = progress_label2.clone();
                     let on_progress = move |_step: usize, _total: usize, desc: String| {
@@ -483,9 +563,13 @@ pub async fn show_dependencies_dialog(
                         row3.set_sensitive(true);
                         let title = title3.clone();
                         let handles = row_handles3.clone();
+                        let g = groups3.clone();
+                        let pg = page3.clone();
+                        let e = entries3.clone();
                         glib::spawn_future_local(async move {
                             let snapshot = handles.borrow().clone();
-                            refresh_dep_rows(&prefix3, &title, &snapshot).await;
+                            let inst = refresh_dep_rows(&prefix3, &title, &snapshot).await;
+                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
                         });
                         dialog_busy3.set(false);
                         let busy_snapshot = row_handles3.borrow().clone();
@@ -538,6 +622,9 @@ pub async fn show_dependencies_dialog(
                 let row_handles2 = row_handles.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
+                let groups2 = groups.clone();
+                let page2 = page.clone();
+                let entries2 = entries.clone();
 
                 remove_btn.connect_clicked(move |_| {
                     let prefix_for_dep = prefix2.clone();
@@ -563,8 +650,14 @@ pub async fn show_dependencies_dialog(
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
                     let dialog3 = dialog2.clone();
+                    let groups3 = groups2.clone();
+                    let page3 = page2.clone();
+                    let entries3 = entries2.clone();
 
                     glib::spawn_future_local(async move {
+                        let groups4 = groups3.clone();
+                        let page4 = page3.clone();
+                        let entries4 = entries3.clone();
                         let detail = tokio::task::spawn_blocking(move || {
                             get_installed_dep(&prefix_for_dep, &dep_id_for_dep)
                                 .map(|installed| installed.removal_detail())
@@ -581,6 +674,9 @@ pub async fn show_dependencies_dialog(
                         let confirm = confirm_builder.detail(&detail).build();
                         confirm.choose(Some(&dialog3), gio::Cancellable::NONE, move |result| {
                             if let Ok(1) = result {
+                                let groups5 = groups4.clone();
+                                let page5 = page4.clone();
+                                let entries5 = entries4.clone();
                                 dialog_busy3.set(true);
                                  set_dialog_busy(
                                      true,
@@ -622,10 +718,14 @@ pub async fn show_dependencies_dialog(
                                         row4.set_sensitive(true);
                                         let title = title4.clone();
                                         let handles = row_handles4.clone();
+                                        let g = groups5.clone();
+                                        let pg = page5.clone();
+                                        let e = entries5.clone();
                                         glib::spawn_future_local(async move {
                                             let snapshot = handles.borrow().clone();
-                                            refresh_dep_rows(&prefix4, &title, &snapshot)
+                                            let inst = refresh_dep_rows(&prefix4, &title, &snapshot)
                                                 .await;
+                                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow());
                                         });
                                         dialog_busy4.set(false);
                                         let busy_snapshot = row_handles4.borrow().clone();
@@ -679,14 +779,14 @@ pub async fn show_dependencies_dialog(
         }
 
         page.add(&group);
-        groups.push((group, rows_in_group));
+        groups.borrow_mut().push((group, rows_in_group));
     }
 
     // ── Search filtering ──────────────────────────────────────────────────
     let groups_for_search = groups.clone();
     search_entry.connect_search_changed(move |entry| {
         let query = entry.text().to_lowercase();
-        for (group, rows) in &groups_for_search {
+        for (group, rows) in groups_for_search.borrow().iter() {
             let mut any_visible = false;
             for (row, dep_id) in rows {
                 let visible = if query.is_empty() {

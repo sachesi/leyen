@@ -121,7 +121,10 @@ where
     let result = f(&mut items);
 
     if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
-        let _ = fs::write(path, data);
+        let temp_path = path.with_extension("toml.tmp");
+        if fs::write(&temp_path, data).is_ok() {
+            let _ = fs::rename(&temp_path, path);
+        }
     }
     result
 }
@@ -212,7 +215,10 @@ pub async fn save_settings(settings: GlobalSettings) {
     let path = get_settings_path();
     tokio::task::spawn_blocking(move || {
         if let Ok(data) = toml::to_string_pretty(&settings) {
-            let _ = fs::write(path, data);
+            let temp_path = path.with_extension("toml.tmp");
+            if fs::write(&temp_path, data).is_ok() {
+                let _ = fs::rename(&temp_path, path);
+            }
         }
     })
     .await

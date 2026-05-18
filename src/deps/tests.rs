@@ -19,7 +19,7 @@ mod tests {
             action: DepStepAction::DownloadFile {
                 url: "https://example.com/test.txt", // Not actually downloaded because file exists
                 file_name: "test.txt",
-                sha256: Some(valid_sha),
+                sha256: valid_sha,
             },
         };
 

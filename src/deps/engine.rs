@@ -38,7 +38,7 @@ pub enum DepStepAction {
     DownloadFile {
         url: &'static str,
         file_name: &'static str,
-        sha256: Option<&'static str>,
+        sha256: &'static str,
     },
     RunExe {
         file_name: &'static str,
@@ -184,7 +184,7 @@ pub async fn execute_dep_step(
                 }
             }
 
-            if let Some(expected_sha) = *sha256 {
+            { let expected_sha = *sha256;
                 let dest_clone = dest.clone();
                 let expected_sha = expected_sha.to_string();
                 let file_name = *file_name;

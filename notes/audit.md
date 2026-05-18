@@ -1,10 +1,10 @@
 # Code Audit & Optimization Report
 
 **Summary:**
-- Critical Bugs: 3 [DONE]
+- Critical Bugs: 4 [DONE]
 - High Bugs: 1 [DONE]
 - High Performance/Stability: 1 [DONE]
-- Medium Performance: 2 [DONE]
+- Medium Performance: 1 [DONE]
 - Total Estimated Effort/Risk: Medium effort, low risk.
 
 ---
@@ -48,6 +48,21 @@ Implement atomic write pattern with a temporary file and `fs::rename`. [IMPLEMEN
 
 ---
 
+### [Critical] – Category: Bug (Dependency Tracking) [DONE]
+**File:** `src/deps/engine.rs`
+**Lines:** ~800-850 (`collect_snapshot`)
+
+**Description:**
+A previous "optimization" used `entry.file_type().is_dir()` which does not follow symlinks. Many WINE/Proton prefixes have `drive_c` as a symlink. This caused the recursion to skip `drive_c` entirely, resulting in dependencies failing to track any files created within the Windows directory tree (only files in the prefix root like `winetricks.log` were detected).
+
+**Current Behavior:**
+`created_files` is empty for most dependencies in `state.toml`.
+
+**Proposed Fix:**
+Revert to `entry.metadata().is_dir()` (or follow symlinks explicitly) to ensure `drive_c` is scanned, while still skipping `dosdevices` to avoid infinite symlink loops. [IMPLEMENTED]
+
+---
+
 ### [High] – Category: Performance [DONE]
 **File:** `src/launch.rs`
 **Lines:** ~540–580 (`scan_all_procs`, `read_parent_pid`, `is_game_process`)
@@ -81,8 +96,7 @@ Cap the read to the first 16MB for large files, which typically contains the PE 
 WINE prefix scanning followed redundant symlinks in `dosdevices` and used `metadata()` excessively.
 
 **Proposed Fix:**
-1. Use `file_type()` instead of `metadata()` for directory checks.
-2. Skip the `dosdevices` directory to avoid redundant walks. [IMPLEMENTED]
+Skip the `dosdevices` directory to avoid redundant walks and symlink loops. [IMPLEMENTED]
 
 ---
 
@@ -93,4 +107,4 @@ WINE prefix scanning followed redundant symlinks in `dosdevices` and used `metad
 Rebuilding UI widgets on every refresh.
 
 **Current Behavior:**
-The application already uses a double-buffering (swapping list boxes in a stack) mechanism to prevent flickering. This is considered sufficient for current library sizes. [VERIFIED]
+The application already uses a double-buffering (swapping list boxes in a stack) mechanism to prevent flickering. This is considered sufficient for current performance requirements. [VERIFIED]

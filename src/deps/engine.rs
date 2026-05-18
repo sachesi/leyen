@@ -817,28 +817,25 @@ fn collect_snapshot(
     for entry in entries {
         let entry =
             entry.map_err(|err| format!("Failed to read prefix directory entry: {}", err))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|err| format!("Failed to get file type: {}", err))?;
+        let path = entry.path();
 
-        if file_type.is_dir() {
-            let path = entry.path();
-            // Skip dosdevices to avoid redundant scanning/loops
-            if path.ends_with("dosdevices") {
-                continue;
-            }
+        // Skip dosdevices to avoid redundant scanning and infinite loops (symlink cycles)
+        if path.file_name().is_some_and(|n| n == "dosdevices") {
+            continue;
+        }
+
+        let metadata = entry
+            .metadata()
+            .map_err(|err| format!("Failed to read metadata for '{}': {}", path.display(), err))?;
+
+        if metadata.is_dir() {
             collect_snapshot(root, &path, snapshot)?;
             continue;
         }
 
-        if !file_type.is_file() {
+        if !metadata.is_file() {
             continue;
         }
-
-        let path = entry.path();
-        let metadata = entry
-            .metadata()
-            .map_err(|err| format!("Failed to read metadata for '{}': {}", path.display(), err))?;
 
         if let Some(relative) = path_to_prefix_relative(root, &path) {
             snapshot.files.insert(

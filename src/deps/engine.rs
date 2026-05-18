@@ -810,6 +810,16 @@ fn collect_snapshot(
             continue;
         }
 
+        // Skip temp/cache directories irrelevant to dependency state
+        if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            matches!(
+                n.to_ascii_lowercase().as_str(),
+                "temp" | "tmp" | "cache" | "installer"
+            )
+        }) {
+            continue;
+        }
+
         let metadata = entry
             .metadata()
             .map_err(|err| format!("Failed to read metadata for '{}': {}", path.display(), err))?;

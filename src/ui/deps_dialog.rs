@@ -9,7 +9,7 @@ use crate::config::{get_data_dir, load_settings};
 use crate::deps::{
     DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
     get_installed_dep, install_dep_async, read_installed_deps, read_prefix_dep_state,
-    uninstall_dep_async,
+    uninstall_dep_async, InstalledDependency,
 };
 
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
@@ -50,6 +50,7 @@ fn sync_dep_row(
     handle: &DepRowHandle,
     installed: &std::collections::BTreeSet<String>,
     dependents: &[String],
+    dep_info: Option<&InstalledDependency>,
 ) {
     let is_installed = installed.contains(handle.dep_id);
     handle.badge.set_visible(is_installed);
@@ -68,6 +69,14 @@ fn sync_dep_row(
             .set_tooltip_text(Some(&format!("Required by: {}", dependents.join(", "))));
     } else {
         handle.remove_btn.set_tooltip_text(None);
+    }
+    if is_installed {
+        let label = if dep_info.is_some_and(|d| d.is_prefix_integration()) {
+            "✓ Integrated"
+        } else {
+            "✓ Installed"
+        };
+        handle.badge.set_label(label);
     }
 }
 
@@ -98,7 +107,8 @@ async fn refresh_dep_rows(
                     .unwrap_or_else(|| dependent_id.to_string())
             })
             .collect::<Vec<_>>();
-        sync_dep_row(handle, &installed, &dependents);
+        let dep_info = state.installed.get(handle.dep_id);
+        sync_dep_row(handle, &installed, &dependents, dep_info);
     }
     installed
 }

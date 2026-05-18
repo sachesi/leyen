@@ -7,6 +7,7 @@ pub struct DepProfile {
     pub description: &'static str,
     pub category: &'static str,
     pub dependencies: &'static [&'static str],
+    pub provides: &'static [&'static str],
 }
 
 macro_rules! dep {
@@ -17,6 +18,7 @@ macro_rules! dep {
             description: $name,
             category: $category,
             dependencies: &[],
+            provides: &[],
         }
     };
     ($id:literal, $name:literal, $category:literal, [$($dependency:literal),* $(,)?]) => {
@@ -26,6 +28,17 @@ macro_rules! dep {
             description: $name,
             category: $category,
             dependencies: &[$($dependency),*],
+            provides: &[],
+        }
+    };
+    ($id:literal, $name:literal, $category:literal, [$($dependency:literal),* $(,)?], provides: [$($provides:literal),* $(,)?] $(,)?) => {
+        DepProfile {
+            id: $id,
+            name: $name,
+            description: $name,
+            category: $category,
+            dependencies: &[$($dependency),*],
+            provides: &[$($provides),*],
         }
     };
 }
@@ -311,7 +324,13 @@ pub const DEP_PROFILES: &[DepProfile] = &[
     dep!(
         "allfonts",
         "All Microsoft and Adobe essential fonts",
-        "Fonts"
+        "Fonts",
+        [],
+        provides: [
+            "arial32", "arialb32", "andale32", "comic32", "courie32",
+            "georgi32", "impact32", "times32", "tahoma32", "trebuc32",
+            "verdan32", "webdin32",
+        ],
     ),
     dep!("cjkfonts", "All Chinese/Japanese/Korean fonts", "Fonts"),
     dep!("arial32", "Microsoft Arial Font", "Fonts"),

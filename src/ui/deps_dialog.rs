@@ -1,7 +1,7 @@
 use libadwaita as adw;
 
 use adw::prelude::*;
-use gtk4::{gio, glib};
+use gtk4::{gdk, gio, glib};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -291,28 +291,24 @@ pub async fn show_dependencies_dialog(
     overlay.set_child(Some(&toolbar_view));
     dialog.set_content(Some(&overlay));
 
-    // Re-present the modal dialog when the parent becomes active
-    // (e.g. returning from GNOME overview, which can hide modal dialogs)
-    // Use idle_add_local to defer present() until surface is ready
     let dialog_dead = Rc::new(Cell::new(false));
     {
-        let dialog_weak = dialog.downgrade();
-        let dialog_dead = dialog_dead.clone();
-        parent.connect_is_active_notify(move |p| {
-            if p.is_active() && !dialog_dead.get() {
-                let weak = dialog_weak.clone();
-                let dead = dialog_dead.clone();
-                glib::idle_add_local(move || {
-                    if !dead.get() {
-                        if let Some(dialog) = weak.upgrade() {
-                            dialog.set_visible(true);
-                            dialog.present();
+        let dead = dialog_dead.clone();
+        if let Some(surface) = parent.surface() {
+            if let Some(toplevel) = surface.downcast_ref::<gdk::Toplevel>() {
+                let weak = dialog.downgrade();
+                let prev = Rc::new(Cell::new(false));
+                toplevel.connect_state_notify(move |s| {
+                    let is_suspended = s.state().contains(gdk::ToplevelState::SUSPENDED);
+                    let was_suspended = prev.replace(is_suspended);
+                    if was_suspended && !is_suspended && !dead.get() {
+                        if let Some(d) = weak.upgrade() {
+                            d.present();
                         }
                     }
-                    glib::ControlFlow::Break
                 });
             }
-        });
+        }
     }
 
     let dialog_busy = Rc::new(Cell::new(false));

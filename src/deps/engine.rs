@@ -595,6 +595,18 @@ pub fn install_dep_async(
                     return;
                 }
             }
+
+            for provided_id in profile.provides {
+                let stub_prefix = prefix_path.clone();
+                let stub_id = provided_id.to_string();
+                let stub = InstalledDependency::default();
+                let deps: Vec<&str> = Vec::new();
+                if let Err(error) = tokio::task::spawn_blocking(move || {
+                    upsert_installed_dep(&stub_prefix, &stub_id, &deps, &stub)
+                }).await.map_err(join_err).and_then(|r| r) {
+                    warn!("[dep:{}] failed to create stub for '{}': {}", profile.id, provided_id, error);
+                }
+            }
         }
 
         let note = if install_plan.len() > 1 {
@@ -744,6 +756,22 @@ pub fn uninstall_dep_async(
                 error!("[dep:{}] removal failed: {}", dep_id, error);
                 on_finish(false, Some(error));
                 return;
+            }
+        }
+
+        if let Some(profile) = get_dep_profile(&dep_id) {
+            for provided_id in profile.provides {
+                if let Some(entry) = state.installed.get(*provided_id) {
+                    if !entry.has_removable_changes() && !entry.touched_existing_files {
+                        let remove_prefix = prefix_path.clone();
+                        let remove_id = provided_id.to_string();
+                        if let Err(error) = tokio::task::spawn_blocking(move || {
+                            remove_installed_dep(&remove_prefix, &remove_id)
+                        }).await.map_err(join_err).and_then(|r| r) {
+                            warn!("[dep:{}] failed to remove stub for '{}': {}", dep_id, provided_id, error);
+                        }
+                    }
+                }
             }
         }
 

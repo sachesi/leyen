@@ -21,7 +21,7 @@ use crate::icons::{
     save_custom_game_icon, save_custom_group_icon,
 };
 use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
-use crate::prefix_tools::pick_and_run_in_prefix;
+use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
 use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, join_err, mangohud_available};
 
@@ -986,10 +986,22 @@ pub async fn show_edit_group_dialog(
     let available_tools = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .build();
+    let winecfg_btn = gtk4::Button::builder()
+        .label("Wine Configuration")
+        .build();
+    winecfg_btn.set_margin_bottom(6);
+    let regedit_btn = gtk4::Button::builder()
+        .label("Registry Editor")
+        .build();
+    regedit_btn.set_margin_top(6);
+    regedit_btn.set_margin_bottom(6);
     let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    deps_btn.set_margin_top(6);
     deps_btn.set_margin_bottom(6);
     let run_btn = gtk4::Button::builder().label("Run in prefix").build();
     run_btn.set_margin_top(6);
+    available_tools.append(&winecfg_btn);
+    available_tools.append(&regedit_btn);
     available_tools.append(&deps_btn);
     available_tools.append(&run_btn);
     tools_stack.add_named(&available_tools, Some("available"));
@@ -1008,10 +1020,63 @@ pub async fn show_edit_group_dialog(
 
     let dialog_parent = parent.clone();
     let overlay_clone_deps = overlay.clone();
+    let overlay_clone_winecfg = overlay.clone();
+    let overlay_clone_regedit = overlay.clone();
+    let prefix_row_for_winecfg = prefix_row.clone();
+    let prefix_row_for_regedit = prefix_row.clone();
     let prefix_row_for_deps = prefix_row.clone();
+    let proton_row_for_winecfg = proton_row.clone();
+    let proton_row_for_regedit = proton_row.clone();
     let proton_row_for_deps = proton_row.clone();
+    let available_protons_for_winecfg = available_protons.clone();
+    let available_protons_for_regedit = available_protons.clone();
     let available_protons_for_deps = available_protons.clone();
+    let settings_default_proton_for_winecfg = settings.default_proton.clone();
+    let settings_default_proton_for_regedit = settings.default_proton.clone();
     let settings_default_proton_for_deps = settings.default_proton.clone();
+
+    winecfg_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_winecfg.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_winecfg
+                .add_toast(adw::Toast::new("Custom group prefix path is required"));
+            return;
+        }
+        let proton_choice =
+            selected_combo_value(&proton_row_for_winecfg, &available_protons_for_winecfg);
+        let resolved = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_winecfg.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved).unwrap_or_default();
+        let o = overlay_clone_winecfg.clone();
+        glib::spawn_future_local(async move {
+            run_winecfg_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
+
+    regedit_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_regedit.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_regedit
+                .add_toast(adw::Toast::new("Custom group prefix path is required"));
+            return;
+        }
+        let proton_choice =
+            selected_combo_value(&proton_row_for_regedit, &available_protons_for_regedit);
+        let resolved = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_regedit.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved).unwrap_or_default();
+        let o = overlay_clone_regedit.clone();
+        glib::spawn_future_local(async move {
+            run_regedit_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
+
     deps_btn.connect_clicked(move |_| {
         let deps_prefix = prefix_row_for_deps.text().to_string();
         if deps_prefix.trim().is_empty() {
@@ -1506,10 +1571,22 @@ pub async fn show_edit_game_dialog(
     let available_tools = gtk4::Box::builder()
         .orientation(gtk4::Orientation::Vertical)
         .build();
+    let winecfg_btn = gtk4::Button::builder()
+        .label("Wine Configuration")
+        .build();
+    winecfg_btn.set_margin_bottom(6);
+    let regedit_btn = gtk4::Button::builder()
+        .label("Registry Editor")
+        .build();
+    regedit_btn.set_margin_top(6);
+    regedit_btn.set_margin_bottom(6);
     let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    deps_btn.set_margin_top(6);
     deps_btn.set_margin_bottom(6);
     let run_btn = gtk4::Button::builder().label("Run in prefix").build();
     run_btn.set_margin_top(6);
+    available_tools.append(&winecfg_btn);
+    available_tools.append(&regedit_btn);
     available_tools.append(&deps_btn);
     available_tools.append(&run_btn);
     tools_stack.add_named(&available_tools, Some("available"));
@@ -1528,12 +1605,97 @@ pub async fn show_edit_game_dialog(
 
     let dialog_parent = parent.clone();
     let overlay_clone_deps = overlay.clone();
+    let overlay_clone_winecfg = overlay.clone();
+    let overlay_clone_regedit = overlay.clone();
+    let prefix_row_for_winecfg = prefix_row.clone();
+    let prefix_row_for_regedit = prefix_row.clone();
     let prefix_row_for_deps = prefix_row.clone();
+    let proton_row_for_winecfg = proton_row.clone();
+    let proton_row_for_regedit = proton_row.clone();
     let proton_row_for_deps = proton_row.clone();
+    let proton_override_row_for_winecfg = proton_override_row.clone();
+    let proton_override_row_for_regedit = proton_override_row.clone();
     let proton_override_row_for_deps = proton_override_row.clone();
+    let available_protons_for_winecfg = available_protons.clone();
+    let available_protons_for_regedit = available_protons.clone();
     let available_protons_for_deps = available_protons.clone();
+    let current_parent_group_for_winecfg = current_parent_group.clone();
+    let current_parent_group_for_regedit = current_parent_group.clone();
     let current_parent_group_for_deps = current_parent_group.clone();
+    let settings_default_proton_for_winecfg = settings.default_proton.clone();
+    let settings_default_proton_for_regedit = settings.default_proton.clone();
     let settings_default_proton_for_deps = settings.default_proton.clone();
+
+    winecfg_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_winecfg.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_winecfg
+                .add_toast(adw::Toast::new("Custom game prefix path is required"));
+            return;
+        }
+        let proton_choice = if grouped_game && !proton_override_row_for_winecfg.enables_expansion()
+        {
+            current_parent_group_for_winecfg
+                .as_ref()
+                .map(|group| group.defaults.proton.trim())
+                .filter(|value| !value.is_empty() && *value != "Default")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| {
+                    selected_combo_value(
+                        &proton_row_for_winecfg,
+                        &available_protons_for_winecfg,
+                    )
+                })
+        } else {
+            selected_combo_value(&proton_row_for_winecfg, &available_protons_for_winecfg)
+        };
+        let resolved = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_winecfg.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved).unwrap_or_default();
+        let o = overlay_clone_winecfg.clone();
+        glib::spawn_future_local(async move {
+            run_winecfg_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
+
+    regedit_btn.connect_clicked(move |_| {
+        let prefix = prefix_row_for_regedit.text().to_string();
+        if prefix.trim().is_empty() {
+            overlay_clone_regedit
+                .add_toast(adw::Toast::new("Custom game prefix path is required"));
+            return;
+        }
+        let proton_choice = if grouped_game && !proton_override_row_for_regedit.enables_expansion()
+        {
+            current_parent_group_for_regedit
+                .as_ref()
+                .map(|group| group.defaults.proton.trim())
+                .filter(|value| !value.is_empty() && *value != "Default")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| {
+                    selected_combo_value(
+                        &proton_row_for_regedit,
+                        &available_protons_for_regedit,
+                    )
+                })
+        } else {
+            selected_combo_value(&proton_row_for_regedit, &available_protons_for_regedit)
+        };
+        let resolved = if proton_choice.trim().is_empty() || proton_choice == "Default" {
+            settings_default_proton_for_regedit.clone()
+        } else {
+            proton_choice
+        };
+        let proton = resolve_proton_path(&resolved).unwrap_or_default();
+        let o = overlay_clone_regedit.clone();
+        glib::spawn_future_local(async move {
+            run_regedit_in_prefix(&o, &prefix, &proton).await;
+        });
+    });
+
     deps_btn.connect_clicked(move |_| {
         let deps_prefix = prefix_row_for_deps.text().to_string();
         if deps_prefix.trim().is_empty() {

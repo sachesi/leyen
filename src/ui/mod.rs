@@ -75,9 +75,13 @@ pub fn build_ui(app: &adw::Application) {
     let header = adw::HeaderBar::builder().title_widget(&title).build();
     header.pack_start(&back_btn);
     let menu_model = gio::Menu::new();
-    menu_model.append(Some("Preferences"), Some("win.show-preferences"));
     menu_model.append(Some("Running Games"), Some("win.show-running-games"));
     menu_model.append(Some("Logs"), Some("win.show-logs"));
+    let menu_section = gio::Menu::new();
+    menu_section.append(Some("Preferences"), Some("win.show-preferences"));
+    menu_section.append(Some("Keyboard Shortcuts"), Some("win.show-shortcuts"));
+    menu_section.append(Some("About Leyen"), Some("win.show-about"));
+    menu_model.append_section(None, &menu_section);
     let menu_btn = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu_model)
@@ -121,7 +125,7 @@ pub fn build_ui(app: &adw::Application) {
         .build();
     let root_list_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(180)
+        .transition_duration(240)
         .hexpand(true)
         .build();
     root_list_stack.add_named(&root_list_box_primary, Some(LIST_PAGE_PRIMARY));
@@ -140,7 +144,7 @@ pub fn build_ui(app: &adw::Application) {
         .build();
     let group_list_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(180)
+        .transition_duration(240)
         .hexpand(true)
         .build();
     group_list_stack.add_named(&group_list_box_primary, Some(LIST_PAGE_PRIMARY));
@@ -286,6 +290,8 @@ pub fn build_ui(app: &adw::Application) {
 
     search_bar.set_key_capture_widget(Some(&window));
 
+    let debounce_token = Rc::new(Cell::new(0u64));
+
     let ui_c = ui.clone();
     let overlay_c = toast_overlay.clone();
     let window_c = window.clone();
@@ -293,7 +299,17 @@ pub fn build_ui(app: &adw::Application) {
         let u = ui_c.clone();
         let o = overlay_c.clone();
         let w = window_c.clone();
+        let token = {
+            let t = debounce_token.get();
+            debounce_token.set(t.wrapping_add(1));
+            t.wrapping_add(1)
+        };
+        let dt = debounce_token.clone();
         glib::spawn_future_local(async move {
+            glib::timeout_future(std::time::Duration::from_millis(200)).await;
+            if dt.get() != token {
+                return;
+            }
             refresh_library_view(&u, &o, &w).await;
         });
     });
@@ -413,6 +429,54 @@ pub fn build_ui(app: &adw::Application) {
     });
     window.add_action(&running_games_action);
 
+    let shortcuts_action = gio::SimpleAction::new("show-shortcuts", None);
+    shortcuts_action.connect_activate(move |_, _| {
+        let win = gtk4::ShortcutsWindow::builder().build();
+        let quit_shortcut = gtk4::ShortcutsShortcut::builder()
+            .title("Quit Leyen")
+            .accelerator("<Ctrl>Q")
+            .build();
+        let search_shortcut = gtk4::ShortcutsShortcut::builder()
+            .title("Search Games")
+            .accelerator("<Ctrl>F")
+            .build();
+        let general_group = gtk4::ShortcutsGroup::builder()
+            .title("General")
+            .build();
+        general_group.append(&quit_shortcut);
+        general_group.append(&search_shortcut);
+        let general_section = gtk4::ShortcutsSection::builder()
+            .title("General")
+            .max_height(2)
+            .build();
+        general_section.append(&general_group);
+        win.add_section(&general_section);
+        win.present();
+    });
+    window.add_action(&shortcuts_action);
+
+    let about_action = gio::SimpleAction::new("show-about", None);
+    about_action.connect_activate(move |_, _| {
+        let about = adw::AboutWindow::builder()
+            .application_name("Leyen")
+            .application_icon("com.github.sachesi.leyen")
+            .version(env!("CARGO_PKG_VERSION"))
+            .developer_name("sachesi")
+            .website("https://github.com/sachesi/leyen")
+            .issue_url("https://github.com/sachesi/leyen/issues")
+            .license_type(gtk4::License::Gpl30)
+            .build();
+        about.present();
+    });
+    window.add_action(&about_action);
+
+    let search_btn_clone = search_btn.clone();
+    let search_toggle_action = gio::SimpleAction::new("toggle-search", None);
+    search_toggle_action.connect_activate(move |_, _| {
+        search_btn_clone.set_active(!search_btn_clone.is_active());
+    });
+    window.add_action(&search_toggle_action);
+
     window.connect_close_request(move |win| {
         if crate::launch::is_any_game_running() {
             win.set_visible(false);
@@ -421,6 +485,9 @@ pub fn build_ui(app: &adw::Application) {
             glib::Propagation::Proceed
         }
     });
+
+    app.set_accels_for_action("app.quit", &["<Ctrl>Q"]);
+    app.set_accels_for_action("win.toggle-search", &["<Ctrl>F"]);
 
     window.present();
 

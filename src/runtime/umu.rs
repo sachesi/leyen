@@ -4,7 +4,8 @@ use gtk4::glib;
 use log::{info, warn};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub static UMU_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
@@ -117,9 +118,23 @@ pub fn get_umu_run_path() -> String {
 /// Returns `true` when `umu-run` is actually available (system PATH or local
 /// install).  Unlike `get_umu_run_path()` this does not return a fallback
 /// string when umu-run is absent.
-/// Not cached — always re-checks so a download started during the
-/// session is detected immediately.
+/// Cached with 1s TTL — avoids `which` subprocess on hot paths.
 pub fn is_umu_run_available() -> bool {
+    static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
+    if let Ok(guard) = cache.read() {
+        if guard.1.elapsed() < std::time::Duration::from_secs(1) {
+            return guard.0;
+        }
+    }
+    let result = is_umu_run_available_impl();
+    if let Ok(mut guard) = cache.write() {
+        *guard = (result, Instant::now());
+    }
+    result
+}
+
+fn is_umu_run_available_impl() -> bool {
     if is_in_path("umu-run") {
         return true;
     }
@@ -170,9 +185,23 @@ pub fn get_winetricks_path() -> String {
 }
 
 /// Returns `true` when `winetricks` is actually available (system PATH or local
-/// download). Not cached — always re-checks so a download started during the
-/// session is detected immediately.
+/// download). Cached with 1s TTL — avoids `which` subprocess on hot paths.
 pub fn is_winetricks_available() -> bool {
+    static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
+    if let Ok(guard) = cache.read() {
+        if guard.1.elapsed() < std::time::Duration::from_secs(1) {
+            return guard.0;
+        }
+    }
+    let result = is_winetricks_available_impl();
+    if let Ok(mut guard) = cache.write() {
+        *guard = (result, Instant::now());
+    }
+    result
+}
+
+fn is_winetricks_available_impl() -> bool {
     if is_in_path("winetricks") {
         return true;
     }

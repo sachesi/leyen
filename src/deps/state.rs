@@ -81,7 +81,13 @@ pub fn save_prefix_dep_state(
     }
     let content = toml::to_string_pretty(state)
         .map_err(|err| format!("Failed to serialize dependency state: {err}"))?;
-    fs::write(&path, content).map_err(|err| format!("Failed to write dependency state: {err}"))
+    
+    let temp_path = path.with_extension("toml.tmp");
+    fs::write(&temp_path, content)
+        .map_err(|err| format!("Failed to write temporary dependency state: {err}"))?;
+    
+    fs::rename(&temp_path, &path)
+        .map_err(|err| format!("Failed to rename temporary dependency state: {err}"))
 }
 
 pub fn read_installed_deps(prefix_path: &str) -> BTreeSet<String> {

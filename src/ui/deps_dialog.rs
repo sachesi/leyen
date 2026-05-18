@@ -95,7 +95,7 @@ async fn refresh_dep_rows(
             .map(|dependent_id| {
                 get_dep_profile(&dependent_id)
                     .map(|profile| profile.name.to_string())
-                    .unwrap_or(dependent_id)
+                    .unwrap_or_else(|| dependent_id.to_string())
             })
             .collect::<Vec<_>>();
         sync_dep_row(handle, &installed, &dependents);

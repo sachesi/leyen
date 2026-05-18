@@ -8,7 +8,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use futures::future::join_all;
 use gtk4::glib;
-use log::{error, info};
+use log::{error, info, warn};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use tokio::process::Command as AsyncCommand;
@@ -127,6 +127,11 @@ pub async fn execute_dep_step(
     proton_path: &str,
     cache_dir: &str,
 ) -> Result<StepChanges, String> {
+    // Verify tokio runtime context for timeout/process drivers
+    match tokio::runtime::Handle::try_current() {
+        Ok(_) => info!("[dep] Tokio runtime available for step '{}'", step.description),
+        Err(_) => warn!("[dep] No tokio runtime context! Timeout won't fire."),
+    }
     match &step.action {
         DepStepAction::DownloadFile {
             url,
@@ -146,6 +151,7 @@ pub async fn execute_dep_step(
                 .await
                 .unwrap_or(true);
             if !exists {
+                info!("[dep] Downloading {} from {}", file_name, url);
                 let cache_dir_clone = cache_dir.to_string();
                 tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
                     .await
@@ -182,9 +188,13 @@ pub async fn execute_dep_step(
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     return Err(format!("Download failed for {}: {}", file_name, stderr.trim()));
                 }
+                info!("[dep] Downloaded {}", file_name);
+            } else {
+                info!("[dep] {} already cached, skipping download", file_name);
             }
 
             { let expected_sha = *sha256;
+                info!("[dep] Verifying SHA256 for {}", file_name);
                 let dest_clone = dest.clone();
                 let expected_sha = expected_sha.to_string();
                 let file_name = *file_name;
@@ -211,6 +221,7 @@ pub async fn execute_dep_step(
                 })
                 .await
                 .map_err(join_err).and_then(|r| r)?;
+                info!("[dep] SHA256 verified for {}", file_name);
             }
 
             Ok(StepChanges::default())
@@ -222,29 +233,47 @@ pub async fn execute_dep_step(
             extra_env,
         } => {
             let exe_path = Path::new(cache_dir).join(file_name);
+            info!("[dep] Snapshotting prefix before {}", file_name);
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
                 .map_err(join_err).and_then(|r| r)?;
 
-            let mut cmd = AsyncCommand::new(get_umu_run_path());
-            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-            for pair in extra_env.split_whitespace() {
-                if let Some(eq) = pair.find('=') {
-                    cmd.env(&pair[..eq], &pair[eq + 1..]);
-                }
-            }
-            cmd.arg(exe_path.as_os_str());
-            for arg in args.split_whitespace() {
-                cmd.arg(arg);
-            }
-
-            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+            info!("[dep] Running {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
+            let output = {
+                let prefix_owned = prefix_path.to_string();
+                let proton_owned = proton_path.to_string();
+                let exe_str = exe_path.to_string_lossy().to_string();
+                let file_name = file_name.to_string();
+                let args_owned: Vec<String> = args.split_whitespace().map(|a| a.to_string()).collect();
+                let extra_env = extra_env.to_string();
+                tokio::spawn(async move {
+                    let mut cmd = AsyncCommand::new(get_umu_run_path());
+                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
+                    for pair in extra_env.split_whitespace() {
+                        if let Some(eq) = pair.find('=') {
+                            cmd.env(&pair[..eq], &pair[eq + 1..]);
+                        }
+                    }
+                    cmd.arg(&exe_str);
+                    for arg in &args_owned {
+                        cmd.arg(arg);
+                    }
+                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+                        .await
+                        .map_err(|_| {
+                            warn!("[dep] '{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS);
+                            format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS)
+                        })?
+                        .map_err(|err| format!("Failed to launch {}: {}", file_name, err))
+                })
                 .await
-                .map_err(|_| format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS))?
-                .map_err(|err| format!("Failed to launch {}: {}", file_name, err))?;
+                .map_err(|e| format!("Command task panicked: {e}"))
+                .and_then(|r| r)?
+            };
 
             let exit_code = output.status.code();
+            info!("[dep] {} completed (exit code: {:?})", file_name, exit_code);
             if !output.status.success() && exit_code != Some(3010) {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
@@ -264,6 +293,7 @@ pub async fn execute_dep_step(
                 );
             }
 
+            info!("[dep] Snapshotting prefix after {}", file_name);
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
@@ -273,25 +303,42 @@ pub async fn execute_dep_step(
 
         DepStepAction::RunMsi { file_name, args } => {
             let msi_path = Path::new(cache_dir).join(file_name);
+            info!("[dep] Snapshotting prefix before msiexec {}", file_name);
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
                 .map_err(join_err).and_then(|r| r)?;
 
-            let mut cmd = AsyncCommand::new(get_umu_run_path());
-            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-            cmd.args(["msiexec.exe", "/i"]);
-            cmd.arg(msi_path.as_os_str());
-            for arg in args.split_whitespace() {
-                cmd.arg(arg);
-            }
-
-            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+            info!("[dep] Running msiexec /i {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
+            let output = {
+                let prefix_owned = prefix_path.to_string();
+                let proton_owned = proton_path.to_string();
+                let msi_str = msi_path.to_string_lossy().to_string();
+                let file_name = file_name.to_string();
+                let args_owned: Vec<String> = args.split_whitespace().map(|a| a.to_string()).collect();
+                tokio::spawn(async move {
+                    let mut cmd = AsyncCommand::new(get_umu_run_path());
+                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
+                    cmd.args(["msiexec.exe", "/i"]);
+                    cmd.arg(&msi_str);
+                    for arg in &args_owned {
+                        cmd.arg(arg);
+                    }
+                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+                        .await
+                        .map_err(|_| {
+                            warn!("[dep] '{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS);
+                            format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS)
+                        })?
+                        .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))
+                })
                 .await
-                .map_err(|_| format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS))?
-                .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))?;
+                .map_err(|e| format!("Command task panicked: {e}"))
+                .and_then(|r| r)?
+            };
 
             let exit_code = output.status.code();
+            info!("[dep] msiexec {} completed (exit code: {:?})", file_name, exit_code);
             if !output.status.success() && exit_code != Some(3010) {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
@@ -307,6 +354,7 @@ pub async fn execute_dep_step(
                 );
             }
 
+            info!("[dep] Snapshotting prefix after msiexec {}", file_name);
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
@@ -314,38 +362,62 @@ pub async fn execute_dep_step(
             Ok(diff_snapshots(&before, &after))
         }
 
-        DepStepAction::OverrideDlls { dlls, .. } => Ok(StepChanges {
-            dll_overrides: split_csv_values(dlls),
-            ..StepChanges::default()
-        }),
+        DepStepAction::OverrideDlls { dlls, .. } => {
+            let overrides = split_csv_values(dlls);
+            info!("[dep] Applying DLL overrides: {:?}", overrides);
+            Ok(StepChanges {
+                dll_overrides: overrides,
+                ..StepChanges::default()
+            })
+        }
 
         DepStepAction::RunWinetricks { verb } => {
+            info!("[dep] Snapshotting prefix before winetricks {}", verb);
             let prefix_path_clone = prefix_path.to_string();
             let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
                 .map_err(join_err).and_then(|r| r)?;
 
-            let mut cmd = AsyncCommand::new(get_umu_run_path());
-            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-            cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
-
-            let output = tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+            info!("[dep] Running winetricks {} (timeout: {}s)", verb, COMMAND_TIMEOUT_SECS);
+            let output = {
+                let prefix_owned = prefix_path.to_string();
+                let proton_owned = proton_path.to_string();
+                let verb = verb.clone();
+                tokio::spawn(async move {
+                    let mut cmd = AsyncCommand::new(get_umu_run_path());
+                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
+                    cmd.args([get_winetricks_path().as_str(), "-q", &verb]);
+                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
+                        .await
+                        .map_err(|_| {
+                            warn!("[dep] winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS);
+                            format!("winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS)
+                        })?
+                        .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))
+                })
                 .await
-                .map_err(|_| format!("winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS))?
-                .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))?;
+                .map_err(|e| format!("Command task panicked: {e}"))
+                .and_then(|r| r)?
+            };
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!("winetricks '{}' failed: {}", verb, stderr.trim()));
             }
+            info!("[dep] winetricks {} completed", verb);
 
+            info!("[dep] Snapshotting prefix after winetricks {}", verb);
             let prefix_path_clone = prefix_path.to_string();
             let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
                 .await
                 .map_err(join_err).and_then(|r| r)?;
             let mut changes = diff_snapshots(&before, &after);
             // Winetricks verbs may set registry DLL overrides invisible to file snapshots
-            changes.dll_overrides =
-                merge_unique_strings(&changes.dll_overrides, &winetricks_known_dll_overrides(verb));
+            let known = winetricks_known_dll_overrides(verb);
+            if !known.is_empty() {
+                info!("[dep] Merging {} known DLL overrides for winetricks {}", known.len(), verb);
+                changes.dll_overrides =
+                    merge_unique_strings(&changes.dll_overrides, &known);
+            }
             Ok(changes)
         }
 
@@ -369,8 +441,10 @@ pub async fn execute_dep_step(
             };
 
             if !verified {
+                warn!("[dep] Verification failed: {}", description);
                 return Err(format!("Verification failed: {}", description));
             }
+            info!("[dep] Verified: {}", description);
             Ok(StepChanges::default())
         }
     }
@@ -669,6 +743,7 @@ async fn ensure_umu_ready(
     overlay: &adw::ToastOverlay,
     check_winetricks: bool,
 ) -> Result<(), String> {
+    info!("[dep] Checking umu-launcher availability…");
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is still downloading, please wait…",
@@ -683,13 +758,16 @@ async fn ensure_umu_ready(
             false
         })
     {
+        info!("[dep] umu-launcher not available");
         overlay.add_toast(adw::Toast::new(
             "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
         return Err("umu-launcher not available".to_string());
     }
+    info!("[dep] umu-launcher is available");
 
     if check_winetricks {
+        info!("[dep] Checking winetricks availability…");
         if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
             overlay.add_toast(adw::Toast::new(
                 "winetricks is still downloading, please wait…",
@@ -704,16 +782,21 @@ async fn ensure_umu_ready(
                 false
             })
         {
+            info!("[dep] winetricks not found, triggering download");
             overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
 
             if !WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+                info!("[dep] Starting winetricks download…");
                 WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
                 let result = tokio::task::spawn_blocking(download_winetricks)
                     .await
                     .map_err(join_err)
                     .and_then(|r| r.map_err(|e| e.to_string()));
                 if result.is_err() {
+                    warn!("[dep] winetricks download failed");
                     WINETRICKS_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                } else {
+                    info!("[dep] winetricks download completed");
                 }
                 WINETRICKS_DOWNLOADING.store(false, Ordering::Relaxed);
                 result.map_err(|_| {
@@ -723,6 +806,9 @@ async fn ensure_umu_ready(
             }
 
             // Wait for the download to complete if another caller started it
+            if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
+                info!("[dep] Waiting for winetricks download from another caller…");
+            }
             while WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
@@ -736,6 +822,9 @@ async fn ensure_umu_ready(
             {
                 return Err("winetricks not available after download".to_string());
             }
+            info!("[dep] winetricks is available");
+        } else {
+            info!("[dep] winetricks already available");
         }
     }
 
@@ -823,11 +912,13 @@ fn merge_unique_strings(existing: &[String], additional: &[String]) -> Vec<Strin
 fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
     let root = Path::new(prefix_path);
     if !root.exists() {
+        info!("[dep] Prefix {} does not exist, empty snapshot", prefix_path);
         return Ok(PrefixSnapshot::default());
     }
 
     let mut snapshot = PrefixSnapshot::default();
     collect_snapshot(root, root, &mut snapshot)?;
+    info!("[dep] Snapshot: {} files in {}", snapshot.files.len(), prefix_path);
     Ok(snapshot)
 }
 
@@ -918,6 +1009,11 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
 
     changes.created_files.sort();
     changes.created_files.dedup();
+    info!(
+        "[dep] Diff: {} files created, touched_existing={}",
+        changes.created_files.len(),
+        changes.touched_existing_files
+    );
     changes
 }
 

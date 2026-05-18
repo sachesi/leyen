@@ -1,5 +1,5 @@
 use libadwaita as adw;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -8,51 +8,83 @@ use gtk4::glib;
 use crate::logging::{clear_log_buffer, get_log_entries, get_log_entry_count};
 use crate::models::LibraryItem;
 
-fn scroll_to_bottom(
-    text_view: &gtk4::TextView,
+fn full_rebuild(
     buffer: &gtk4::TextBuffer,
-    scroll: &gtk4::ScrolledWindow,
-) {
-    let end_iter = buffer.end_iter();
-    let mark = buffer.create_mark(None, &end_iter, false);
-    text_view.scroll_to_mark(&mark, 0.0, true, 0.0, 1.0);
-
-    let adj = scroll.vadjustment();
-    adj.set_value(adj.upper() - adj.page_size());
-
-    buffer.delete_mark(&mark);
-}
-
-async fn rebuild_buffer(
-    buffer: &gtk4::TextBuffer,
-    selected_game_id: Option<String>,
-    content_stack: &gtk4::Stack,
-    scroll: &gtk4::ScrolledWindow,
-    text_view: &gtk4::TextView,
+    filter: &Option<String>,
+    empty_state: &adw::StatusPage,
 ) -> usize {
     let entries = get_log_entries();
     let lines: Vec<String> = entries
         .iter()
         .filter(|entry| {
-            selected_game_id.is_none() || (selected_game_id.as_deref() == entry.game_id.as_deref())
+            filter.is_none() || filter.as_deref() == entry.game_id.as_deref()
         })
         .map(|entry| format!("[{}] {}", entry.timestamp, entry.line))
         .collect();
 
     if lines.is_empty() {
         buffer.set_text("");
-        content_stack.set_visible_child_name("empty");
+        empty_state.set_visible(true);
     } else {
         buffer.set_text(&lines.join("\n"));
-        content_stack.set_visible_child_name("logs");
-        scroll_to_bottom(text_view, buffer, scroll);
+        empty_state.set_visible(false);
     }
     get_log_entry_count()
 }
 
+fn try_append_new(
+    buffer: &gtk4::TextBuffer,
+    filter: &Option<String>,
+    empty_state: &adw::StatusPage,
+    scroll: &gtk4::ScrolledWindow,
+    last_total: usize,
+) -> Option<usize> {
+    let current_total = get_log_entry_count();
+    if current_total == last_total {
+        return Some(current_total);
+    }
+    if current_total < last_total {
+        return None;
+    }
+
+    let entries = get_log_entries();
+    let delta = current_total - last_total;
+    if delta > entries.len() {
+        return None;
+    }
+
+    let adj = scroll.vadjustment();
+    let at_bottom = (adj.upper() - adj.page_size() - adj.value()).abs() < 2.0;
+
+    let start_idx = entries.len() - delta;
+    let mut appended = false;
+    for entry in entries.iter().skip(start_idx) {
+        if filter.is_none() || filter.as_deref() == entry.game_id.as_deref() {
+            if !appended {
+                empty_state.set_visible(false);
+                appended = true;
+            }
+            let line = format!("[{}] {}\n", entry.timestamp, entry.line);
+            let mut end_iter = buffer.end_iter();
+            buffer.insert(&mut end_iter, &line);
+        }
+    }
+
+    if appended && at_bottom {
+        let sc = scroll.clone();
+        glib::idle_add_local(move || {
+            let adj = sc.vadjustment();
+            adj.set_value(adj.upper() - adj.page_size());
+            glib::ControlFlow::Break
+        });
+    }
+
+    Some(current_total)
+}
+
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
-        static ACTIVE_LOG_WINDOW: RefCell<Option<adw::Window>> = const { RefCell::new(None) };
+        static ACTIVE_LOG_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone())
@@ -136,106 +168,86 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .icon_name("utilities-terminal-symbolic")
         .title("No log lines to show")
         .description("New logs will appear here automatically, or choose another filter.")
-        .build();
-    let content_stack = gtk4::Stack::builder()
-        .transition_type(gtk4::StackTransitionType::Crossfade)
-        .transition_duration(180)
         .hexpand(true)
         .vexpand(true)
         .build();
-    content_stack.add_named(&empty_state, Some("empty"));
-    content_stack.add_named(&scroll, Some("logs"));
-    content_stack.set_visible_child_name("empty");
+
+    let overlay = gtk4::Overlay::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .child(&scroll)
+        .build();
+    overlay.add_overlay(&empty_state);
 
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&content_stack));
+    toolbar_view.set_content(Some(&overlay));
 
     window.set_content(Some(&toolbar_view));
     window.present();
 
-    let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));
-    let initial_filter = selected_filter.borrow().clone();
-    let rendered_count = Rc::new(Cell::new(
-        rebuild_buffer(
-            &buffer,
-            initial_filter,
-            &content_stack,
-            &scroll,
-            &text_view,
-        )
-        .await,
+    let selected_filter = Rc::new(std::cell::RefCell::new(
+        filter_ids[initial_selection as usize].clone(),
     ));
 
-    let buffer_for_filter = buffer.clone();
-    let content_stack_for_filter = content_stack.clone();
-    let scroll_for_filter = scroll.clone();
-    let text_view_for_filter = text_view.clone();
-    let selected_filter_for_dropdown = selected_filter.clone();
-    let filter_ids_for_dropdown = filter_ids.clone();
-    let rendered_count_for_dropdown = rendered_count.clone();
-    filter_dropdown.connect_selected_notify(move |dropdown| {
-        let selected = dropdown.selected() as usize;
-        let game_id = filter_ids_for_dropdown
-            .get(selected)
-            .cloned()
-            .unwrap_or(None);
-        *selected_filter_for_dropdown.borrow_mut() = game_id;
+    let rendered_count = Rc::new(Cell::new(
+        full_rebuild(&buffer, &selected_filter.borrow(), &empty_state),
+    ));
 
-        let b = buffer_for_filter.clone();
-        let s = selected_filter_for_dropdown.borrow().clone();
-        let cs = content_stack_for_filter.clone();
-        let sc = scroll_for_filter.clone();
-        let tv = text_view_for_filter.clone();
-        let rc = rendered_count_for_dropdown.clone();
+    let b = buffer.clone();
+    let es = empty_state.clone();
+    let sf = selected_filter.clone();
+    let rc = rendered_count.clone();
+    filter_dropdown.connect_selected_notify(move |dropdown| {
+        let idx = dropdown.selected() as usize;
+        *sf.borrow_mut() = filter_ids.get(idx).cloned().unwrap_or(None);
+        let b = b.clone();
+        let es = es.clone();
+        let filter = sf.borrow().clone();
+        let rc = rc.clone();
         glib::spawn_future_local(async move {
-            rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+            rc.set(full_rebuild(&b, &filter, &es));
         });
     });
 
-    let buffer_for_clear = buffer.clone();
-    let content_stack_for_clear = content_stack.clone();
-    let scroll_for_clear = scroll.clone();
-    let text_view_for_clear = text_view.clone();
-    let selected_filter_for_clear = selected_filter.clone();
-    let rendered_count_for_clear = rendered_count.clone();
+    let b = buffer.clone();
+    let es = empty_state.clone();
+    let sf = selected_filter.clone();
+    let rc = rendered_count.clone();
     clear_button.connect_clicked(move |_| {
-        let b = buffer_for_clear.clone();
-        let s = selected_filter_for_clear.borrow().clone();
-        let cs = content_stack_for_clear.clone();
-        let sc = scroll_for_clear.clone();
-        let tv = text_view_for_clear.clone();
-        let rc = rendered_count_for_clear.clone();
+        clear_log_buffer();
+        let b = b.clone();
+        let es = es.clone();
+        let filter = sf.borrow().clone();
+        let rc = rc.clone();
         glib::spawn_future_local(async move {
-            clear_log_buffer();
-            rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+            rc.set(full_rebuild(&b, &filter, &es));
         });
     });
 
     let window_ref = window.clone();
-    let buffer_for_tick = buffer.clone();
-    let content_stack_for_tick = content_stack.clone();
-    let scroll_for_tick = scroll.clone();
-    let text_view_for_tick = text_view.clone();
+    let b = buffer.clone();
+    let es = empty_state.clone();
+    let sc = scroll.clone();
+    let sf = selected_filter.clone();
+    let rc = rendered_count.clone();
     glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
 
-        let b = buffer_for_tick.clone();
-        let s = selected_filter.borrow().clone();
-        let cs = content_stack_for_tick.clone();
-        let sc = scroll_for_tick.clone();
-        let tv = text_view_for_tick.clone();
-        let rc = rendered_count.clone();
+        let b = b.clone();
+        let es = es.clone();
+        let sc = sc.clone();
+        let filter = sf.borrow().clone();
+        let rc = rc.clone();
 
         glib::spawn_future_local(async move {
-            let from = rc.get();
-            let current = get_log_entry_count();
-            if current != from {
-                // If it's a small update, we could append, but for now just rebuild
-                // but at least it's from memory!
-                rc.set(rebuild_buffer(&b, s, &cs, &sc, &tv).await);
+            let last = rc.get();
+            if let Some(new_total) = try_append_new(&b, &filter, &es, &sc, last) {
+                rc.set(new_total);
+            } else {
+                rc.set(full_rebuild(&b, &filter, &es));
             }
         });
 

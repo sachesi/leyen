@@ -408,7 +408,6 @@ fn vcredist2022_steps() -> Vec<DepStep> {
             description: "Configuring Visual C++ DLL overrides…",
             action: DepStepAction::OverrideDlls {
                 dlls: "vcruntime140,vcruntime140_1,msvcp140,msvcp140_1,msvcp140_2,concrt140,atl140,vcomp140",
-                override_type: "native,builtin",
             },
         },
         DepStep {
@@ -445,7 +444,6 @@ fn dotnet48_steps() -> Vec<DepStep> {
             description: "Configuring mscoree DLL override…",
             action: DepStepAction::OverrideDlls {
                 dlls: "mscoree",
-                override_type: "native",
             },
         },
     ]
@@ -489,7 +487,6 @@ fn vcredist2013_steps() -> Vec<DepStep> {
             description: "Configuring Visual C++ 2013 DLL overrides…",
             action: DepStepAction::OverrideDlls {
                 dlls: "msvcr120,msvcp120,vccorlib120",
-                override_type: "native,builtin",
             },
         },
     ]
@@ -533,7 +530,6 @@ fn vcredist2010_steps() -> Vec<DepStep> {
             description: "Configuring Visual C++ 2010 DLL overrides…",
             action: DepStepAction::OverrideDlls {
                 dlls: "msvcr100,msvcp100",
-                override_type: "native,builtin",
             },
         },
     ]
@@ -577,7 +573,6 @@ fn vcredist2008_steps() -> Vec<DepStep> {
             description: "Configuring Visual C++ 2008 DLL overrides…",
             action: DepStepAction::OverrideDlls {
                 dlls: "msvcr90,msvcp90",
-                override_type: "native,builtin",
             },
         },
     ]
@@ -605,7 +600,6 @@ fn dotnet40_steps() -> Vec<DepStep> {
             description: "Configuring mscoree DLL override…",
             action: DepStepAction::OverrideDlls {
                 dlls: "mscoree",
-                override_type: "native",
             },
         },
     ]
@@ -633,7 +627,6 @@ fn dotnet35sp1_steps() -> Vec<DepStep> {
             description: "Configuring mscoree DLL override…",
             action: DepStepAction::OverrideDlls {
                 dlls: "mscoree",
-                override_type: "native",
             },
         },
     ]

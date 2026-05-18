@@ -49,8 +49,6 @@ pub enum DepStepAction {
     },
     OverrideDlls {
         dlls: &'static str,
-        #[allow(dead_code)]
-        override_type: &'static str,
     },
     RunWinetricks {
         verb: String,

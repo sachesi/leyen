@@ -446,7 +446,6 @@ pub async fn open_dependencies_page(
                     spinner2.set_visible(true);
                     spinner2.start();
                     progress_label2.set_visible(true);
-                    row2.set_sensitive(false);
 
                     let cancel = Arc::new(AtomicBool::new(false));
                     *current_cancel2.borrow_mut() = Some(cancel.clone());
@@ -554,7 +553,6 @@ pub async fn open_dependencies_page(
                     spinner2.set_visible(true);
                     spinner2.start();
                     progress_label2.set_visible(true);
-                    row2.set_sensitive(false);
 
                     let cancel = Arc::new(AtomicBool::new(false));
                     *current_cancel2.borrow_mut() = Some(cancel.clone());

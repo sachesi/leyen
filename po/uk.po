@@ -12,35 +12,35 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: src/ui/game_dialogs.rs:2250
+#: src/ui/game_dialogs.rs:2256
 msgid "'{}' deleted successfully"
 msgstr "«{}» успішно видалено"
 
-#: src/ui/game_dialogs.rs:2248
+#: src/ui/game_dialogs.rs:2254
 msgid "'{}' deleted successfully. {}"
 msgstr "«{}» успішно видалено. {}"
 
-#: src/ui/deps_dialog.rs:507
+#: src/ui/deps_dialog.rs:503
 msgid "'{}' installed successfully."
 msgstr "«{}» успішно встановлено."
 
-#: src/ui/deps_dialog.rs:505
+#: src/ui/deps_dialog.rs:501
 msgid "'{}' installed successfully. {}"
 msgstr "«{}» успішно встановлено. {}"
 
-#: src/ui/deps_dialog.rs:608
+#: src/ui/deps_dialog.rs:611
 msgid "'{}' reinstalled successfully."
 msgstr "«{}» успішно перевстановлено."
 
-#: src/ui/deps_dialog.rs:605
+#: src/ui/deps_dialog.rs:608
 msgid "'{}' reinstalled successfully. {}"
 msgstr "«{}» успішно перевстановлено. {}"
 
-#: src/ui/deps_dialog.rs:772
+#: src/ui/deps_dialog.rs:782
 msgid "'{}' removed successfully."
 msgstr "«{}» успішно вилучено."
 
-#: src/ui/deps_dialog.rs:769
+#: src/ui/deps_dialog.rs:779
 msgid "'{}' removed successfully. {}"
 msgstr "«{}» успішно вилучено. {}"
 
@@ -52,19 +52,19 @@ msgstr "Встановлено 1 компонент"
 msgid "About Leyen"
 msgstr "Про Leyen"
 
-#: src/ui/game_dialogs.rs:263 src/ui/mod.rs:63
+#: src/ui/game_dialogs.rs:261 src/ui/mod.rs:63
 msgid "Add"
 msgstr "Додати"
 
-#: src/ui/game_dialogs.rs:252 src/ui/mod.rs:67
+#: src/ui/game_dialogs.rs:250 src/ui/mod.rs:67
 msgid "Add Game"
 msgstr "Додати гру"
 
-#: src/ui/game_dialogs.rs:251
+#: src/ui/game_dialogs.rs:249
 msgid "Add Game to Group"
 msgstr "Додати гру до групи"
 
-#: src/ui/game_dialogs.rs:253
+#: src/ui/game_dialogs.rs:251
 msgid "Add Group"
 msgstr "Додати групу"
 
@@ -76,28 +76,35 @@ msgstr "Додайте гру або створіть групу, щоб упо�
 msgid "Add a game while inside the group to populate it."
 msgstr "Додайте гру, перебуваючи в групі, щоб наповнити її."
 
-#: src/ui/game_dialogs.rs:1595 src/ui/game_dialogs.rs:1845
+#: src/ui/game_dialogs.rs:1597 src/ui/game_dialogs.rs:1847
 msgid "Add to menu"
 msgstr "Додати в меню"
 
-#: src/ui/game_dialogs.rs:1854
+#: src/ui/game_dialogs.rs:1856
 msgid "Added to menu"
 msgstr "Додано в меню"
 
-#: src/ui/game_dialogs.rs:374
+#: src/ui/game_dialogs.rs:372
 msgid "Adding Into Group"
 msgstr "Додавання до групи"
 
-#: src/ui/log_window.rs:121
+#: src/ui/log_window.rs:119
 msgid "All Logs"
 msgstr "Усі журнали"
 
-#: src/ui/game_dialogs.rs:2187
+#: src/deps/engine.rs:515 src/deps/engine.rs:741
+msgid "Another dependency operation is already running for this prefix."
+msgstr "Інша операція із залежностями вже виконується для цього префікса."
+
+#: src/ui/game_dialogs.rs:2193
 msgid ""
 "Are you sure you want to delete {}?\n"
 "\n"
 "This action cannot be undone."
-msgstr "Ви впевнені, що хочете видалити {}?\n\nЦю дію не можна скасувати."
+msgstr ""
+"Ви впевнені, що хочете видалити {}?\n"
+"\n"
+"Цю дію не можна скасувати."
 
 #: src/ui/mod.rs:54
 msgid "Back to Library"
@@ -116,58 +123,67 @@ msgstr "Заблоковано: неможливо запустити regedit, �
 msgid "Blocked: Cannot run winecfg while games are running."
 msgstr "Заблоковано: неможливо запустити winecfg, поки запущені ігри."
 
-#: src/ui/game_dialogs.rs:334 src/ui/game_dialogs.rs:1508
+#: src/ui/game_dialogs.rs:332 src/ui/game_dialogs.rs:1510
 msgid "Browse for custom icon"
 msgstr "Вибрати власну піктограму"
 
-#: src/ui/game_dialogs.rs:277 src/ui/game_dialogs.rs:1415
+#: src/ui/game_dialogs.rs:275 src/ui/game_dialogs.rs:1417
 msgid "Browse for executable"
 msgstr "Вибрати виконуваний файл"
 
-#: src/ui/game_dialogs.rs:411 src/ui/game_dialogs.rs:962
+#: src/ui/game_dialogs.rs:409 src/ui/game_dialogs.rs:962
 msgid "Browse for group icon"
 msgstr "Вибрати піктограму групи"
 
-#: src/ui/game_dialogs.rs:291 src/ui/game_dialogs.rs:398
-#: src/ui/game_dialogs.rs:932 src/ui/game_dialogs.rs:1424 src/ui/settings.rs:45
+#: src/ui/game_dialogs.rs:289 src/ui/game_dialogs.rs:396
+#: src/ui/game_dialogs.rs:932 src/ui/game_dialogs.rs:1426 src/ui/settings.rs:47
 msgid "Browse for prefix folder"
 msgstr "Вибрати теку префікса"
 
-#: src/ui/deps_dialog.rs:658 src/ui/game_dialogs.rs:261
-#: src/ui/game_dialogs.rs:911 src/ui/game_dialogs.rs:1397
-#: src/ui/game_dialogs.rs:2190 src/ui/settings.rs:335
+#: src/ui/deps_dialog.rs:372 src/ui/deps_dialog.rs:663
+#: src/ui/game_dialogs.rs:259 src/ui/game_dialogs.rs:911
+#: src/ui/game_dialogs.rs:1399 src/ui/game_dialogs.rs:2196
+#: src/ui/settings.rs:337
 msgid "Cancel"
 msgstr "Скасувати"
 
-#: src/deps/engine.rs:672
+#: src/deps/engine.rs:118 src/deps/engine.rs:628
+msgid "Cancelled."
+msgstr "Скасовано."
+
+#: src/deps/engine.rs:763
 msgid "Cannot remove '{}': still required by {}."
 msgstr "Неможливо вилучити «{}»: усе ще потрібно для {}."
 
-#: src/ui/settings.rs:323
+#: src/ui/settings.rs:325
 msgid "Cannot reset runtime while games are running. Close all games first."
 msgstr ""
 "Неможливо скинути середовище, поки запущені ігри. Спершу закрийте всі ігри."
 
-#: src/ui/log_window.rs:157
+#: src/deps/engine.rs:527
+msgid "Cannot write to the dependency cache directory: {}"
+msgstr "Не вдалося записати до теки кешу залежностей: {}"
+
+#: src/ui/log_window.rs:155
 msgid "Clear logs"
 msgstr "Очистити журнали"
 
-#: src/ui/game_dialogs.rs:340 src/ui/game_dialogs.rs:417
-#: src/ui/game_dialogs.rs:968 src/ui/game_dialogs.rs:1514
+#: src/ui/game_dialogs.rs:338 src/ui/game_dialogs.rs:415
+#: src/ui/game_dialogs.rs:968 src/ui/game_dialogs.rs:1516
 msgid "Custom Icon"
 msgstr "Власна піктограма"
 
-#: src/ui/game_dialogs.rs:298 src/ui/game_dialogs.rs:425
-#: src/ui/game_dialogs.rs:976 src/ui/game_dialogs.rs:1438
+#: src/ui/game_dialogs.rs:296 src/ui/game_dialogs.rs:423
+#: src/ui/game_dialogs.rs:976 src/ui/game_dialogs.rs:1440
 msgid "Custom Prefix"
 msgstr "Власний префікс"
 
-#: src/ui/game_dialogs.rs:321 src/ui/game_dialogs.rs:1485
+#: src/ui/game_dialogs.rs:319 src/ui/game_dialogs.rs:1487
 msgid "Custom Proton"
 msgstr "Власний Proton"
 
-#: src/ui/game_dialogs.rs:1661 src/ui/game_dialogs.rs:1696
-#: src/ui/game_dialogs.rs:1730 src/ui/game_dialogs.rs:1767
+#: src/ui/game_dialogs.rs:1663 src/ui/game_dialogs.rs:1698
+#: src/ui/game_dialogs.rs:1732 src/ui/game_dialogs.rs:1769
 msgid "Custom game prefix path is required"
 msgstr "Потрібно вказати шлях до власного префікса гри"
 
@@ -180,19 +196,19 @@ msgstr "Потрібно вказати шлях до власного преф�
 msgid "Custom icon file is required"
 msgstr "Потрібно вказати файл власної піктограми"
 
-#: src/ui/settings.rs:35
+#: src/ui/settings.rs:37
 msgid "Default Paths"
 msgstr "Типові шляхи"
 
-#: src/ui/settings.rs:39
+#: src/ui/settings.rs:41
 msgid "Default Prefix Path"
 msgstr "Типовий шлях префікса"
 
-#: src/ui/settings.rs:88
+#: src/ui/settings.rs:90
 msgid "Default Proton"
 msgstr "Типовий Proton"
 
-#: src/ui/game_dialogs.rs:2190
+#: src/ui/game_dialogs.rs:2196
 msgid "Delete"
 msgstr "Видалити"
 
@@ -204,11 +220,11 @@ msgstr "Видалити гру"
 msgid "Delete Group"
 msgstr "Видалити групу"
 
-#: src/ui/game_dialogs.rs:2185
+#: src/ui/game_dialogs.rs:2191
 msgid "Delete Item?"
 msgstr "Видалити елемент?"
 
-#: src/ui/settings.rs:303
+#: src/ui/settings.rs:305
 msgid ""
 "Deletes steamrt3 directory. It will be re-downloaded on next dependency "
 "install."
@@ -216,11 +232,11 @@ msgstr ""
 "Видаляє теку steamrt3. Її буде завантажено знову під час наступного "
 "встановлення залежностей."
 
-#: src/deps/engine.rs:507
+#: src/deps/engine.rs:549
 msgid "Dependency is already installed."
 msgstr "Залежність уже встановлено."
 
-#: src/deps/engine.rs:663
+#: src/deps/engine.rs:754
 msgid "Dependency is no longer tracked."
 msgstr "Залежність більше не відстежується."
 
@@ -241,11 +257,11 @@ msgstr ""
 msgid "Downloading umu-launcher… Please wait before starting games."
 msgstr "Завантаження umu-launcher… Зачекайте, перш ніж запускати ігри."
 
-#: src/deps/engine.rs:852 src/ui/mod.rs:249
+#: src/deps/engine.rs:943 src/ui/mod.rs:249
 msgid "Downloading winetricks…"
 msgstr "Завантаження winetricks…"
 
-#: src/ui/components/game_card.rs:125 src/ui/game_dialogs.rs:1393
+#: src/ui/components/game_card.rs:125 src/ui/game_dialogs.rs:1395
 msgid "Edit Game"
 msgstr "Редагувати гру"
 
@@ -253,35 +269,35 @@ msgstr "Редагувати гру"
 msgid "Edit Group"
 msgstr "Редагувати групу"
 
-#: src/ui/game_dialogs.rs:442 src/ui/game_dialogs.rs:1568
+#: src/ui/game_dialogs.rs:440 src/ui/game_dialogs.rs:1570
 msgid "Environment"
 msgstr "Середовище"
 
-#: src/ui/game_dialogs.rs:2142
+#: src/ui/game_dialogs.rs:2148
 msgid "Error: Game not found"
 msgstr "Помилка: гру не знайдено"
 
-#: src/ui/settings.rs:269
+#: src/ui/settings.rs:271
 msgid "Errors"
 msgstr "Помилки"
 
-#: src/ui/game_dialogs.rs:274 src/ui/game_dialogs.rs:1410
+#: src/ui/game_dialogs.rs:272 src/ui/game_dialogs.rs:1412
 msgid "Executable"
 msgstr "Виконуваний файл"
 
-#: src/ui/game_dialogs.rs:795
+#: src/ui/game_dialogs.rs:797
 msgid "Executable path is required"
 msgstr "Потрібно вказати шлях до виконуваного файлу"
 
-#: src/ui/game_dialogs.rs:855
+#: src/ui/game_dialogs.rs:857
 msgid "Failed to add game to the selected group"
 msgstr "Не вдалося додати гру до вибраної групи"
 
-#: src/ui/game_dialogs.rs:1856
+#: src/ui/game_dialogs.rs:1858
 msgid "Failed to create menu entry: {}"
 msgstr "Не вдалося створити пункт меню: {}"
 
-#: src/deps/engine.rs:869
+#: src/deps/engine.rs:960
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не вдалося завантажити winetricks. Перевірте з'єднання з інтернетом."
 
@@ -289,15 +305,15 @@ msgstr "Не вдалося завантажити winetricks. Перевірт�
 msgid "Failed to get child PID"
 msgstr "Не вдалося отримати PID дочірнього процесу"
 
-#: src/ui/game_dialogs.rs:2236
+#: src/ui/game_dialogs.rs:2242
 msgid "Failed to remove a menu entry: {}"
 msgstr "Не вдалося вилучити пункт меню: {}"
 
-#: src/ui/game_dialogs.rs:1848 src/ui/game_dialogs.rs:2222
+#: src/ui/game_dialogs.rs:1850 src/ui/game_dialogs.rs:2228
 msgid "Failed to remove menu entry: {}"
 msgstr "Не вдалося вилучити пункт меню: {}"
 
-#: src/ui/settings.rs:368
+#: src/ui/settings.rs:370
 msgid "Failed to reset umu runtime: {}"
 msgstr "Не вдалося скинути середовище umu: {}"
 
@@ -305,19 +321,19 @@ msgstr "Не вдалося скинути середовище umu: {}"
 msgid "Failed to stop game: {}"
 msgstr "Не вдалося зупинити гру: {}"
 
-#: src/ui/log_window.rs:153
+#: src/ui/log_window.rs:151
 msgid "Filter logs by game"
 msgstr "Фільтрувати журнали за грою"
 
-#: src/ui/game_dialogs.rs:1544 src/ui/mod.rs:58
+#: src/ui/game_dialogs.rs:1546 src/ui/mod.rs:58
 msgid "Game"
 msgstr "Гра"
 
-#: src/ui/game_dialogs.rs:313 src/ui/game_dialogs.rs:1453
+#: src/ui/game_dialogs.rs:311 src/ui/game_dialogs.rs:1455
 msgid "Game ID"
 msgstr "Ідентифікатор гри"
 
-#: src/ui/game_dialogs.rs:381
+#: src/ui/game_dialogs.rs:379
 msgid "Game Settings"
 msgstr "Налаштування гри"
 
@@ -325,20 +341,20 @@ msgstr "Налаштування гри"
 msgid "Game is no longer running"
 msgstr "Гра вже не запущена"
 
-#: src/ui/game_dialogs.rs:2135
+#: src/ui/game_dialogs.rs:2141
 msgid "Game updated successfully"
 msgstr "Гру успішно оновлено"
 
-#: src/ui/game_dialogs.rs:2137
+#: src/ui/game_dialogs.rs:2143
 msgid "Game updated successfully. {}"
 msgstr "Гру успішно оновлено. {}"
 
-#: src/ui/game_dialogs.rs:360 src/ui/game_dialogs.rs:1535
-#: src/ui/settings.rs:224
+#: src/ui/game_dialogs.rs:358 src/ui/game_dialogs.rs:1537
+#: src/ui/settings.rs:226
 msgid "GameMode"
 msgstr "GameMode"
 
-#: src/ui/running_games.rs:255
+#: src/ui/running_games.rs:253
 msgid "Games you launch through Leyen will appear here while they are active."
 msgstr "Ігри, запущені через Leyen, з'являтимуться тут, поки вони активні."
 
@@ -346,20 +362,20 @@ msgstr "Ігри, запущені через Leyen, з'являтимуться
 msgid "General"
 msgstr "Загальне"
 
-#: src/ui/settings.rs:214
+#: src/ui/settings.rs:216
 msgid "Global Environment"
 msgstr "Глобальне середовище"
 
-#: src/ui/settings.rs:29
+#: src/ui/settings.rs:21 src/ui/settings.rs:31 src/ui/settings.rs:402
 msgid "Global Settings"
 msgstr "Глобальні параметри"
 
-#: src/ui/game_dialogs.rs:985 src/ui/game_dialogs.rs:1550
+#: src/ui/game_dialogs.rs:985 src/ui/game_dialogs.rs:1552
 #: src/ui/library/group_view.rs:37 src/ui/mod.rs:59
 msgid "Group"
 msgstr "Група"
 
-#: src/ui/game_dialogs.rs:434 src/ui/game_dialogs.rs:988
+#: src/ui/game_dialogs.rs:432 src/ui/game_dialogs.rs:988
 msgid "Group Defaults"
 msgstr "Типові параметри групи"
 
@@ -367,49 +383,49 @@ msgstr "Типові параметри групи"
 msgid "Group tools unavailable"
 msgstr "Інструменти групи недоступні"
 
-#: src/ui/game_dialogs.rs:1353
+#: src/ui/game_dialogs.rs:1357
 msgid "Group updated successfully"
 msgstr "Групу успішно оновлено"
 
-#: src/ui/game_dialogs.rs:1351
+#: src/ui/game_dialogs.rs:1355
 msgid "Group updated successfully. {}"
 msgstr "Групу успішно оновлено. {}"
 
-#: src/ui/game_dialogs.rs:371 src/ui/game_dialogs.rs:1548
+#: src/ui/game_dialogs.rs:369 src/ui/game_dialogs.rs:1550
 msgid "Grouping"
 msgstr "Групування"
 
-#: src/ui/game_dialogs.rs:365 src/ui/game_dialogs.rs:1540
-#: src/ui/settings.rs:245
+#: src/ui/game_dialogs.rs:363 src/ui/game_dialogs.rs:1542
+#: src/ui/settings.rs:247
 msgid "HDR"
 msgstr "HDR"
 
-#: src/ui/game_dialogs.rs:331 src/ui/game_dialogs.rs:408
-#: src/ui/game_dialogs.rs:957 src/ui/game_dialogs.rs:1503
+#: src/ui/game_dialogs.rs:329 src/ui/game_dialogs.rs:406
+#: src/ui/game_dialogs.rs:957 src/ui/game_dialogs.rs:1505
 msgid "Icon File"
 msgstr "Файл піктограми"
 
-#: src/ui/deps_dialog.rs:388
+#: src/ui/deps_dialog.rs:349
 msgid "Install"
 msgstr "Встановити"
 
-#: src/ui/deps_dialog.rs:514
+#: src/ui/deps_dialog.rs:510
 msgid "Installation failed."
 msgstr "Не вдалося встановити."
 
-#: src/deps/engine.rs:626
+#: src/deps/engine.rs:710
 msgid "Installed prerequisites: {}."
 msgstr "Встановлено передумови: {}."
 
-#: src/ui/game_dialogs.rs:368
+#: src/ui/game_dialogs.rs:366
 msgid "Item"
 msgstr "Елемент"
 
-#: src/ui/game_dialogs.rs:881
+#: src/ui/game_dialogs.rs:883
 msgid "Item added successfully"
 msgstr "Елемент успішно додано"
 
-#: src/ui/game_dialogs.rs:879
+#: src/ui/game_dialogs.rs:881
 msgid "Item added successfully. {}"
 msgstr "Елемент успішно додано. {}"
 
@@ -425,7 +441,7 @@ msgstr "Востаннє запускалася: ніколи"
 msgid "Last played: {}"
 msgstr "Востаннє запускалася: {}"
 
-#: src/ui/game_dialogs.rs:354 src/ui/game_dialogs.rs:1529
+#: src/ui/game_dialogs.rs:352 src/ui/game_dialogs.rs:1531
 msgid "Launch Arguments"
 msgstr "Аргументи запуску"
 
@@ -447,7 +463,7 @@ msgstr ""
 "Залиште префікс порожнім або Proton на «Типовий», щоб успадкувати глобальні "
 "налаштування."
 
-#: src/ui/game_dialogs.rs:435
+#: src/ui/game_dialogs.rs:433
 msgid "Leave prefix empty or Proton on Default to keep using global defaults."
 msgstr ""
 "Залиште префікс порожнім або Proton на «Типовий», щоб надалі використовувати "
@@ -457,7 +473,7 @@ msgstr ""
 msgid "Leyen"
 msgstr "Leyen"
 
-#: src/ui/game_dialogs.rs:308 src/ui/game_dialogs.rs:1447
+#: src/ui/game_dialogs.rs:306 src/ui/game_dialogs.rs:1449
 msgid "Leyen ID"
 msgstr "Ідентифікатор Leyen"
 
@@ -469,7 +485,7 @@ msgstr "Leyen – Журнали"
 msgid "Leyen – Running Games"
 msgstr "Leyen – Запущені ігри"
 
-#: src/ui/settings.rs:264
+#: src/ui/settings.rs:266
 msgid "Logging"
 msgstr "Журналювання"
 
@@ -481,38 +497,39 @@ msgstr "Журнали"
 msgid "Main Menu"
 msgstr "Головне меню"
 
-#: src/ui/settings.rs:292
+#: src/ui/settings.rs:294
 msgid "Maintenance"
 msgstr "Обслуговування"
 
-#: src/ui/deps_dialog.rs:259 src/ui/game_dialogs.rs:1013
-#: src/ui/game_dialogs.rs:1611 src/ui/settings.rs:117
+#: src/ui/deps_dialog.rs:251 src/ui/deps_dialog.rs:844
+#: src/ui/game_dialogs.rs:1013 src/ui/game_dialogs.rs:1613
+#: src/ui/settings.rs:119
 msgid "Manage Dependencies"
 msgstr "Керування залежностями"
 
-#: src/ui/settings.rs:105
+#: src/ui/settings.rs:107
 msgid "Manage the default prefix inherited by games and groups."
 msgstr "Керуйте типовим префіксом, який успадковують ігри та групи."
 
-#: src/ui/game_dialogs.rs:1029 src/ui/game_dialogs.rs:1627
+#: src/ui/game_dialogs.rs:1029 src/ui/game_dialogs.rs:1629
 msgid "Managed by global preferences"
 msgstr "Керується глобальними параметрами"
 
-#: src/ui/game_dialogs.rs:1623
+#: src/ui/game_dialogs.rs:1625
 msgid "Managed by group prefix"
 msgstr "Керується префіксом групи"
 
-#: src/ui/game_dialogs.rs:358 src/ui/game_dialogs.rs:1533
-#: src/ui/settings.rs:218
+#: src/ui/game_dialogs.rs:356 src/ui/game_dialogs.rs:1535
+#: src/ui/settings.rs:220
 msgid "MangoHud"
 msgstr "MangoHud"
 
-#: src/ui/game_dialogs.rs:364 src/ui/game_dialogs.rs:1539
-#: src/ui/settings.rs:240
+#: src/ui/game_dialogs.rs:362 src/ui/game_dialogs.rs:1541
+#: src/ui/settings.rs:242
 msgid "NTSync"
 msgstr "NTSync"
 
-#: src/ui/log_window.rs:185
+#: src/ui/log_window.rs:183
 msgid "New logs will appear here automatically, or choose another filter."
 msgstr ""
 "Нові журнали з'являтимуться тут автоматично, або виберіть інший фільтр."
@@ -525,11 +542,11 @@ msgstr "Жодного компонента не встановлено"
 msgid "No games added yet"
 msgstr "Ще не додано жодної гри"
 
-#: src/ui/log_window.rs:184
+#: src/ui/log_window.rs:182
 msgid "No log lines to show"
 msgstr "Немає журнальних записів для показу"
 
-#: src/ui/running_games.rs:254
+#: src/ui/running_games.rs:252
 msgid "No running games"
 msgstr "Немає запущених ігор"
 
@@ -537,7 +554,7 @@ msgstr "Немає запущених ігор"
 msgid "Open Group"
 msgstr "Відкрити групу"
 
-#: src/ui/settings.rs:281
+#: src/ui/settings.rs:283
 msgid "Operations"
 msgstr "Операції"
 
@@ -561,8 +578,8 @@ msgstr "Час гри: {} с"
 msgid "Preferences"
 msgstr "Параметри"
 
-#: src/ui/game_dialogs.rs:286 src/ui/game_dialogs.rs:395
-#: src/ui/game_dialogs.rs:924 src/ui/game_dialogs.rs:1421
+#: src/ui/game_dialogs.rs:284 src/ui/game_dialogs.rs:393
+#: src/ui/game_dialogs.rs:924 src/ui/game_dialogs.rs:1423
 msgid "Prefix"
 msgstr "Префікс"
 
@@ -579,13 +596,13 @@ msgstr "Потрібно вказати шлях префікса"
 msgid "Prefix path is required first"
 msgstr "Спершу потрібно вказати шлях префікса"
 
-#: src/ui/game_dialogs.rs:317 src/ui/game_dialogs.rs:405
-#: src/ui/game_dialogs.rs:940 src/ui/game_dialogs.rs:1460
+#: src/ui/game_dialogs.rs:315 src/ui/game_dialogs.rs:403
+#: src/ui/game_dialogs.rs:940 src/ui/game_dialogs.rs:1462
 msgid "Proton"
 msgstr "Proton"
 
-#: src/ui/game_dialogs.rs:366 src/ui/game_dialogs.rs:1541
-#: src/ui/settings.rs:250
+#: src/ui/game_dialogs.rs:364 src/ui/game_dialogs.rs:1543
+#: src/ui/settings.rs:252
 msgid "Proton Log"
 msgstr "Журнал Proton"
 
@@ -593,8 +610,8 @@ msgstr "Журнал Proton"
 msgid "Quit Leyen"
 msgstr "Вийти з Leyen"
 
-#: src/ui/game_dialogs.rs:1009 src/ui/game_dialogs.rs:1607
-#: src/ui/settings.rs:113
+#: src/ui/game_dialogs.rs:1009 src/ui/game_dialogs.rs:1609
+#: src/ui/settings.rs:115
 msgid "Registry Editor"
 msgstr "Редактор реєстру"
 
@@ -602,27 +619,27 @@ msgstr "Редактор реєстру"
 msgid "Registry Editor launched"
 msgstr "Редактор реєстру запущено"
 
-#: src/ui/deps_dialog.rs:396
+#: src/ui/deps_dialog.rs:357
 msgid "Reinstall"
 msgstr "Перевстановити"
 
-#: src/ui/deps_dialog.rs:616
+#: src/ui/deps_dialog.rs:619
 msgid "Reinstall failed."
 msgstr "Не вдалося перевстановити."
 
-#: src/ui/deps_dialog.rs:403 src/ui/deps_dialog.rs:658
+#: src/ui/deps_dialog.rs:364 src/ui/deps_dialog.rs:663
 msgid "Remove"
 msgstr "Вилучити"
 
-#: src/ui/deps_dialog.rs:657
+#: src/ui/deps_dialog.rs:662
 msgid "Remove '{}'?"
 msgstr "Вилучити «{}»?"
 
-#: src/ui/deps_dialog.rs:780
+#: src/ui/deps_dialog.rs:790
 msgid "Remove failed."
 msgstr "Не вдалося вилучити."
 
-#: src/ui/game_dialogs.rs:1593 src/ui/game_dialogs.rs:1853
+#: src/ui/game_dialogs.rs:1595 src/ui/game_dialogs.rs:1855
 msgid "Remove from menu"
 msgstr "Вилучити з меню"
 
@@ -630,15 +647,15 @@ msgstr "Вилучити з меню"
 msgid "Remove this managed dependency"
 msgstr "Вилучити цю керовану залежність"
 
-#: src/ui/game_dialogs.rs:1846
+#: src/ui/game_dialogs.rs:1848
 msgid "Removed from menu"
 msgstr "Вилучено з меню"
 
-#: src/deps/engine.rs:799
+#: src/deps/engine.rs:890
 msgid "Removed from tracking."
 msgstr "Вилучено з відстеження."
 
-#: src/ui/settings.rs:296
+#: src/ui/settings.rs:298
 msgid "Repair Runtime"
 msgstr "Відновити середовище"
 
@@ -646,30 +663,30 @@ msgstr "Відновити середовище"
 msgid "Required by: {}"
 msgstr "Потрібно для: {}"
 
-#: src/ui/settings.rs:308 src/ui/settings.rs:335
+#: src/ui/settings.rs:310 src/ui/settings.rs:337
 msgid "Reset"
 msgstr "Скинути"
 
-#: src/ui/settings.rs:297
+#: src/ui/settings.rs:299
 msgid ""
 "Reset internal umu-launcher components if dependency installation fails."
 msgstr ""
 "Скинути внутрішні компоненти umu-launcher, якщо встановлення залежностей не "
 "вдається."
 
-#: src/ui/settings.rs:301
+#: src/ui/settings.rs:303
 msgid "Reset umu Runtime"
 msgstr "Скинути середовище umu"
 
-#: src/ui/settings.rs:329
+#: src/ui/settings.rs:331
 msgid "Reset umu Runtime?"
 msgstr "Скинути середовище umu?"
 
-#: src/ui/settings.rs:121
+#: src/ui/settings.rs:123
 msgid "Run in default prefix"
 msgstr "Запустити в типовому префіксі"
 
-#: src/ui/game_dialogs.rs:1016 src/ui/game_dialogs.rs:1614
+#: src/ui/game_dialogs.rs:1016 src/ui/game_dialogs.rs:1616
 msgid "Run in prefix"
 msgstr "Запустити в префіксі"
 
@@ -683,7 +700,7 @@ msgstr "Запущені ігри"
 msgid "Running for {}"
 msgstr "Працює вже {}"
 
-#: src/ui/game_dialogs.rs:913 src/ui/game_dialogs.rs:1399
+#: src/ui/game_dialogs.rs:913 src/ui/game_dialogs.rs:1401
 msgid "Save"
 msgstr "Зберегти"
 
@@ -695,7 +712,7 @@ msgstr "Пошук"
 msgid "Search Games"
 msgstr "Пошук ігор"
 
-#: src/ui/deps_dialog.rs:266
+#: src/ui/deps_dialog.rs:258
 msgid "Search dependencies…"
 msgstr "Пошук залежностей…"
 
@@ -703,21 +720,21 @@ msgstr "Пошук залежностей…"
 msgid "Search games..."
 msgstr "Пошук ігор..."
 
-#: src/ui/game_dialogs.rs:593 src/ui/game_dialogs.rs:1946
+#: src/ui/game_dialogs.rs:591 src/ui/game_dialogs.rs:1948
 msgid "Select Executable"
 msgstr "Виберіть виконуваний файл"
 
-#: src/ui/game_dialogs.rs:655 src/ui/game_dialogs.rs:1252
+#: src/ui/game_dialogs.rs:653 src/ui/game_dialogs.rs:1256
 msgid "Select Group Icon"
 msgstr "Виберіть піктограму групи"
 
-#: src/ui/game_dialogs.rs:641 src/ui/game_dialogs.rs:1978
+#: src/ui/game_dialogs.rs:639 src/ui/game_dialogs.rs:1980
 msgid "Select Icon"
 msgstr "Виберіть піктограму"
 
-#: src/ui/game_dialogs.rs:610 src/ui/game_dialogs.rs:626
-#: src/ui/game_dialogs.rs:1237 src/ui/game_dialogs.rs:1963
-#: src/ui/settings.rs:56
+#: src/ui/game_dialogs.rs:608 src/ui/game_dialogs.rs:624
+#: src/ui/game_dialogs.rs:1241 src/ui/game_dialogs.rs:1965
+#: src/ui/settings.rs:58
 msgid "Select Prefix Folder"
 msgstr "Виберіть теку префікса"
 
@@ -725,12 +742,12 @@ msgstr "Виберіть теку префікса"
 msgid "Select Program"
 msgstr "Виберіть програму"
 
-#: src/ui/settings.rs:265
+#: src/ui/settings.rs:267
 msgid "Select which messages are printed to the terminal."
 msgstr "Виберіть, які повідомлення виводяться в термінал."
 
-#: src/ui/game_dialogs.rs:743 src/ui/game_dialogs.rs:789
-#: src/ui/game_dialogs.rs:1303 src/ui/game_dialogs.rs:2061
+#: src/ui/game_dialogs.rs:745 src/ui/game_dialogs.rs:791
+#: src/ui/game_dialogs.rs:1307 src/ui/game_dialogs.rs:2067
 msgid "Selected Proton path does not exist"
 msgstr "Вибраний шлях Proton не існує"
 
@@ -742,23 +759,23 @@ msgstr "Вибрану версію Proton не знайдено"
 msgid "Selected file has no local path"
 msgstr "Вибраний файл не має локального шляху"
 
-#: src/ui/game_dialogs.rs:418 src/ui/game_dialogs.rs:969
+#: src/ui/game_dialogs.rs:416 src/ui/game_dialogs.rs:969
 msgid "Set an optional custom icon for this group."
 msgstr "Установіть необов'язкову власну піктограму для цієї групи."
 
-#: src/ui/game_dialogs.rs:1556
+#: src/ui/game_dialogs.rs:1558
 msgid "Settings"
 msgstr "Налаштування"
 
-#: src/ui/settings.rs:270
+#: src/ui/settings.rs:272
 msgid "Show error messages from leyen and launched processes"
 msgstr "Показувати повідомлення про помилки від leyen та запущених процесів"
 
-#: src/ui/settings.rs:282
+#: src/ui/settings.rs:284
 msgid "Show info about background operations"
 msgstr "Показувати відомості про фонові операції"
 
-#: src/ui/settings.rs:276
+#: src/ui/settings.rs:278
 msgid "Show warning messages (e.g. game not found)"
 msgstr "Показувати попередження (напр., гру не знайдено)"
 
@@ -778,7 +795,7 @@ msgstr "Підтримувані зображення"
 msgid "These games use their own prefixes: {}."
 msgstr "Ці ігри використовують власні префікси: {}."
 
-#: src/ui/deps_dialog.rs:695
+#: src/ui/deps_dialog.rs:701
 msgid "This dependency could not be located."
 msgstr "Не вдалося знайти цю залежність."
 
@@ -790,83 +807,83 @@ msgstr "Ця гра вже запущена"
 msgid "This group is empty"
 msgstr "Ця група порожня"
 
-#: src/ui/deps_dialog.rs:689
+#: src/ui/deps_dialog.rs:695
 msgid "This removes the dependency from Leyen's tracking."
 msgstr "Це вилучає залежність із відстеження Leyen."
 
-#: src/ui/game_dialogs.rs:273 src/ui/game_dialogs.rs:920
-#: src/ui/game_dialogs.rs:1406
+#: src/ui/game_dialogs.rs:271 src/ui/game_dialogs.rs:920
+#: src/ui/game_dialogs.rs:1408
 msgid "Title"
 msgstr "Назва"
 
-#: src/ui/game_dialogs.rs:2013
+#: src/ui/game_dialogs.rs:2019
 msgid "Title and executable path are required"
 msgstr "Потрібно вказати назву та шлях до виконуваного файлу"
 
-#: src/ui/game_dialogs.rs:718 src/ui/game_dialogs.rs:1273
+#: src/ui/game_dialogs.rs:720 src/ui/game_dialogs.rs:1277
 msgid "Title is required"
 msgstr "Потрібно вказати назву"
 
-#: src/ui/game_dialogs.rs:995 src/ui/game_dialogs.rs:1578
-#: src/ui/settings.rs:104
+#: src/ui/game_dialogs.rs:995 src/ui/game_dialogs.rs:1580
+#: src/ui/settings.rs:106
 msgid "Tools"
 msgstr "Інструменти"
 
-#: src/ui/game_dialogs.rs:1030 src/ui/game_dialogs.rs:1628
+#: src/ui/game_dialogs.rs:1030 src/ui/game_dialogs.rs:1630
 msgid ""
 "Use Global Settings to manage dependencies or run a program in the default "
 "prefix."
-msgstr "Скористайтеся глобальними параметрами, щоб керувати залежностями або запустити програму в типовому префіксі."
+msgstr ""
+"Скористайтеся глобальними параметрами, щоб керувати залежностями або "
+"запустити програму в типовому префіксі."
 
-#: src/ui/game_dialogs.rs:341 src/ui/game_dialogs.rs:1515
+#: src/ui/game_dialogs.rs:339 src/ui/game_dialogs.rs:1517
 msgid "Use a custom icon instead of extracting one from the executable."
 msgstr ""
 "Використовувати власну піктограму замість видобутої з виконуваного файлу."
 
-#: src/ui/game_dialogs.rs:426 src/ui/game_dialogs.rs:977
+#: src/ui/game_dialogs.rs:424 src/ui/game_dialogs.rs:977
 msgid "Use a group-specific prefix instead of the global default."
 msgstr "Використовувати префікс групи замість глобального типового."
 
-#: src/ui/game_dialogs.rs:322 src/ui/game_dialogs.rs:1486
+#: src/ui/game_dialogs.rs:320 src/ui/game_dialogs.rs:1488
 msgid "Use a per-game Proton version instead of the inherited default."
 msgstr ""
 "Використовувати версію Proton для кожної гри замість успадкованої типової."
 
-#: src/ui/game_dialogs.rs:299 src/ui/game_dialogs.rs:1439
+#: src/ui/game_dialogs.rs:297 src/ui/game_dialogs.rs:1441
 msgid ""
 "Use a per-game prefix instead of the inherited group and global defaults."
 msgstr ""
 "Використовувати префікс для кожної гри замість успадкованих групових і "
 "глобальних типових."
 
-#: src/ui/game_dialogs.rs:1799 src/ui/game_dialogs.rs:1818
+#: src/ui/game_dialogs.rs:1801 src/ui/game_dialogs.rs:1820
 msgid "Use {} settings to manage dependencies or run a program in that prefix."
-msgstr "Скористайтеся параметрами «{}», щоб керувати залежностями або запустити програму в тому префіксі."
+msgstr ""
+"Скористайтеся параметрами «{}», щоб керувати залежностями або запустити "
+"програму в тому префіксі."
 
 #: src/ui/running_games.rs:145
 msgid "View Game Logs"
 msgstr "Переглянути журнали гри"
 
-#: src/ui/deps_dialog.rs:321
-msgid "Wait for the dependency operation to finish."
-msgstr "Зачекайте завершення операції із залежністю."
-
-#: src/ui/settings.rs:275
+#: src/ui/settings.rs:277
 msgid "Warnings"
 msgstr "Попередження"
 
-#: src/ui/game_dialogs.rs:362 src/ui/game_dialogs.rs:1537
-#: src/ui/settings.rs:230
+#: src/ui/game_dialogs.rs:360 src/ui/game_dialogs.rs:1539
+#: src/ui/settings.rs:232
 msgid "Wayland"
 msgstr "Wayland"
 
-#: src/prefix_tools.rs:165 src/ui/game_dialogs.rs:588
-#: src/ui/game_dialogs.rs:1941
+#: src/prefix_tools.rs:165 src/ui/game_dialogs.rs:586
+#: src/ui/game_dialogs.rs:1943
 msgid "Windows programs"
 msgstr "Програми Windows"
 
-#: src/ui/game_dialogs.rs:1005 src/ui/game_dialogs.rs:1603
-#: src/ui/settings.rs:109
+#: src/ui/game_dialogs.rs:1005 src/ui/game_dialogs.rs:1605
+#: src/ui/settings.rs:111
 msgid "Wine Configuration"
 msgstr "Конфігурація Wine"
 
@@ -874,35 +891,35 @@ msgstr "Конфігурація Wine"
 msgid "Wine Configuration launched"
 msgstr "Конфігурацію Wine запущено"
 
-#: src/ui/game_dialogs.rs:363 src/ui/game_dialogs.rs:1538
-#: src/ui/settings.rs:235
+#: src/ui/game_dialogs.rs:361 src/ui/game_dialogs.rs:1540
+#: src/ui/settings.rs:237
 msgid "WoW64"
 msgstr "WoW64"
 
-#: src/ui/game_dialogs.rs:2166 src/ui/game_dialogs.rs:2178
+#: src/ui/game_dialogs.rs:2172 src/ui/game_dialogs.rs:2184
 msgid "game '{}'"
 msgstr "гра «{}»"
 
-#: src/ui/game_dialogs.rs:2168
+#: src/ui/game_dialogs.rs:2174
 msgid "group '{}'"
 msgstr "група «{}»"
 
-#: src/ui/game_dialogs.rs:2182
+#: src/ui/game_dialogs.rs:2188
 msgid "item"
 msgstr "елемент"
 
-#: src/ui/settings.rs:364
+#: src/ui/settings.rs:366
 msgid "umu runtime directory not found — nothing to reset."
 msgstr "Теку середовища umu не знайдено — нічого скидати."
 
-#: src/ui/settings.rs:359
+#: src/ui/settings.rs:361
 msgid ""
 "umu runtime reset. Re-run any dependency install to download a fresh copy."
 msgstr ""
 "Середовище umu скинуто. Запустіть будь-яке встановлення залежностей, щоб "
 "завантажити свіжу копію."
 
-#: src/deps/engine.rs:829 src/launch.rs:899 src/prefix_tools.rs:39
+#: src/deps/engine.rs:920 src/launch.rs:899 src/prefix_tools.rs:39
 #: src/prefix_tools.rs:84 src/prefix_tools.rs:159
 msgid ""
 "umu-launcher is not installed. Please check your internet connection and "
@@ -911,12 +928,12 @@ msgstr ""
 "umu-launcher не встановлено. Перевірте з'єднання з інтернетом і "
 "перезапустіть."
 
-#: src/deps/engine.rs:815 src/launch.rs:886 src/prefix_tools.rs:30
+#: src/deps/engine.rs:906 src/launch.rs:886 src/prefix_tools.rs:30
 #: src/prefix_tools.rs:75 src/prefix_tools.rs:149
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher усе ще завантажується, зачекайте…"
 
-#: src/deps/engine.rs:839
+#: src/deps/engine.rs:930
 msgid "winetricks is still downloading, please wait…"
 msgstr "winetricks усе ще завантажується, зачекайте…"
 
@@ -965,6 +982,9 @@ msgstr "{} хв тому"
 msgid "{}s ago"
 msgstr "{} с тому"
 
-#: src/ui/deps_dialog.rs:410
+#: src/ui/deps_dialog.rs:398
 msgid "✓ Installed"
 msgstr "✓ Встановлено"
+
+#~ msgid "Wait for the dependency operation to finish."
+#~ msgstr "Зачекайте завершення операції із залежністю."

@@ -48,7 +48,7 @@
             rustc = rustToolchain;
           }).buildRustPackage {
             pname = "leyen";
-            version = "0.3.0";
+            version = "0.3.5";
             src = ./.;
 
             cargoLock = {

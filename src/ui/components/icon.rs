@@ -1,7 +1,59 @@
 use crate::ui::LIBRARY_ICON_SIZE;
 use gtk4::prelude::*;
 use image::imageops::FilterType;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
+
+/// Cached processed icon, keyed by absolute path. Avoids re-decoding and
+/// re-resizing the same image on every library rebuild. Textures are GPU-shared
+/// across all `Picture` widgets that reference them, so this is cheap to clone.
+struct CachedIcon {
+    mtime_epoch_seconds: u64,
+    len: u64,
+    texture: gtk4::gdk::MemoryTexture,
+}
+
+thread_local! {
+    static ICON_CACHE: RefCell<HashMap<std::path::PathBuf, CachedIcon>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Cheap `(mtime, len)` stamp used to invalidate the cache when the file changes.
+fn icon_file_stamp(path: &Path) -> Option<(u64, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Some((mtime, meta.len()))
+}
+
+/// Returns a cached texture for `path` if present and still matching `stamp`.
+fn cached_texture(path: &Path, stamp: (u64, u64)) -> Option<gtk4::gdk::MemoryTexture> {
+    ICON_CACHE.with(|cache| {
+        cache.borrow().get(path).and_then(|entry| {
+            (entry.mtime_epoch_seconds == stamp.0 && entry.len == stamp.1)
+                .then(|| entry.texture.clone())
+        })
+    })
+}
+
+fn store_texture(path: &Path, stamp: (u64, u64), texture: &gtk4::gdk::MemoryTexture) {
+    ICON_CACHE.with(|cache| {
+        cache.borrow_mut().insert(
+            path.to_path_buf(),
+            CachedIcon {
+                mtime_epoch_seconds: stamp.0,
+                len: stamp.1,
+                texture: texture.clone(),
+            },
+        );
+    });
+}
 
 pub fn build_library_icon(
     icon_path: Option<std::path::PathBuf>,
@@ -40,17 +92,34 @@ pub fn build_library_icon(
     overlay.set_child(Some(&wrapper));
 
     if let Some(path) = icon_path {
+        let stamp = icon_file_stamp(&path);
+
+        // Cache hit — swap in the texture immediately, no decode, no thread hop.
+        if let Some(stamp) = stamp
+            && let Some(texture) = cached_texture(&path, stamp)
+        {
+            let picture = picture_from_texture(&texture);
+            if let Some(old) = wrapper.first_child() {
+                wrapper.remove(&old);
+            }
+            wrapper.append(&picture);
+            return overlay.upcast();
+        }
+
         let wrapper_clone = wrapper.clone();
         gtk4::glib::spawn_future_local(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                process_icon_file(&path)
-            })
-            .await
-            .ok()
-            .flatten();
+            let path_for_decode = path.clone();
+            let result = tokio::task::spawn_blocking(move || process_icon_file(&path_for_decode))
+                .await
+                .ok()
+                .flatten();
 
             if let Some((width, height, rgba)) = result {
-                let picture = picture_from_rgba(width, height, &rgba);
+                let texture = make_texture(width, height, &rgba);
+                if let Some(stamp) = stamp {
+                    store_texture(&path, stamp, &texture);
+                }
+                let picture = picture_from_texture(&texture);
                 if let Some(old) = wrapper_clone.first_child() {
                     wrapper_clone.remove(&old);
                 }
@@ -76,18 +145,23 @@ fn process_icon_file(path: &Path) -> Option<(i32, i32, Vec<u8>)> {
     Some((width, height, rgba.into_raw()))
 }
 
-fn picture_from_rgba(width: i32, height: i32, rgba: &[u8]) -> gtk4::Picture {
-    let stride = usize::try_from(width).ok().and_then(|w| w.checked_mul(4)).unwrap_or(0);
+fn make_texture(width: i32, height: i32, rgba: &[u8]) -> gtk4::gdk::MemoryTexture {
+    let stride = usize::try_from(width)
+        .ok()
+        .and_then(|w| w.checked_mul(4))
+        .unwrap_or(0);
     let bytes = gtk4::glib::Bytes::from_owned(rgba.to_vec());
-    let texture = gtk4::gdk::MemoryTexture::new(
+    gtk4::gdk::MemoryTexture::new(
         width,
         height,
         gtk4::gdk::MemoryFormat::R8g8b8a8,
         &bytes,
         stride,
-    );
+    )
+}
 
-    let picture = gtk4::Picture::for_paintable(&texture);
+fn picture_from_texture(texture: &gtk4::gdk::MemoryTexture) -> gtk4::Picture {
+    let picture = gtk4::Picture::for_paintable(texture);
     picture.set_content_fit(gtk4::ContentFit::Cover);
     picture.set_can_shrink(true);
     picture.set_size_request(LIBRARY_ICON_SIZE, LIBRARY_ICON_SIZE);

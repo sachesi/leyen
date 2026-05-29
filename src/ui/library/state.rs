@@ -34,4 +34,8 @@ pub struct LibraryUi {
     pub search_entry: gtk4::SearchEntry,
     pub library_state: Rc<RefCell<Vec<LibraryItem>>>,
     pub current_group_id: Rc<RefCell<Option<String>>>,
+    /// Set while a library refresh is running. Concurrent calls coalesce into a
+    /// single follow-up rather than racing the double-buffered list swap.
+    pub refresh_busy: Rc<Cell<bool>>,
+    pub refresh_pending: Rc<Cell<bool>>,
 }

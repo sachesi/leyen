@@ -2,6 +2,8 @@
 mod tests {
     use super::super::engine::{DepStep, DepStepAction, execute_dep_step};
     use std::fs;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -23,13 +25,15 @@ mod tests {
             },
         };
 
+        let cancel = Arc::new(AtomicBool::new(false));
+
         // Should succeed
-        let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path).await;
+        let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path, &cancel).await;
         assert!(result.is_ok());
 
         // Corrupt the file
         fs::write(&test_file, "corrupted").unwrap();
-        let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path).await;
+        let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path, &cancel).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Checksum mismatch"));
         assert!(!test_file.exists()); // Should have been deleted

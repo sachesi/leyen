@@ -3,8 +3,10 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::{gio, glib};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::{get_data_dir, load_settings};
 use crate::deps::{
@@ -365,6 +367,33 @@ pub async fn open_dependencies_page(
                 .visible(is_installed)
                 .build();
 
+            let cancel_btn = gtk4::Button::builder()
+                .icon_name("process-stop-symbolic")
+                .tooltip_text(t!("Cancel"))
+                .css_classes(["destructive-action"])
+                .valign(gtk4::Align::Center)
+                .visible(false)
+                .build();
+
+            // Flag for the operation currently running in this row, set by the
+            // cancel button and polled by the installer between/within steps.
+            let current_cancel: Rc<RefCell<Option<Arc<AtomicBool>>>> =
+                Rc::new(RefCell::new(None));
+            {
+                let current_cancel = current_cancel.clone();
+                cancel_btn.connect_clicked(move |btn| {
+                    if let Some(flag) = current_cancel.borrow().as_ref() {
+                        flag.store(true, Ordering::Relaxed);
+                    }
+                    btn.set_sensitive(false);
+                });
+            }
+            // The cancel button is visible exactly while the operation spinner is.
+            spinner
+                .bind_property("visible", &cancel_btn, "visible")
+                .sync_create()
+                .build();
+
             let badge = gtk4::Label::builder()
                 .label(t!("✓ Installed"))
                 .css_classes(["success", "caption"])
@@ -375,6 +404,7 @@ pub async fn open_dependencies_page(
             row.add_suffix(&badge);
             row.add_suffix(&spinner);
             row.add_suffix(&progress_label);
+            row.add_suffix(&cancel_btn);
             row.add_suffix(&install_btn);
             row.add_suffix(&reinstall_btn);
             row.add_suffix(&remove_btn);
@@ -394,6 +424,8 @@ pub async fn open_dependencies_page(
                 let remove_btn2 = remove_btn.clone();
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
+                let cancel_btn2 = cancel_btn.clone();
+                let current_cancel2 = current_cancel.clone();
                 let row2 = row.clone();
                 let badge2 = badge.clone();
                 let title2 = title_widget.clone();
@@ -415,6 +447,11 @@ pub async fn open_dependencies_page(
                     spinner2.start();
                     progress_label2.set_visible(true);
                     row2.set_sensitive(false);
+
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    *current_cancel2.borrow_mut() = Some(cancel.clone());
+                    cancel_btn2.set_sensitive(true);
+                    cancel_btn2.set_visible(true);
 
                     let install_btn3 = install_btn2.clone();
                     let reinstall_btn3 = reinstall_btn2.clone();
@@ -480,6 +517,7 @@ pub async fn open_dependencies_page(
                         &prefix2,
                         &proton2,
                         &overlay2,
+                        cancel.clone(),
                         on_progress,
                         on_finish,
                     );
@@ -493,6 +531,8 @@ pub async fn open_dependencies_page(
                 let remove_btn2 = remove_btn.clone();
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
+                let cancel_btn2 = cancel_btn.clone();
+                let current_cancel2 = current_cancel.clone();
                 let row2 = row.clone();
                 let badge2 = badge.clone();
                 let title2 = title_widget.clone();
@@ -515,6 +555,10 @@ pub async fn open_dependencies_page(
                     spinner2.start();
                     progress_label2.set_visible(true);
                     row2.set_sensitive(false);
+
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    *current_cancel2.borrow_mut() = Some(cancel.clone());
+                    cancel_btn2.set_sensitive(true);
 
                     let install_btn3 = install_btn2.clone();
                     let reinstall_btn3 = reinstall_btn2.clone();
@@ -582,6 +626,7 @@ pub async fn open_dependencies_page(
                         &prefix2,
                         &proton2,
                         &overlay2,
+                        cancel.clone(),
                         on_progress,
                         on_finish,
                     );
@@ -601,6 +646,7 @@ pub async fn open_dependencies_page(
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
+                let cancel_btn2 = cancel_btn.clone();
                 let dialog2 = overlay.clone();
                 let row_handles2 = row_handles.clone();
                 let search_entry2 = search_entry.clone();
@@ -632,6 +678,7 @@ pub async fn open_dependencies_page(
                     let row_handles3 = row_handles2.clone();
                     let search_entry3 = search_entry2.clone();
                     let dialog_busy3 = dialog_busy2.clone();
+                    let cancel_btn3 = cancel_btn2.clone();
                     let dialog3 = dialog2.clone();
                     let groups3 = groups2.clone();
                     let page3 = page2.clone();
@@ -672,6 +719,7 @@ pub async fn open_dependencies_page(
                                 reinstall_btn3.set_visible(false);
                                 remove_btn3.set_visible(false);
                                 spinner3.set_visible(true);
+                                cancel_btn3.set_visible(false);
                                 spinner3.start();
                                 progress_label3.set_visible(true);
                                 row3.set_sensitive(false);

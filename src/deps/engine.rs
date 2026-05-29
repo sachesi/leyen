@@ -496,6 +496,23 @@ pub fn install_dep_async(
             );
             return;
         };
+
+        // Preflight: the dependency cache must be writable for downloads.
+        let cache_check = cache_dir.clone();
+        if let Err(message) = tokio::task::spawn_blocking(move || fs::create_dir_all(&cache_check))
+            .await
+            .map_err(join_err)
+            .and_then(|r| {
+                r.map_err(|e| {
+                    t!("Cannot write to the dependency cache directory: {}")
+                        .replacen("{}", &e.to_string(), 1)
+                })
+            })
+        {
+            on_finish(false, Some(message));
+            return;
+        }
+
         if let Err(message) = ensure_umu_ready(&overlay, needs_winetricks).await {
             on_finish(false, Some(message));
             return;
@@ -1065,7 +1082,7 @@ fn collect_snapshot(
             let lower = n.to_ascii_lowercase();
             matches!(
                 lower.as_str(),
-                "temp" | "tmp" | "cache" | "installer"
+                "temp" | "tmp" | "cache" | "installer" | "prefetch"
             ) || lower.starts_with("gac")
         }) {
             continue;
@@ -1082,6 +1099,21 @@ fn collect_snapshot(
 
         if !metadata.is_file() {
             continue;
+        }
+
+        // Skip volatile bookkeeping that changes on every Wine run and is not
+        // meaningful dependency state (registry hives are tracked via overrides).
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let lower = name.to_ascii_lowercase();
+            if lower.ends_with(".log")
+                || lower.ends_with(".tmp")
+                || matches!(
+                    lower.as_str(),
+                    "system.reg" | "user.reg" | "userdef.reg" | ".update-timestamp"
+                )
+            {
+                continue;
+            }
         }
 
         if let Some(relative) = path_to_prefix_relative(root, &path) {

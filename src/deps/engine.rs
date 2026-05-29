@@ -4,8 +4,9 @@ use libadwaita as adw;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
-use std::sync::{Mutex, OnceLock};
+use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use futures::future::join_all;
@@ -63,6 +64,70 @@ fn join_err(e: tokio::task::JoinError) -> String {
         format!("blocking task panicked: {e}")
     } else {
         format!("blocking task cancelled: {e}")
+    }
+}
+
+/// Runs a umu command to completion with a timeout, killing the whole process
+/// group if the operation is cancelled or times out. The command is put in its
+/// own process group via `setpgid` so the entire umu/wine tree is signalled.
+async fn run_umu_command(
+    mut cmd: AsyncCommand,
+    label: String,
+    cancel: Arc<AtomicBool>,
+) -> Result<std::process::Output, String> {
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    }
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to launch {}: {}", label, e))?;
+    let pid = child.id();
+    let wait_fut = child.wait_with_output();
+    tokio::pin!(wait_fut);
+
+    let start = tokio::time::Instant::now();
+    let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
+
+    let kill_group = || {
+        if let Some(pid) = pid {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+    };
+
+    loop {
+        tokio::select! {
+            out = &mut wait_fut => {
+                return out.map_err(|e| format!("Failed to run {}: {}", label, e));
+            }
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                if cancel.load(Ordering::Relaxed) {
+                    kill_group();
+                    let _ = (&mut wait_fut).await;
+                    return Err(t!("Cancelled."));
+                }
+                if start.elapsed() >= timeout {
+                    warn!("[dep] '{}' timed out after {} seconds", label, COMMAND_TIMEOUT_SECS);
+                    kill_group();
+                    let _ = (&mut wait_fut).await;
+                    return Err(format!(
+                        "'{}' timed out after {} seconds",
+                        label, COMMAND_TIMEOUT_SECS
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -158,6 +223,7 @@ pub async fn execute_dep_step(
     prefix_path: &str,
     proton_path: &str,
     cache_dir: &str,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<StepChanges, String> {
     // Verify tokio runtime context for timeout/process drivers
     match tokio::runtime::Handle::try_current() {
@@ -270,35 +336,18 @@ pub async fn execute_dep_step(
             let exe_path = Path::new(cache_dir).join(file_name);
             info!("[dep] Running {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
             let output = {
-                let prefix_owned = prefix_path.to_string();
-                let proton_owned = proton_path.to_string();
-                let exe_str = exe_path.to_string_lossy().to_string();
-                let file_name = file_name.to_string();
-                let args_owned: Vec<String> = args.split_whitespace().map(|a| a.to_string()).collect();
-                let extra_env = extra_env.to_string();
-                tokio::spawn(async move {
-                    let mut cmd = AsyncCommand::new(get_umu_run_path());
-                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
-                    for pair in extra_env.split_whitespace() {
-                        if let Some(eq) = pair.find('=') {
-                            cmd.env(&pair[..eq], &pair[eq + 1..]);
-                        }
+                let mut cmd = AsyncCommand::new(get_umu_run_path());
+                configure_umu_command_async(&mut cmd, prefix_path, proton_path);
+                for pair in extra_env.split_whitespace() {
+                    if let Some(eq) = pair.find('=') {
+                        cmd.env(&pair[..eq], &pair[eq + 1..]);
                     }
-                    cmd.arg(&exe_str);
-                    for arg in &args_owned {
-                        cmd.arg(arg);
-                    }
-                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
-                        .await
-                        .map_err(|_| {
-                            warn!("[dep] '{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS);
-                            format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS)
-                        })?
-                        .map_err(|err| format!("Failed to launch {}: {}", file_name, err))
-                })
-                .await
-                .map_err(|e| format!("Command task panicked: {e}"))
-                .and_then(|r| r)?
+                }
+                cmd.arg(exe_path.to_string_lossy().as_ref());
+                for arg in args.split_whitespace() {
+                    cmd.arg(arg);
+                }
+                run_umu_command(cmd, file_name.to_string(), cancel.clone()).await?
             };
 
             let exit_code = output.status.code();
@@ -329,30 +378,14 @@ pub async fn execute_dep_step(
             let msi_path = Path::new(cache_dir).join(file_name);
             info!("[dep] Running msiexec /i {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
             let output = {
-                let prefix_owned = prefix_path.to_string();
-                let proton_owned = proton_path.to_string();
-                let msi_str = msi_path.to_string_lossy().to_string();
-                let file_name = file_name.to_string();
-                let args_owned: Vec<String> = args.split_whitespace().map(|a| a.to_string()).collect();
-                tokio::spawn(async move {
-                    let mut cmd = AsyncCommand::new(get_umu_run_path());
-                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
-                    cmd.args(["msiexec.exe", "/i"]);
-                    cmd.arg(&msi_str);
-                    for arg in &args_owned {
-                        cmd.arg(arg);
-                    }
-                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
-                        .await
-                        .map_err(|_| {
-                            warn!("[dep] '{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS);
-                            format!("'{}' timed out after {} seconds", file_name, COMMAND_TIMEOUT_SECS)
-                        })?
-                        .map_err(|err| format!("Failed to run msiexec for {}: {}", file_name, err))
-                })
-                .await
-                .map_err(|e| format!("Command task panicked: {e}"))
-                .and_then(|r| r)?
+                let mut cmd = AsyncCommand::new(get_umu_run_path());
+                configure_umu_command_async(&mut cmd, prefix_path, proton_path);
+                cmd.args(["msiexec.exe", "/i"]);
+                cmd.arg(msi_path.to_string_lossy().as_ref());
+                for arg in args.split_whitespace() {
+                    cmd.arg(arg);
+                }
+                run_umu_command(cmd, file_name.to_string(), cancel.clone()).await?
             };
 
             let exit_code = output.status.code();
@@ -387,24 +420,10 @@ pub async fn execute_dep_step(
         DepStepAction::RunWinetricks { verb } => {
             info!("[dep] Running winetricks {} (timeout: {}s)", verb, COMMAND_TIMEOUT_SECS);
             let output = {
-                let prefix_owned = prefix_path.to_string();
-                let proton_owned = proton_path.to_string();
-                let verb = verb.clone();
-                tokio::spawn(async move {
-                    let mut cmd = AsyncCommand::new(get_umu_run_path());
-                    configure_umu_command_async(&mut cmd, &prefix_owned, &proton_owned);
-                    cmd.args([get_winetricks_path().as_str(), "-q", &verb]);
-                    tokio::time::timeout(Duration::from_secs(COMMAND_TIMEOUT_SECS), cmd.output())
-                        .await
-                        .map_err(|_| {
-                            warn!("[dep] winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS);
-                            format!("winetricks '{}' timed out after {} seconds", verb, COMMAND_TIMEOUT_SECS)
-                        })?
-                        .map_err(|err| format!("Failed to run winetricks {}: {}", verb, err))
-                })
-                .await
-                .map_err(|e| format!("Command task panicked: {e}"))
-                .and_then(|r| r)?
+                let mut cmd = AsyncCommand::new(get_umu_run_path());
+                configure_umu_command_async(&mut cmd, prefix_path, proton_path);
+                cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
+                run_umu_command(cmd, format!("winetricks {}", verb), cancel.clone()).await?
             };
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -470,6 +489,7 @@ pub fn install_dep_async(
     prefix_path: &str,
     proton_path: &str,
     overlay: &adw::ToastOverlay,
+    cancel: Arc<AtomicBool>,
     on_progress: impl Fn(usize, usize, String) + 'static,
     on_finish: impl FnOnce(bool, Option<String>) + 'static,
 ) {
@@ -567,7 +587,7 @@ pub fn install_dep_async(
                 on_progress(completed_steps + 1, total_steps, description.to_string());
 
                 let futures: Vec<_> = download_steps.iter().map(|step| {
-                    execute_dep_step(step, &prefix_path, &proton_path, &cache_dir)
+                    execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel)
                 }).collect();
 
                 let results = join_all(futures).await;
@@ -604,6 +624,10 @@ pub fn install_dep_async(
 
             let mut step_error: Option<String> = None;
             for step in &execution_steps {
+                if cancel.load(Ordering::Relaxed) {
+                    step_error = Some(t!("Cancelled."));
+                    break;
+                }
                 completed_steps += 1;
                 let description = if install_plan.len() > 1 {
                     format!("{}: {}", profile.name, step.description)
@@ -617,7 +641,7 @@ pub fn install_dep_async(
                 );
                 on_progress(completed_steps, total_steps, description);
 
-                match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir).await {
+                match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel).await {
                     Ok(changes) => recorded.merge(changes),
                     Err(error) => {
                         error!("[dep:{}] install failed: {}", profile.id, error);

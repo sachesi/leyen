@@ -6,6 +6,7 @@ mod cli;
 mod config;
 mod deps;
 mod desktop;
+mod i18n;
 mod icons;
 mod instance;
 mod launch;
@@ -24,6 +25,8 @@ async fn main() -> glib::ExitCode {
         eprintln!("Failed to initialize logging: {e}");
         return glib::ExitCode::FAILURE;
     }
+
+    i18n::init();
 
     if let Some(exit_code) = cli::maybe_run_from_args().await {
         return exit_code;

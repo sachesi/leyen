@@ -1,3 +1,4 @@
+use crate::t;
 use libadwaita as adw;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -503,7 +504,7 @@ pub fn install_dep_async(
         let install_plan = match build_install_plan(&dep_id, &state) {
             Ok(plan) if !plan.is_empty() => plan,
             Ok(_) => {
-                on_finish(true, Some("Dependency is already installed.".to_string()));
+                on_finish(true, Some(t!("Dependency is already installed.")));
                 return;
             }
             Err(message) => {
@@ -621,10 +622,10 @@ pub fn install_dep_async(
             if prerequisites.is_empty() {
                 None
             } else {
-                Some(format!(
-                    "Installed prerequisites: {}.",
-                    prerequisites.join(", ")
-                ))
+                Some(
+                    t!("Installed prerequisites: {}.")
+                        .replacen("{}", &prerequisites.join(", "), 1),
+                )
             }
         } else {
             None
@@ -659,7 +660,7 @@ pub fn uninstall_dep_async(
         let installed = match state.installed.get(&dep_id).cloned() {
             Some(installed) => installed,
             None => {
-                on_finish(true, Some("Dependency is no longer tracked.".to_string()));
+                on_finish(true, Some(t!("Dependency is no longer tracked.")));
                 return;
             }
         };
@@ -667,11 +668,11 @@ pub fn uninstall_dep_async(
         if !dependents.is_empty() {
             on_finish(
                 false,
-                Some(format!(
-                    "Cannot remove '{}': still required by {}.",
-                    dep_id,
-                    dependents.join(", ")
-                )),
+                Some(
+                    t!("Cannot remove '{}': still required by {}.")
+                        .replacen("{}", &dep_id, 1)
+                        .replacen("{}", &dependents.join(", "), 1),
+                ),
             );
             return;
         }
@@ -764,8 +765,8 @@ pub fn uninstall_dep_async(
 
         if let Some(profile) = get_dep_profile(&dep_id) {
             for provided_id in profile.provides {
-                if let Some(entry) = state.installed.get(*provided_id) {
-                    if !entry.has_removable_changes() && !entry.touched_existing_files {
+                if let Some(entry) = state.installed.get(*provided_id)
+                    && !entry.has_removable_changes() && !entry.touched_existing_files {
                         let remove_prefix = prefix_path.clone();
                         let remove_id = provided_id.to_string();
                         if let Err(error) = tokio::task::spawn_blocking(move || {
@@ -774,7 +775,6 @@ pub fn uninstall_dep_async(
                             warn!("[dep:{}] failed to remove stub for '{}': {}", dep_id, provided_id, error);
                         }
                     }
-                }
             }
         }
 
@@ -790,14 +790,13 @@ pub fn uninstall_dep_async(
         }
 
         let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
-            (true, true) => Some(
+            (true, true) => Some(t!(
                 "Some existing prefix files were changed during installation and were not reverted."
-                    .to_string(),
-            ),
-            (false, true) => Some(
-                "Removed from tracking. Existing prefix files changed during installation were not reverted.".to_string(),
-            ),
-            (false, false) => Some("Removed from tracking.".to_string()),
+            )),
+            (false, true) => Some(t!(
+                "Removed from tracking. Existing prefix files changed during installation were not reverted."
+            )),
+            (false, false) => Some(t!("Removed from tracking.")),
             (true, false) => None,
         };
 
@@ -813,7 +812,7 @@ async fn ensure_umu_ready(
     info!("[dep] Checking umu-launcher availability…");
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is still downloading, please wait…",
+            &t!("umu-launcher is still downloading, please wait…"),
         ));
         return Err("umu-launcher not ready".to_string());
     }
@@ -827,7 +826,7 @@ async fn ensure_umu_ready(
     {
         info!("[dep] umu-launcher not available");
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is not installed. Please check your internet connection and restart.",
+            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
         return Err("umu-launcher not available".to_string());
     }
@@ -837,7 +836,7 @@ async fn ensure_umu_ready(
         info!("[dep] Checking winetricks availability…");
         if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
             overlay.add_toast(adw::Toast::new(
-                "winetricks is still downloading, please wait…",
+                &t!("winetricks is still downloading, please wait…"),
             ));
             return Err("winetricks not ready".to_string());
         }
@@ -850,7 +849,7 @@ async fn ensure_umu_ready(
             })
         {
             info!("[dep] winetricks not found, triggering download");
-            overlay.add_toast(adw::Toast::new("Downloading winetricks…"));
+            overlay.add_toast(adw::Toast::new(&t!("Downloading winetricks…")));
 
             if !WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
                 info!("[dep] Starting winetricks download…");
@@ -867,8 +866,7 @@ async fn ensure_umu_ready(
                 }
                 WINETRICKS_DOWNLOADING.store(false, Ordering::Relaxed);
                 result.map_err(|_| {
-                    "Failed to download winetricks. Check your internet connection."
-                        .to_string()
+                    t!("Failed to download winetricks. Check your internet connection.")
                 })?;
             }
 

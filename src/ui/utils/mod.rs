@@ -1,5 +1,6 @@
 use crate::launch::RunningGameSnapshot;
 use crate::models::{Game, GameGroup, LibraryItem};
+use crate::t;
 use gtk4::prelude::*;
 use std::cmp::Ordering;
 
@@ -59,11 +60,13 @@ pub fn format_playtime(playtime_seconds: u64) -> String {
     let minutes = (playtime_seconds % 3600) / 60;
 
     if hours > 0 {
-        format!("Playtime: {}h {}m", hours, minutes)
+        t!("Playtime: {}h {}m")
+            .replacen("{}", &hours.to_string(), 1)
+            .replacen("{}", &minutes.to_string(), 1)
     } else if minutes > 0 {
-        format!("Playtime: {}m", minutes)
+        t!("Playtime: {}m").replacen("{}", &minutes.to_string(), 1)
     } else {
-        format!("Playtime: {}s", playtime_seconds)
+        t!("Playtime: {}s").replacen("{}", &playtime_seconds.to_string(), 1)
     }
 }
 
@@ -83,7 +86,7 @@ pub fn format_duration_brief(total_seconds: u64) -> String {
 
 pub fn format_last_played(epoch_seconds: u64) -> String {
     if epoch_seconds == 0 {
-        return "Last played: never".to_string();
+        return t!("Last played: never");
     }
 
     let now = std::time::SystemTime::now()
@@ -93,16 +96,16 @@ pub fn format_last_played(epoch_seconds: u64) -> String {
     let delta = now.saturating_sub(epoch_seconds);
 
     let ago = if delta < 60 {
-        format!("{}s ago", delta)
+        t!("{}s ago").replacen("{}", &delta.to_string(), 1)
     } else if delta < 3600 {
-        format!("{}m ago", delta / 60)
+        t!("{}m ago").replacen("{}", &(delta / 60).to_string(), 1)
     } else if delta < 86_400 {
-        format!("{}h ago", delta / 3600)
+        t!("{}h ago").replacen("{}", &(delta / 3600).to_string(), 1)
     } else {
-        format!("{}d ago", delta / 86_400)
+        t!("{}d ago").replacen("{}", &(delta / 86_400).to_string(), 1)
     };
 
-    format!("Last played: {}", ago)
+    t!("Last played: {}").replacen("{}", &ago, 1)
 }
 
 pub fn game_is_running(running_games: &RunningGameMap, game_id: &str) -> bool {

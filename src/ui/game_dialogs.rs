@@ -1,3 +1,4 @@
+use crate::t;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -71,7 +72,7 @@ fn build_env_row(title: &str, initial_value: bool) -> adw::SwitchRow {
 
 fn build_icon_file_filter() -> gtk4::FileFilter {
     let filter = gtk4::FileFilter::new();
-    filter.set_name(Some("Supported images"));
+    filter.set_name(Some(&t!("Supported images")));
     for suffix in ["png", "jpg", "jpeg", "ico"] {
         filter.add_suffix(suffix);
     }
@@ -96,7 +97,7 @@ async fn apply_game_icon(
         if custom_icon_enabled {
             let icon_file = icon_file.trim();
             if icon_file.is_empty() {
-                return Err("Custom icon file is required".to_string());
+                return Err(t!("Custom icon file is required"));
             }
             save_custom_game_icon(&game_id, icon_file)?;
             Ok(None)
@@ -105,10 +106,9 @@ async fn apply_game_icon(
                 Ok(()) => Ok(None),
                 Err(_) => {
                     clear_game_icon(&game_id);
-                    Ok(Some(
+                    Ok(Some(t!(
                         "No icon could be extracted from the executable; using the default symbol."
-                            .to_string(),
-                    ))
+                    )))
                 }
             }
         }
@@ -127,7 +127,7 @@ async fn apply_group_icon(
         if custom_icon_enabled {
             let icon_file = icon_file.trim();
             if icon_file.is_empty() {
-                return Err("Custom icon file is required".to_string());
+                return Err(t!("Custom icon file is required"));
             }
             save_custom_group_icon(&group_id, icon_file)
         } else {
@@ -248,19 +248,19 @@ pub async fn show_add_library_item_dialog(
         .build();
 
     let title = match (kind, inside_group) {
-        (AddLibraryItemKind::Game, true) => "Add Game to Group",
-        (AddLibraryItemKind::Game, false) => "Add Game",
-        (AddLibraryItemKind::Group, _) => "Add Group",
+        (AddLibraryItemKind::Game, true) => t!("Add Game to Group"),
+        (AddLibraryItemKind::Game, false) => t!("Add Game"),
+        (AddLibraryItemKind::Group, _) => t!("Add Group"),
     };
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new(title, ""))
+        .title_widget(&adw::WindowTitle::new(&title, ""))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
-    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let cancel_btn = gtk4::Button::builder().label(t!("Cancel")).build();
     let add_btn = gtk4::Button::builder()
-        .label("Add")
+        .label(t!("Add"))
         .css_classes(["suggested-action"])
         .build();
     header.pack_start(&cancel_btn);
@@ -270,11 +270,11 @@ pub async fn show_add_library_item_dialog(
     toolbar_view.add_top_bar(&header);
     let page = adw::PreferencesPage::builder().build();
 
-    let title_row = adw::EntryRow::builder().title("Title").build();
-    let path_row = adw::EntryRow::builder().title("Executable").build();
+    let title_row = adw::EntryRow::builder().title(t!("Title")).build();
+    let path_row = adw::EntryRow::builder().title(t!("Executable")).build();
     let browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for executable")
+        .tooltip_text(t!("Browse for executable"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
@@ -283,20 +283,20 @@ pub async fn show_add_library_item_dialog(
     let grouped_game = kind == AddLibraryItemKind::Game && inside_group;
     let initial_prefix = String::new();
     let prefix_row = adw::EntryRow::builder()
-        .title("Prefix")
+        .title(t!("Prefix"))
         .text(&initial_prefix)
         .build();
     let prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for prefix folder")
+        .tooltip_text(t!("Browse for prefix folder"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let prefix_override_row = adw::ExpanderRow::builder()
-        .title("Custom Prefix")
-        .subtitle("Use a per-game prefix instead of the inherited group and global defaults.")
+        .title(t!("Custom Prefix"))
+        .subtitle(t!("Use a per-game prefix instead of the inherited group and global defaults."))
         .show_enable_switch(true)
         .enable_expansion(false)
         .expanded(false)
@@ -305,21 +305,21 @@ pub async fn show_add_library_item_dialog(
 
     let generated_leyen_id = generate_unique_leyen_id(&library);
     let leyen_id_row = adw::EntryRow::builder()
-        .title("Leyen ID")
+        .title(t!("Leyen ID"))
         .text(&generated_leyen_id)
         .build();
     leyen_id_row.set_editable(false);
 
-    let game_id_row = adw::EntryRow::builder().title("Game ID").build();
+    let game_id_row = adw::EntryRow::builder().title(t!("Game ID")).build();
     game_id_row.set_editable(false);
     let (available_protons, proton_model) = build_proton_choices(&settings);
     let proton_row = adw::ComboRow::builder()
-        .title("Proton")
+        .title(t!("Proton"))
         .model(&proton_model)
         .build();
     let proton_override_row = adw::ExpanderRow::builder()
-        .title("Custom Proton")
-        .subtitle("Use a per-game Proton version instead of the inherited default.")
+        .title(t!("Custom Proton"))
+        .subtitle(t!("Use a per-game Proton version instead of the inherited default."))
         .show_enable_switch(true)
         .enable_expansion(false)
         .expanded(false)
@@ -328,17 +328,17 @@ pub async fn show_add_library_item_dialog(
         proton_override_row.add_row(&proton_row);
     }
 
-    let game_icon_row = adw::EntryRow::builder().title("Icon File").build();
+    let game_icon_row = adw::EntryRow::builder().title(t!("Icon File")).build();
     let game_icon_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for custom icon")
+        .tooltip_text(t!("Browse for custom icon"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     game_icon_row.add_suffix(&game_icon_browse_btn);
     let game_icon_override_row = adw::ExpanderRow::builder()
-        .title("Custom Icon")
-        .subtitle("Use a custom icon instead of extracting one from the executable.")
+        .title(t!("Custom Icon"))
+        .subtitle(t!("Use a custom icon instead of extracting one from the executable."))
         .show_enable_switch(true)
         .enable_expansion(false)
         .expanded(false)
@@ -351,34 +351,34 @@ pub async fn show_add_library_item_dialog(
         .valign(gtk4::Align::Center)
         .build();
     let args_row = adw::ActionRow::builder()
-        .title("Launch Arguments")
+        .title(t!("Launch Arguments"))
         .activatable_widget(&args_entry)
         .build();
     args_row.add_suffix(&args_entry);
-    let mangohud_row = build_env_row("MangoHud", settings.global_mangohud);
+    let mangohud_row = build_env_row(&t!("MangoHud"), settings.global_mangohud);
     mangohud_row.set_visible(mangohud_available());
-    let gamemode_row = build_env_row("GameMode", settings.global_gamemode);
+    let gamemode_row = build_env_row(&t!("GameMode"), settings.global_gamemode);
     gamemode_row.set_visible(gamemode_available());
-    let wayland_row = build_env_row("Wayland", settings.global_wayland);
-    let wow64_row = build_env_row("WoW64", settings.global_wow64);
-    let ntsync_row = build_env_row("NTSync", settings.global_ntsync);
-    let hdr_row = build_env_row("HDR", settings.global_hdr);
-    let proton_log_row = build_env_row("Proton Log", settings.global_proton_log);
+    let wayland_row = build_env_row(&t!("Wayland"), settings.global_wayland);
+    let wow64_row = build_env_row(&t!("WoW64"), settings.global_wow64);
+    let ntsync_row = build_env_row(&t!("NTSync"), settings.global_ntsync);
+    let hdr_row = build_env_row(&t!("HDR"), settings.global_hdr);
+    let proton_log_row = build_env_row(&t!("Proton Log"), settings.global_proton_log);
 
-    let game_group = adw::PreferencesGroup::builder().title("Item").build();
+    let game_group = adw::PreferencesGroup::builder().title(t!("Item")).build();
     game_group.add(&title_row);
 
-    let context_group = adw::PreferencesGroup::builder().title("Grouping").build();
+    let context_group = adw::PreferencesGroup::builder().title(t!("Grouping")).build();
     if let Some(group) = current_group.as_ref() {
         let group_context_row = adw::ActionRow::builder()
-            .title("Adding Into Group")
+            .title(t!("Adding Into Group"))
             .subtitle(&group.title)
             .build();
         context_group.add(&group_context_row);
     }
 
     let game_details_group = adw::PreferencesGroup::builder()
-        .title("Game Settings")
+        .title(t!("Game Settings"))
         .build();
     game_details_group.add(&path_row);
     game_details_group.add(&leyen_id_row);
@@ -392,38 +392,38 @@ pub async fn show_add_library_item_dialog(
     }
     game_details_group.add(&args_row);
 
-    let group_prefix_row = adw::EntryRow::builder().title("Prefix").build();
+    let group_prefix_row = adw::EntryRow::builder().title(t!("Prefix")).build();
     let group_prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for prefix folder")
+        .tooltip_text(t!("Browse for prefix folder"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     group_prefix_row.add_suffix(&group_prefix_browse_btn);
 
     let group_proton_row = adw::ComboRow::builder()
-        .title("Proton")
+        .title(t!("Proton"))
         .model(&proton_model)
         .build();
-    let group_icon_row = adw::EntryRow::builder().title("Icon File").build();
+    let group_icon_row = adw::EntryRow::builder().title(t!("Icon File")).build();
     let group_icon_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for group icon")
+        .tooltip_text(t!("Browse for group icon"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     group_icon_row.add_suffix(&group_icon_browse_btn);
     let group_icon_override_row = adw::ExpanderRow::builder()
-        .title("Custom Icon")
-        .subtitle("Set an optional custom icon for this group.")
+        .title(t!("Custom Icon"))
+        .subtitle(t!("Set an optional custom icon for this group."))
         .show_enable_switch(true)
         .enable_expansion(false)
         .expanded(false)
         .build();
     group_icon_override_row.add_row(&group_icon_row);
     let group_prefix_override_row = adw::ExpanderRow::builder()
-        .title("Custom Prefix")
-        .subtitle("Use a group-specific prefix instead of the global default.")
+        .title(t!("Custom Prefix"))
+        .subtitle(t!("Use a group-specific prefix instead of the global default."))
         .show_enable_switch(true)
         .enable_expansion(false)
         .expanded(false)
@@ -431,15 +431,15 @@ pub async fn show_add_library_item_dialog(
     group_prefix_override_row.add_row(&group_prefix_row);
 
     let group_defaults_group = adw::PreferencesGroup::builder()
-        .title("Group Defaults")
-        .description("Leave prefix empty or Proton on Default to keep using global defaults.")
+        .title(t!("Group Defaults"))
+        .description(t!("Leave prefix empty or Proton on Default to keep using global defaults."))
         .build();
     group_defaults_group.add(&group_icon_override_row);
     group_defaults_group.add(&group_prefix_override_row);
     group_defaults_group.add(&group_proton_row);
 
     let env_group = adw::PreferencesGroup::builder()
-        .title("Environment")
+        .title(t!("Environment"))
         .build();
     env_group.add(&mangohud_row);
     env_group.add(&gamemode_row);
@@ -585,12 +585,12 @@ pub async fn show_add_library_item_dialog(
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
         let filter = gtk4::FileFilter::new();
-        filter.set_name(Some("Windows programs"));
+        filter.set_name(Some(&t!("Windows programs")));
         for suffix in ["exe", "msi", "bat", "cmd", "com"] {
             filter.add_suffix(suffix);
         }
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Executable")
+            .title(t!("Select Executable"))
             .default_filter(&filter)
             .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
@@ -607,7 +607,7 @@ pub async fn show_add_library_item_dialog(
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Prefix Folder")
+            .title(t!("Select Prefix Folder"))
             .build();
         file_dialog.select_folder(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -623,7 +623,7 @@ pub async fn show_add_library_item_dialog(
     group_prefix_browse_btn.connect_clicked(move |_| {
         let group_prefix_row_clone = group_prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Prefix Folder")
+            .title(t!("Select Prefix Folder"))
             .build();
         file_dialog.select_folder(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -638,7 +638,7 @@ pub async fn show_add_library_item_dialog(
     let parent_clone = parent.clone();
     game_icon_browse_btn.connect_clicked(move |_| {
         let game_icon_row_clone = game_icon_row_clone.clone();
-        let file_dialog = build_icon_file_dialog("Select Icon");
+        let file_dialog = build_icon_file_dialog(&t!("Select Icon"));
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
@@ -652,7 +652,7 @@ pub async fn show_add_library_item_dialog(
     let parent_clone = parent.clone();
     group_icon_browse_btn.connect_clicked(move |_| {
         let group_icon_row_clone = group_icon_row_clone.clone();
-        let file_dialog = build_icon_file_dialog("Select Group Icon");
+        let file_dialog = build_icon_file_dialog(&t!("Select Group Icon"));
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
@@ -715,7 +715,7 @@ pub async fn show_add_library_item_dialog(
         glib::spawn_future_local(async move {
             let title = title_row_val.text().to_string();
             if title.trim().is_empty() {
-                overlay_clone.add_toast(adw::Toast::new("Title is required"));
+                overlay_clone.add_toast(adw::Toast::new(&t!("Title is required")));
                 return;
             }
 
@@ -740,7 +740,7 @@ pub async fn show_add_library_item_dialog(
                         .await
                         .unwrap_or(true)
                     {
-                        overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                        overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
                     }
                 }
@@ -786,13 +786,13 @@ pub async fn show_add_library_item_dialog(
                         .await
                         .unwrap_or(true)
                     {
-                        overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                        overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
                     }
                 }
                 let exe = path_row_val.text().to_string();
                 if exe.trim().is_empty() {
-                    overlay_clone.add_toast(adw::Toast::new("Executable path is required"));
+                    overlay_clone.add_toast(adw::Toast::new(&t!("Executable path is required")));
                     return;
                 }
 
@@ -852,7 +852,7 @@ pub async fn show_add_library_item_dialog(
                         .await
                         .ok();
                     overlay_clone
-                        .add_toast(adw::Toast::new("Failed to add game to the selected group"));
+                        .add_toast(adw::Toast::new(&t!("Failed to add game to the selected group")));
                     return;
                 }
 
@@ -876,9 +876,9 @@ pub async fn show_add_library_item_dialog(
             }
             refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
             let success_message = if let Some(icon_notice) = icon_notice {
-                format!("Item added successfully. {}", icon_notice)
+                t!("Item added successfully. {}").replacen("{}", &icon_notice, 1)
             } else {
-                "Item added successfully".to_string()
+                t!("Item added successfully")
             };
             overlay_clone.add_toast(adw::Toast::new(&success_message));
             dialog_clone.destroy();
@@ -904,24 +904,24 @@ pub async fn show_edit_group_dialog(
         .build();
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Edit Group", ""))
+        .title_widget(&adw::WindowTitle::new(&t!("Edit Group"), ""))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
-    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let cancel_btn = gtk4::Button::builder().label(t!("Cancel")).build();
     let save_btn = gtk4::Button::builder()
-        .label("Save")
+        .label(t!("Save"))
         .css_classes(["suggested-action"])
         .build();
     header.pack_start(&cancel_btn);
     header.pack_end(&save_btn);
 
     let title_row = adw::EntryRow::builder()
-        .title("Title")
+        .title(t!("Title"))
         .text(&group.title)
         .build();
     let custom_prefix_active = !group.defaults.prefix_path.trim().is_empty();
-    let prefix_row = adw::EntryRow::builder().title("Prefix").build();
+    let prefix_row = adw::EntryRow::builder().title(t!("Prefix")).build();
     prefix_row.set_text(if custom_prefix_active {
         &group.defaults.prefix_path
     } else {
@@ -929,7 +929,7 @@ pub async fn show_edit_group_dialog(
     });
     let prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for prefix folder")
+        .tooltip_text(t!("Browse for prefix folder"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
@@ -937,7 +937,7 @@ pub async fn show_edit_group_dialog(
 
     let (available_protons, proton_model) = build_proton_choices(&settings);
     let proton_row = adw::ComboRow::builder()
-        .title("Proton")
+        .title(t!("Proton"))
         .model(&proton_model)
         .build();
     if let Some(pos) = available_protons
@@ -954,27 +954,27 @@ pub async fn show_edit_group_dialog(
         .unwrap_or_default();
     let custom_group_icon_active = !existing_group_icon.is_empty();
     let group_icon_row = adw::EntryRow::builder()
-        .title("Icon File")
+        .title(t!("Icon File"))
         .text(&existing_group_icon)
         .build();
     let group_icon_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for group icon")
+        .tooltip_text(t!("Browse for group icon"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     group_icon_row.add_suffix(&group_icon_browse_btn);
     let group_icon_override_row = adw::ExpanderRow::builder()
-        .title("Custom Icon")
-        .subtitle("Set an optional custom icon for this group.")
+        .title(t!("Custom Icon"))
+        .subtitle(t!("Set an optional custom icon for this group."))
         .show_enable_switch(true)
         .enable_expansion(custom_group_icon_active)
         .expanded(custom_group_icon_active)
         .build();
     group_icon_override_row.add_row(&group_icon_row);
     let prefix_override_row = adw::ExpanderRow::builder()
-        .title("Custom Prefix")
-        .subtitle("Use a group-specific prefix instead of the global default.")
+        .title(t!("Custom Prefix"))
+        .subtitle(t!("Use a group-specific prefix instead of the global default."))
         .show_enable_switch(true)
         .enable_expansion(custom_prefix_active)
         .expanded(custom_prefix_active)
@@ -982,17 +982,17 @@ pub async fn show_edit_group_dialog(
     prefix_override_row.add_row(&prefix_row);
 
     let page = adw::PreferencesPage::builder().build();
-    let group_settings = adw::PreferencesGroup::builder().title("Group").build();
+    let group_settings = adw::PreferencesGroup::builder().title(t!("Group")).build();
     group_settings.add(&title_row);
     let defaults_group = adw::PreferencesGroup::builder()
-        .title("Group Defaults")
-        .description("Leave prefix empty or Proton on Default to inherit global settings.")
+        .title(t!("Group Defaults"))
+        .description(t!("Leave prefix empty or Proton on Default to inherit global settings."))
         .build();
     defaults_group.add(&group_icon_override_row);
     defaults_group.add(&prefix_override_row);
     defaults_group.add(&proton_row);
 
-    let tools_group = adw::PreferencesGroup::builder().title("Tools").build();
+    let tools_group = adw::PreferencesGroup::builder().title(t!("Tools")).build();
     let tools_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(180)
@@ -1002,18 +1002,18 @@ pub async fn show_edit_group_dialog(
         .orientation(gtk4::Orientation::Vertical)
         .build();
     let winecfg_btn = gtk4::Button::builder()
-        .label("Wine Configuration")
+        .label(t!("Wine Configuration"))
         .build();
     winecfg_btn.set_margin_bottom(6);
     let regedit_btn = gtk4::Button::builder()
-        .label("Registry Editor")
+        .label(t!("Registry Editor"))
         .build();
     regedit_btn.set_margin_top(6);
     regedit_btn.set_margin_bottom(6);
-    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    let deps_btn = gtk4::Button::builder().label(t!("Manage Dependencies")).build();
     deps_btn.set_margin_top(6);
     deps_btn.set_margin_bottom(6);
-    let run_btn = gtk4::Button::builder().label("Run in prefix").build();
+    let run_btn = gtk4::Button::builder().label(t!("Run in prefix")).build();
     run_btn.set_margin_top(6);
     available_tools.append(&winecfg_btn);
     available_tools.append(&regedit_btn);
@@ -1022,12 +1022,12 @@ pub async fn show_edit_group_dialog(
     tools_stack.add_named(&available_tools, Some("available"));
 
     let mixed_warning_row =
-        build_tools_notice_row("Group tools unavailable", "", "dialog-warning-symbolic");
+        build_tools_notice_row(&t!("Group tools unavailable"), "", "dialog-warning-symbolic");
     tools_stack.add_named(&mixed_warning_row, Some("mixed"));
 
     let global_notice_row = build_tools_notice_row(
-        "Managed by global preferences",
-        "Use Global Settings to manage dependencies or run a program in the default prefix.",
+        &t!("Managed by global preferences"),
+        &t!("Use Global Settings to manage dependencies or run a program in the default prefix."),
         "dialog-information-symbolic",
     );
     tools_stack.add_named(&global_notice_row, Some("global"));
@@ -1054,7 +1054,7 @@ pub async fn show_edit_group_dialog(
         let prefix = prefix_row_for_winecfg.text().to_string();
         if prefix.trim().is_empty() {
             overlay_clone_winecfg
-                .add_toast(adw::Toast::new("Custom group prefix path is required"));
+                .add_toast(adw::Toast::new(&t!("Custom group prefix path is required")));
             return;
         }
         let proton_choice =
@@ -1075,7 +1075,7 @@ pub async fn show_edit_group_dialog(
         let prefix = prefix_row_for_regedit.text().to_string();
         if prefix.trim().is_empty() {
             overlay_clone_regedit
-                .add_toast(adw::Toast::new("Custom group prefix path is required"));
+                .add_toast(adw::Toast::new(&t!("Custom group prefix path is required")));
             return;
         }
         let proton_choice =
@@ -1095,7 +1095,7 @@ pub async fn show_edit_group_dialog(
     deps_btn.connect_clicked(move |_| {
         let deps_prefix = prefix_row_for_deps.text().to_string();
         if deps_prefix.trim().is_empty() {
-            overlay_clone_deps.add_toast(adw::Toast::new("Custom group prefix path is required"));
+            overlay_clone_deps.add_toast(adw::Toast::new(&t!("Custom group prefix path is required")));
             return;
         }
         let proton_choice = selected_combo_value(&proton_row_for_deps, &available_protons_for_deps);
@@ -1121,7 +1121,7 @@ pub async fn show_edit_group_dialog(
     run_btn.connect_clicked(move |_| {
         let prefix = prefix_row_for_run.text().to_string();
         if prefix.trim().is_empty() {
-            overlay_clone_run.add_toast(adw::Toast::new("Custom group prefix path is required"));
+            overlay_clone_run.add_toast(adw::Toast::new(&t!("Custom group prefix path is required")));
             return;
         }
         let proton_choice = selected_combo_value(&proton_row_for_run, &available_protons_for_run);
@@ -1144,10 +1144,10 @@ pub async fn show_edit_group_dialog(
     };
     let tools_stack_clone = tools_stack.clone();
     if !custom_prefix_games.is_empty() {
-        mixed_warning_row.set_subtitle(&format!(
-            "These games use their own prefixes: {}.",
-            custom_prefix_games.join(", ")
-        ));
+        mixed_warning_row.set_subtitle(
+            &t!("These games use their own prefixes: {}.")
+                .replacen("{}", &custom_prefix_games.join(", "), 1),
+        );
         tools_stack_clone.set_visible_child_name("mixed");
     } else if prefix_override_row.enables_expansion() {
         tools_stack_clone.set_visible_child_name("available");
@@ -1159,10 +1159,10 @@ pub async fn show_edit_group_dialog(
     let custom_prefix_games_clone = custom_prefix_games.clone();
     prefix_override_row.connect_enable_expansion_notify(move |row| {
         if !custom_prefix_games_clone.is_empty() {
-            mixed_warning_row_clone.set_subtitle(&format!(
-                "These games use their own prefixes: {}.",
-                custom_prefix_games_clone.join(", ")
-            ));
+            mixed_warning_row_clone.set_subtitle(
+                &t!("These games use their own prefixes: {}.")
+                    .replacen("{}", &custom_prefix_games_clone.join(", "), 1),
+            );
             tools_stack_clone.set_visible_child_name("mixed");
         } else if row.enables_expansion() {
             tools_stack_clone.set_visible_child_name("available");
@@ -1234,7 +1234,7 @@ pub async fn show_edit_group_dialog(
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Prefix Folder")
+            .title(t!("Select Prefix Folder"))
             .build();
         file_dialog.select_folder(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -1249,7 +1249,7 @@ pub async fn show_edit_group_dialog(
     let parent_clone = parent.clone();
     group_icon_browse_btn.connect_clicked(move |_| {
         let group_icon_row_clone = group_icon_row_clone.clone();
-        let file_dialog = build_icon_file_dialog("Select Group Icon");
+        let file_dialog = build_icon_file_dialog(&t!("Select Group Icon"));
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
@@ -1270,7 +1270,7 @@ pub async fn show_edit_group_dialog(
     save_btn.connect_clicked(move |_| {
         let title = title_row.text().to_string();
         if title.trim().is_empty() {
-            overlay_clone.add_toast(adw::Toast::new("Title is required"));
+            overlay_clone.add_toast(adw::Toast::new(&t!("Title is required")));
             return;
         }
 
@@ -1300,7 +1300,7 @@ pub async fn show_edit_group_dialog(
                     .await
                     .unwrap_or(true)
                 {
-                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
                 }
             }
@@ -1348,9 +1348,9 @@ pub async fn show_edit_group_dialog(
                 };
                 refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
                 let success_message = if let Some(desktop_notice) = desktop_notice {
-                    format!("Group updated successfully. {desktop_notice}")
+                    t!("Group updated successfully. {}").replacen("{}", &desktop_notice, 1)
                 } else {
-                    "Group updated successfully".to_string()
+                    t!("Group updated successfully")
                 };
                 overlay_clone.add_toast(adw::Toast::new(&success_message));
                 dialog_clone.destroy();
@@ -1390,38 +1390,38 @@ pub async fn show_edit_game_dialog(
         .build();
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Edit Game", ""))
+        .title_widget(&adw::WindowTitle::new(&t!("Edit Game"), ""))
         .show_end_title_buttons(false)
         .show_start_title_buttons(false)
         .build();
-    let cancel_btn = gtk4::Button::builder().label("Cancel").build();
+    let cancel_btn = gtk4::Button::builder().label(t!("Cancel")).build();
     let save_btn = gtk4::Button::builder()
-        .label("Save")
+        .label(t!("Save"))
         .css_classes(["suggested-action"])
         .build();
     header.pack_start(&cancel_btn);
     header.pack_end(&save_btn);
 
     let title_row = adw::EntryRow::builder()
-        .title("Title")
+        .title(t!("Title"))
         .text(&game.title)
         .build();
     let path_row = adw::EntryRow::builder()
-        .title("Executable")
+        .title(t!("Executable"))
         .text(&game.exe_path)
         .build();
     let browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for executable")
+        .tooltip_text(t!("Browse for executable"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     path_row.add_suffix(&browse_btn);
 
-    let prefix_row = adw::EntryRow::builder().title("Prefix").build();
+    let prefix_row = adw::EntryRow::builder().title(t!("Prefix")).build();
     let prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for prefix folder")
+        .tooltip_text(t!("Browse for prefix folder"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
@@ -1435,8 +1435,8 @@ pub async fn show_edit_game_dialog(
         &game.prefix_path
     });
     let prefix_override_row = adw::ExpanderRow::builder()
-        .title("Custom Prefix")
-        .subtitle("Use a per-game prefix instead of the inherited group and global defaults.")
+        .title(t!("Custom Prefix"))
+        .subtitle(t!("Use a per-game prefix instead of the inherited group and global defaults."))
         .show_enable_switch(true)
         .enable_expansion(custom_prefix_active)
         .expanded(custom_prefix_active)
@@ -1444,20 +1444,20 @@ pub async fn show_edit_game_dialog(
     prefix_override_row.add_row(&prefix_row);
 
     let leyen_id_row = adw::EntryRow::builder()
-        .title("Leyen ID")
+        .title(t!("Leyen ID"))
         .text(&game.leyen_id)
         .build();
     leyen_id_row.set_editable(false);
 
     let game_id_row = adw::EntryRow::builder()
-        .title("Game ID")
+        .title(t!("Game ID"))
         .text(normalize_game_id_from_executable(&game.exe_path))
         .build();
     game_id_row.set_editable(false);
 
     let (available_protons, proton_model) = build_proton_choices(&settings);
     let proton_row = adw::ComboRow::builder()
-        .title("Proton")
+        .title(t!("Proton"))
         .model(&proton_model)
         .build();
     let custom_proton_active =
@@ -1482,8 +1482,8 @@ pub async fn show_edit_game_dialog(
         proton_row.set_selected(0);
     }
     let proton_override_row = adw::ExpanderRow::builder()
-        .title("Custom Proton")
-        .subtitle("Use a per-game Proton version instead of the inherited default.")
+        .title(t!("Custom Proton"))
+        .subtitle(t!("Use a per-game Proton version instead of the inherited default."))
         .show_enable_switch(true)
         .enable_expansion(custom_proton_active)
         .expanded(custom_proton_active)
@@ -1500,19 +1500,19 @@ pub async fn show_edit_game_dialog(
         String::new()
     };
     let game_icon_row = adw::EntryRow::builder()
-        .title("Icon File")
+        .title(t!("Icon File"))
         .text(&existing_custom_game_icon)
         .build();
     let game_icon_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for custom icon")
+        .tooltip_text(t!("Browse for custom icon"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
     game_icon_row.add_suffix(&game_icon_browse_btn);
     let game_icon_override_row = adw::ExpanderRow::builder()
-        .title("Custom Icon")
-        .subtitle("Use a custom icon instead of extracting one from the executable.")
+        .title(t!("Custom Icon"))
+        .subtitle(t!("Use a custom icon instead of extracting one from the executable."))
         .show_enable_switch(true)
         .enable_expansion(game.custom_icon)
         .expanded(game.custom_icon)
@@ -1526,34 +1526,34 @@ pub async fn show_edit_game_dialog(
         .valign(gtk4::Align::Center)
         .build();
     let args_row = adw::ActionRow::builder()
-        .title("Launch Arguments")
+        .title(t!("Launch Arguments"))
         .activatable_widget(&args_entry)
         .build();
     args_row.add_suffix(&args_entry);
-    let mangohud_row = build_env_row("MangoHud", game.mangohud);
+    let mangohud_row = build_env_row(&t!("MangoHud"), game.mangohud);
     mangohud_row.set_visible(mangohud_available());
-    let gamemode_row = build_env_row("GameMode", game.gamemode);
+    let gamemode_row = build_env_row(&t!("GameMode"), game.gamemode);
     gamemode_row.set_visible(gamemode_available());
-    let wayland_row = build_env_row("Wayland", game.wayland);
-    let wow64_row = build_env_row("WoW64", game.wow64);
-    let ntsync_row = build_env_row("NTSync", game.ntsync);
-    let hdr_row = build_env_row("HDR", game.hdr);
-    let proton_log_row = build_env_row("Proton Log", game.proton_log);
+    let wayland_row = build_env_row(&t!("Wayland"), game.wayland);
+    let wow64_row = build_env_row(&t!("WoW64"), game.wow64);
+    let ntsync_row = build_env_row(&t!("NTSync"), game.ntsync);
+    let hdr_row = build_env_row(&t!("HDR"), game.hdr);
+    let proton_log_row = build_env_row(&t!("Proton Log"), game.proton_log);
 
     let page = adw::PreferencesPage::builder().build();
-    let game_group = adw::PreferencesGroup::builder().title("Game").build();
+    let game_group = adw::PreferencesGroup::builder().title(t!("Game")).build();
     game_group.add(&title_row);
     game_group.add(&path_row);
     if let Some(group) = current_parent_group.as_ref() {
-        let context_group = adw::PreferencesGroup::builder().title("Grouping").build();
+        let context_group = adw::PreferencesGroup::builder().title(t!("Grouping")).build();
         let group_row = adw::ActionRow::builder()
-            .title("Group")
+            .title(t!("Group"))
             .subtitle(&group.title)
             .build();
         context_group.add(&group_row);
         page.add(&context_group);
     }
-    let settings_group = adw::PreferencesGroup::builder().title("Settings").build();
+    let settings_group = adw::PreferencesGroup::builder().title(t!("Settings")).build();
     settings_group.add(&leyen_id_row);
     settings_group.add(&game_id_row);
     settings_group.add(&game_icon_override_row);
@@ -1565,7 +1565,7 @@ pub async fn show_edit_game_dialog(
     }
     settings_group.add(&args_row);
     let env_group = adw::PreferencesGroup::builder()
-        .title("Environment")
+        .title(t!("Environment"))
         .build();
     env_group.add(&mangohud_row);
     env_group.add(&gamemode_row);
@@ -1575,7 +1575,7 @@ pub async fn show_edit_game_dialog(
     env_group.add(&hdr_row);
     env_group.add(&proton_log_row);
 
-    let tools = adw::PreferencesGroup::builder().title("Tools").build();
+    let tools = adw::PreferencesGroup::builder().title(t!("Tools")).build();
     let tools_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)
         .transition_duration(180)
@@ -1590,9 +1590,9 @@ pub async fn show_edit_game_dialog(
         });
     let menu_btn = gtk4::Button::builder()
         .label(if exists {
-            "Remove from menu"
+            t!("Remove from menu")
         } else {
-            "Add to menu"
+            t!("Add to menu")
         })
         .build();
     menu_btn.set_margin_top(6);
@@ -1600,18 +1600,18 @@ pub async fn show_edit_game_dialog(
         .orientation(gtk4::Orientation::Vertical)
         .build();
     let winecfg_btn = gtk4::Button::builder()
-        .label("Wine Configuration")
+        .label(t!("Wine Configuration"))
         .build();
     winecfg_btn.set_margin_bottom(6);
     let regedit_btn = gtk4::Button::builder()
-        .label("Registry Editor")
+        .label(t!("Registry Editor"))
         .build();
     regedit_btn.set_margin_top(6);
     regedit_btn.set_margin_bottom(6);
-    let deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    let deps_btn = gtk4::Button::builder().label(t!("Manage Dependencies")).build();
     deps_btn.set_margin_top(6);
     deps_btn.set_margin_bottom(6);
-    let run_btn = gtk4::Button::builder().label("Run in prefix").build();
+    let run_btn = gtk4::Button::builder().label(t!("Run in prefix")).build();
     run_btn.set_margin_top(6);
     available_tools.append(&winecfg_btn);
     available_tools.append(&regedit_btn);
@@ -1620,12 +1620,12 @@ pub async fn show_edit_game_dialog(
     tools_stack.add_named(&available_tools, Some("available"));
 
     let group_notice_row =
-        build_tools_notice_row("Managed by group prefix", "", "dialog-information-symbolic");
+        build_tools_notice_row(&t!("Managed by group prefix"), "", "dialog-information-symbolic");
     tools_stack.add_named(&group_notice_row, Some("group"));
 
     let global_notice_row = build_tools_notice_row(
-        "Managed by global preferences",
-        "Use Global Settings to manage dependencies or run a program in the default prefix.",
+        &t!("Managed by global preferences"),
+        &t!("Use Global Settings to manage dependencies or run a program in the default prefix."),
         "dialog-information-symbolic",
     );
     tools_stack.add_named(&global_notice_row, Some("global"));
@@ -1658,7 +1658,7 @@ pub async fn show_edit_game_dialog(
         let prefix = prefix_row_for_winecfg.text().to_string();
         if prefix.trim().is_empty() {
             overlay_clone_winecfg
-                .add_toast(adw::Toast::new("Custom game prefix path is required"));
+                .add_toast(adw::Toast::new(&t!("Custom game prefix path is required")));
             return;
         }
         let proton_choice = if grouped_game && !proton_override_row_for_winecfg.enables_expansion()
@@ -1693,7 +1693,7 @@ pub async fn show_edit_game_dialog(
         let prefix = prefix_row_for_regedit.text().to_string();
         if prefix.trim().is_empty() {
             overlay_clone_regedit
-                .add_toast(adw::Toast::new("Custom game prefix path is required"));
+                .add_toast(adw::Toast::new(&t!("Custom game prefix path is required")));
             return;
         }
         let proton_choice = if grouped_game && !proton_override_row_for_regedit.enables_expansion()
@@ -1727,7 +1727,7 @@ pub async fn show_edit_game_dialog(
     deps_btn.connect_clicked(move |_| {
         let deps_prefix = prefix_row_for_deps.text().to_string();
         if deps_prefix.trim().is_empty() {
-            overlay_clone_deps.add_toast(adw::Toast::new("Custom game prefix path is required"));
+            overlay_clone_deps.add_toast(adw::Toast::new(&t!("Custom game prefix path is required")));
             return;
         }
         let proton_choice = if grouped_game && !proton_override_row_for_deps.enables_expansion() {
@@ -1764,7 +1764,7 @@ pub async fn show_edit_game_dialog(
     run_btn.connect_clicked(move |_| {
         let prefix = prefix_row_for_run.text().to_string();
         if prefix.trim().is_empty() {
-            overlay_clone_run.add_toast(adw::Toast::new("Custom game prefix path is required"));
+            overlay_clone_run.add_toast(adw::Toast::new(&t!("Custom game prefix path is required")));
             return;
         }
         let proton_choice = if grouped_game && !proton_override_row_for_run.enables_expansion() {
@@ -1795,10 +1795,10 @@ pub async fn show_edit_game_dialog(
             tools_stack.set_visible_child_name("available");
         }
         GameToolState::ManagedByGroup { group_title } => {
-            group_notice_row.set_subtitle(&format!(
-                "Use {} settings to manage dependencies or run a program in that prefix.",
-                group_title
-            ));
+            group_notice_row.set_subtitle(
+                &t!("Use {} settings to manage dependencies or run a program in that prefix.")
+                    .replacen("{}", &group_title, 1),
+            );
             tools_stack.set_visible_child_name("group");
         }
         GameToolState::ManagedByGlobal => {
@@ -1814,10 +1814,10 @@ pub async fn show_edit_game_dialog(
         } else if let Some(group) = current_parent_group_for_tools.as_ref()
             && !group.defaults.prefix_path.trim().is_empty()
         {
-            group_notice_row_clone.set_subtitle(&format!(
-                "Use {} settings to manage dependencies or run a program in that prefix.",
-                group.title
-            ));
+            group_notice_row_clone.set_subtitle(
+                &t!("Use {} settings to manage dependencies or run a program in that prefix.")
+                    .replacen("{}", &group.title, 1),
+            );
             tools_stack_clone.set_visible_child_name("group");
         } else {
             tools_stack_clone.set_visible_child_name("global");
@@ -1842,22 +1842,18 @@ pub async fn show_edit_game_dialog(
             if exists {
                 match remove_game_desktop_entry(game.leyen_id.clone()).await {
                     Ok(_) => {
-                        button.set_label("Add to menu");
-                        overlay.add_toast(adw::Toast::new("Removed from menu"));
+                        button.set_label(&t!("Add to menu"));
+                        overlay.add_toast(adw::Toast::new(&t!("Removed from menu")));
                     }
-                    Err(err) => overlay.add_toast(adw::Toast::new(&format!(
-                        "Failed to remove menu entry: {err}"
-                    ))),
+                    Err(err) => overlay.add_toast(adw::Toast::new(&t!("Failed to remove menu entry: {}").replacen("{}", &err.to_string(), 1))),
                 }
             } else {
                 match create_game_desktop_entry(game, group).await {
                     Ok(_) => {
-                        button.set_label("Remove from menu");
-                        overlay.add_toast(adw::Toast::new("Added to menu"));
+                        button.set_label(&t!("Remove from menu"));
+                        overlay.add_toast(adw::Toast::new(&t!("Added to menu")));
                     }
-                    Err(err) => overlay.add_toast(adw::Toast::new(&format!(
-                        "Failed to create menu entry: {err}"
-                    ))),
+                    Err(err) => overlay.add_toast(adw::Toast::new(&t!("Failed to create menu entry: {}").replacen("{}", &err.to_string(), 1))),
                 }
             }
         });
@@ -1942,12 +1938,12 @@ pub async fn show_edit_game_dialog(
     browse_btn.connect_clicked(move |_| {
         let path_row_clone = path_row_clone.clone();
         let filter = gtk4::FileFilter::new();
-        filter.set_name(Some("Windows programs"));
+        filter.set_name(Some(&t!("Windows programs")));
         for suffix in ["exe", "msi", "bat", "cmd", "com"] {
             filter.add_suffix(suffix);
         }
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Executable")
+            .title(t!("Select Executable"))
             .default_filter(&filter)
             .build();
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
@@ -1964,7 +1960,7 @@ pub async fn show_edit_game_dialog(
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Prefix Folder")
+            .title(t!("Select Prefix Folder"))
             .build();
         file_dialog.select_folder(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -1979,7 +1975,7 @@ pub async fn show_edit_game_dialog(
     let parent_clone = parent.clone();
     game_icon_browse_btn.connect_clicked(move |_| {
         let game_icon_row_clone = game_icon_row_clone.clone();
-        let file_dialog = build_icon_file_dialog("Select Icon");
+        let file_dialog = build_icon_file_dialog(&t!("Select Icon"));
         file_dialog.open(Some(&parent_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
@@ -2014,7 +2010,7 @@ pub async fn show_edit_game_dialog(
         let title = title_row.text().to_string();
         let exe = path_row.text().to_string();
         if title.trim().is_empty() || exe.trim().is_empty() {
-            overlay_clone.add_toast(adw::Toast::new("Title and executable path are required"));
+            overlay_clone.add_toast(adw::Toast::new(&t!("Title and executable path are required")));
             return;
         }
 
@@ -2062,7 +2058,7 @@ pub async fn show_edit_game_dialog(
                     .await
                     .unwrap_or(true)
                 {
-                    overlay_clone.add_toast(adw::Toast::new("Selected Proton path does not exist"));
+                    overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
                 }
             }
@@ -2136,14 +2132,14 @@ pub async fn show_edit_game_dialog(
                     notices.push(desktop_notice);
                 }
                 let success_message = if notices.is_empty() {
-                    "Game updated successfully".to_string()
+                    t!("Game updated successfully")
                 } else {
-                    format!("Game updated successfully. {}", notices.join(" "))
+                    t!("Game updated successfully. {}").replacen("{}", &notices.join(" "), 1)
                 };
                 overlay_clone.add_toast(adw::Toast::new(&success_message));
                 dialog_clone.destroy();
             } else {
-                overlay_clone.add_toast(adw::Toast::new("Error: Game not found"));
+                overlay_clone.add_toast(adw::Toast::new(&t!("Error: Game not found")));
             }
         });
     });
@@ -2167,9 +2163,9 @@ pub async fn show_delete_confirmation(
     let label = items
         .iter()
         .find_map(|item| match item {
-            LibraryItem::Game(game) if game.id == item_id => Some(format!("game '{}'", game.title)),
+            LibraryItem::Game(game) if game.id == item_id => Some(t!("game '{}'").replacen("{}", &game.title, 1)),
             LibraryItem::Group(group) if group.id == item_id => {
-                Some(format!("group '{}'", group.title))
+                Some(t!("group '{}'").replacen("{}", &group.title, 1))
             }
             _ => None,
         })
@@ -2179,19 +2175,19 @@ pub async fn show_delete_confirmation(
                     .games
                     .iter()
                     .find(|game| game.id == item_id)
-                    .map(|game| format!("game '{}'", game.title)),
+                    .map(|game| t!("game '{}'").replacen("{}", &game.title, 1)),
                 LibraryItem::Game(_) => None,
             })
         })
-        .unwrap_or_else(|| "item".to_string());
+        .unwrap_or_else(|| t!("item"));
 
     let dialog = gtk4::AlertDialog::builder()
-        .message("Delete Item?")
-        .detail(format!(
-            "Are you sure you want to delete {}?\n\nThis action cannot be undone.",
-            label
-        ))
-        .buttons(vec!["Cancel".to_string(), "Delete".to_string()])
+        .message(t!("Delete Item?"))
+        .detail(
+            t!("Are you sure you want to delete {}?\n\nThis action cannot be undone.")
+                .replacen("{}", &label, 1),
+        )
+        .buttons(vec![t!("Cancel"), t!("Delete")])
         .cancel_button(0)
         .default_button(0)
         .build();
@@ -2215,6 +2211,7 @@ pub async fn show_delete_confirmation(
                     return;
                 }
             };
+
                 let mut delete_notice = None;
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();
@@ -2222,7 +2219,7 @@ pub async fn show_delete_confirmation(
                         .await
                         .ok();
                     if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
-                        delete_notice = Some(format!("Failed to remove menu entry: {err}"));
+                        delete_notice = Some(t!("Failed to remove menu entry: {}").replacen("{}", &err.to_string(), 1));
                     }
                     Some(game.title)
                 } else if let Some(group) = remove_group(&mut items, &item_id) {
@@ -2236,7 +2233,7 @@ pub async fn show_delete_confirmation(
                             .await
                             .ok();
                         if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
-                            delete_notice = Some(format!("Failed to remove a menu entry: {err}"));
+                            delete_notice = Some(t!("Failed to remove a menu entry: {}").replacen("{}", &err.to_string(), 1));
                         }
                     }
                     Some(group.title)
@@ -2248,9 +2245,9 @@ pub async fn show_delete_confirmation(
                     crate::config::save_library(items).await;
                     refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
                     let message = if let Some(delete_notice) = delete_notice {
-                        format!("'{}' deleted successfully. {}", title, delete_notice)
+                        t!("'{}' deleted successfully. {}").replacen("{}", &title, 1).replacen("{}", &delete_notice, 1)
                     } else {
-                        format!("'{}' deleted successfully", title)
+                        t!("'{}' deleted successfully").replacen("{}", &title, 1)
                     };
                     overlay_clone.add_toast(adw::Toast::new(&message));
                 }

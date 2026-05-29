@@ -1,3 +1,4 @@
+use crate::t;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -76,13 +77,10 @@ pub fn build_game_card(
     );
     info_column.append(&{
         let status_label = gtk4::Label::builder()
-            .label(if game_running {
-                format!(
-                    "Running for {}",
-                    format_duration_brief(
-                        running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
-                    )
-                )
+            .label(&if game_running {
+                t!("Running for {}").replacen("{}", &format_duration_brief(
+                    running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
+                ), 1)
             } else {
                 format_last_played(game.last_played_epoch_seconds)
             })
@@ -124,11 +122,11 @@ pub fn build_game_card(
 
     let edit_btn = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
-        .tooltip_text("Edit Game")
+        .tooltip_text(t!("Edit Game"))
         .build();
     let delete_btn = gtk4::Button::builder()
         .icon_name("user-trash-symbolic")
-        .tooltip_text("Delete Game")
+        .tooltip_text(t!("Delete Game"))
         .css_classes(["destructive-action"])
         .build();
     let play_btn = gtk4::Button::builder()
@@ -142,10 +140,10 @@ pub fn build_game_card(
         } else {
             ["suggested-action", "circular"]
         })
-        .tooltip_text(if game_running {
-            "Stop Game"
+        .tooltip_text(&if game_running {
+            t!("Stop Game")
         } else {
-            "Launch Game"
+            t!("Launch Game")
         })
         .build();
 

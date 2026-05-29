@@ -38,6 +38,7 @@
             umu-launcher
             zstd
             winetricks
+            gettext
           ];
 
         in
@@ -47,7 +48,7 @@
             rustc = rustToolchain;
           }).buildRustPackage {
             pname = "leyen";
-            version = "0.2.8";
+            version = "0.3.0";
             src = ./.;
 
             cargoLock = {
@@ -68,6 +69,10 @@
               install -Dm644 packaging/usr/share/bash-completion/completions/leyen.bash -t $out/share/bash-completion/completions
               install -Dm644 packaging/usr/share/fish/vendor_completions.d/leyen.fish -t $out/share/fish/vendor_completions.d
               install -Dm644 packaging/usr/share/zsh/site-functions/_leyen -t $out/share/zsh/site-functions
+              for mo in packaging/usr/share/locale/*/LC_MESSAGES/leyen.mo; do
+                lang=$(basename "$(dirname "$(dirname "$mo")")")
+                install -Dm644 "$mo" "$out/share/locale/$lang/LC_MESSAGES/leyen.mo"
+              done
             '';
 
             # Use gappsWrapperArgs for a more "pure" Nix integration

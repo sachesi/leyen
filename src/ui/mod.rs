@@ -7,6 +7,7 @@ pub mod running_games;
 pub mod settings;
 pub mod utils;
 
+use crate::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -50,20 +51,20 @@ pub fn build_ui(app: &adw::Application) {
     let title = adw::WindowTitle::new("Leyen", "");
     let back_btn = gtk4::Button::builder()
         .icon_name("go-previous-symbolic")
-        .tooltip_text("Back to Library")
+        .tooltip_text(t!("Back to Library"))
         .visible(false)
         .build();
     let add_menu_model = gio::Menu::new();
-    add_menu_model.append(Some("Game"), Some("win.add-game"));
-    add_menu_model.append(Some("Group"), Some("win.add-group"));
+    add_menu_model.append(Some(&t!("Game")), Some("win.add-game"));
+    add_menu_model.append(Some(&t!("Group")), Some("win.add-group"));
     let add_menu_btn = gtk4::MenuButton::builder()
         .icon_name("list-add-symbolic")
         .menu_model(&add_menu_model)
-        .tooltip_text("Add")
+        .tooltip_text(t!("Add"))
         .build();
     let add_game_btn = gtk4::Button::builder()
         .icon_name("list-add-symbolic")
-        .tooltip_text("Add Game")
+        .tooltip_text(t!("Add Game"))
         .build();
     let add_button_stack = gtk4::Stack::new();
     add_button_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
@@ -75,26 +76,26 @@ pub fn build_ui(app: &adw::Application) {
     let header = adw::HeaderBar::builder().title_widget(&title).build();
     header.pack_start(&back_btn);
     let menu_model = gio::Menu::new();
-    menu_model.append(Some("Running Games"), Some("win.show-running-games"));
-    menu_model.append(Some("Logs"), Some("win.show-logs"));
+    menu_model.append(Some(&t!("Running Games")), Some("win.show-running-games"));
+    menu_model.append(Some(&t!("Logs")), Some("win.show-logs"));
     let menu_section = gio::Menu::new();
-    menu_section.append(Some("Preferences"), Some("win.show-preferences"));
-    menu_section.append(Some("Keyboard Shortcuts"), Some("win.show-shortcuts"));
-    menu_section.append(Some("About Leyen"), Some("win.show-about"));
+    menu_section.append(Some(&t!("Preferences")), Some("win.show-preferences"));
+    menu_section.append(Some(&t!("Keyboard Shortcuts")), Some("win.show-shortcuts"));
+    menu_section.append(Some(&t!("About Leyen")), Some("win.show-about"));
     menu_model.append_section(None, &menu_section);
     let menu_btn = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu_model)
-        .tooltip_text("Main Menu")
+        .tooltip_text(t!("Main Menu"))
         .build();
     let search_btn = gtk4::ToggleButton::builder()
         .icon_name("edit-find-symbolic")
-        .tooltip_text("Search")
+        .tooltip_text(t!("Search"))
         .build();
 
     let search_entry = gtk4::SearchEntry::builder()
         .hexpand(true)
-        .placeholder_text("Search games...")
+        .placeholder_text(t!("Search games..."))
         .build();
 
     let search_bar = gtk4::SearchBar::builder().child(&search_entry).build();
@@ -153,14 +154,14 @@ pub fn build_ui(app: &adw::Application) {
 
     let root_empty_state = adw::StatusPage::builder()
         .icon_name("applications-games-symbolic")
-        .title("No games added yet")
-        .description("Add a game or create a group to organize your library.")
+        .title(t!("No games added yet"))
+        .description(t!("Add a game or create a group to organize your library."))
         .build();
 
     let group_empty_state = adw::StatusPage::builder()
         .icon_name("folder-symbolic")
-        .title("This group is empty")
-        .description("Add a game while inside the group to populate it.")
+        .title(t!("This group is empty"))
+        .description(t!("Add a game while inside the group to populate it."))
         .build();
 
     let root_content_stack = gtk4::Stack::builder()
@@ -223,7 +224,7 @@ pub fn build_ui(app: &adw::Application) {
     toast_overlay.set_child(Some(&stack));
 
     let download_banner = adw::Banner::builder()
-        .title("Downloading umu-launcher… Please wait before starting games.")
+        .title(t!("Downloading umu-launcher… Please wait before starting games."))
         .revealed(
             UMU_DOWNLOADING.load(Ordering::Relaxed)
                 || WINETRICKS_DOWNLOADING.load(Ordering::Relaxed),
@@ -241,13 +242,13 @@ pub fn build_ui(app: &adw::Application) {
         if any_down {
             banner_for_update.set_revealed(true);
             let title = if umu_down && wt_down {
-                "Downloading umu-launcher & winetricks… Please wait before starting games."
+                t!("Downloading umu-launcher & winetricks… Please wait before starting games.")
             } else if umu_down {
-                "Downloading umu-launcher… Please wait before starting games."
+                t!("Downloading umu-launcher… Please wait before starting games.")
             } else {
-                "Downloading winetricks…"
+                t!("Downloading winetricks…")
             };
-            banner_for_update.set_title(title);
+            banner_for_update.set_title(&title);
             glib::ControlFlow::Continue
         } else {
             banner_for_update.set_revealed(false);
@@ -435,20 +436,20 @@ pub fn build_ui(app: &adw::Application) {
     shortcuts_action.connect_activate(move |_, _| {
         let win = gtk4::ShortcutsWindow::builder().build();
         let quit_shortcut = gtk4::ShortcutsShortcut::builder()
-            .title("Quit Leyen")
+            .title(t!("Quit Leyen"))
             .accelerator("<Ctrl>Q")
             .build();
         let search_shortcut = gtk4::ShortcutsShortcut::builder()
-            .title("Search Games")
+            .title(t!("Search Games"))
             .accelerator("<Ctrl>F")
             .build();
         let general_group = gtk4::ShortcutsGroup::builder()
-            .title("General")
+            .title(t!("General"))
             .build();
         general_group.append(&quit_shortcut);
         general_group.append(&search_shortcut);
         let general_section = gtk4::ShortcutsSection::builder()
-            .title("General")
+            .title(t!("General"))
             .max_height(2)
             .build();
         general_section.append(&general_group);

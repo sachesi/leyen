@@ -2,6 +2,7 @@ pub mod group_view;
 pub mod root_view;
 pub mod state;
 
+use crate::t;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -47,11 +48,11 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
     if game_is_running(&running_game_map().await, &game.id) {
         match stop_game(&game.id).await {
             Ok(true) => {
-                overlay.add_toast(adw::Toast::new(&format!("Stopping {}...", game.title)));
+                overlay.add_toast(adw::Toast::new(&t!("Stopping {}...").replacen("{}", &game.title, 1)));
             }
-            Ok(false) => overlay.add_toast(adw::Toast::new("Game is no longer running")),
+            Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
             Err(err) => {
-                overlay.add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err)));
+                overlay.add_toast(adw::Toast::new(&t!("Failed to stop game: {}").replacen("{}", &err.to_string(), 1)));
             }
         }
     } else {
@@ -70,14 +71,14 @@ pub async fn update_running_duration_labels(ui: &LibraryUi) {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
+                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
     } else {
         for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
+                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
 
@@ -91,7 +92,7 @@ pub async fn update_running_duration_labels(ui: &LibraryUi) {
                     .get(&group.id)
             {
                 let elapsed = now.saturating_sub(started_at);
-                label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
+                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
     }
@@ -186,7 +187,7 @@ async fn run_library_refresh(
         if is_searching {
             ui_clone.stack.set_visible_child_name("root");
             ui_clone.back_btn.set_visible(false);
-            ui_clone.title.set_title("Leyen");
+            ui_clone.title.set_title(&t!("Leyen"));
             ui_clone.title.set_subtitle("");
         } else {
             let group_id = ui_clone.current_group_id.borrow().clone();
@@ -204,7 +205,7 @@ async fn run_library_refresh(
             if ui_clone.current_group_id.borrow().is_none() {
                 ui_clone.stack.set_visible_child_name("root");
                 ui_clone.back_btn.set_visible(false);
-                ui_clone.title.set_title("Leyen");
+                ui_clone.title.set_title(&t!("Leyen"));
                 ui_clone.title.set_subtitle("");
             }
         }

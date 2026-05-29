@@ -1,3 +1,4 @@
+use crate::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -25,23 +26,23 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         .build();
 
     let header = adw::HeaderBar::builder()
-        .title_widget(&adw::WindowTitle::new("Global Settings", ""))
+        .title_widget(&adw::WindowTitle::new(&t!("Global Settings"), ""))
         .build();
 
     let page = adw::PreferencesPage::builder().build();
 
     let paths_group = adw::PreferencesGroup::builder()
-        .title("Default Paths")
+        .title(t!("Default Paths"))
         .build();
 
     let prefix_row = adw::EntryRow::builder()
-        .title("Default Prefix Path")
+        .title(t!("Default Prefix Path"))
         .text(&settings.default_prefix_path)
         .build();
 
     let prefix_browse_btn = gtk4::Button::builder()
         .icon_name("folder-open-symbolic")
-        .tooltip_text("Browse for prefix folder")
+        .tooltip_text(t!("Browse for prefix folder"))
         .css_classes(["flat"])
         .valign(gtk4::Align::Center)
         .build();
@@ -52,7 +53,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
-            .title("Select Prefix Folder")
+            .title(t!("Select Prefix Folder"))
             .build();
         file_dialog.select_folder(Some(&dialog_clone), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
@@ -84,7 +85,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     }
 
     let proton_row = adw::ComboRow::builder()
-        .title("Default Proton")
+        .title(t!("Default Proton"))
         .model(&proton_list)
         .build();
 
@@ -100,24 +101,24 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     paths_group.add(&proton_row);
 
     let tools_group = adw::PreferencesGroup::builder()
-        .title("Tools")
-        .description("Manage the default prefix inherited by games and groups.")
+        .title(t!("Tools"))
+        .description(t!("Manage the default prefix inherited by games and groups."))
         .build();
 
     let winecfg_btn = gtk4::Button::builder()
-        .label("Wine Configuration")
+        .label(t!("Wine Configuration"))
         .build();
     winecfg_btn.set_margin_bottom(6);
     let regedit_btn = gtk4::Button::builder()
-        .label("Registry Editor")
+        .label(t!("Registry Editor"))
         .build();
     regedit_btn.set_margin_top(6);
     regedit_btn.set_margin_bottom(6);
-    let manage_deps_btn = gtk4::Button::builder().label("Manage Dependencies").build();
+    let manage_deps_btn = gtk4::Button::builder().label(t!("Manage Dependencies")).build();
     manage_deps_btn.set_margin_top(6);
     manage_deps_btn.set_margin_bottom(6);
     let run_prefix_btn = gtk4::Button::builder()
-        .label("Run in default prefix")
+        .label(t!("Run in default prefix"))
         .build();
     run_prefix_btn.set_margin_top(6);
 
@@ -210,43 +211,43 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     tools_group.add(&run_prefix_btn);
 
     let environment_group = adw::PreferencesGroup::builder()
-        .title("Global Environment")
+        .title(t!("Global Environment"))
         .build();
 
     let mangohud_row = adw::SwitchRow::builder()
-        .title("MangoHud")
+        .title(t!("MangoHud"))
         .active(settings.global_mangohud)
         .visible(mangohud_available())
         .build();
 
     let gamemode_row = adw::SwitchRow::builder()
-        .title("GameMode")
+        .title(t!("GameMode"))
         .active(settings.global_gamemode)
         .visible(gamemode_available())
         .build();
 
     let wayland_row = adw::SwitchRow::builder()
-        .title("Wayland")
+        .title(t!("Wayland"))
         .active(settings.global_wayland)
         .build();
 
     let wow64_row = adw::SwitchRow::builder()
-        .title("WoW64")
+        .title(t!("WoW64"))
         .active(settings.global_wow64)
         .build();
 
     let ntsync_row = adw::SwitchRow::builder()
-        .title("NTSync")
+        .title(t!("NTSync"))
         .active(settings.global_ntsync)
         .build();
 
     let hdr_row = adw::SwitchRow::builder()
-        .title("HDR")
+        .title(t!("HDR"))
         .active(settings.global_hdr)
         .build();
 
     let proton_log_row = adw::SwitchRow::builder()
-        .title("Proton Log")
+        .title(t!("Proton Log"))
         .active(settings.global_proton_log)
         .build();
 
@@ -260,25 +261,25 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     // ── Logging ────────────────────────────────────────────────────────────
     let logging_group = adw::PreferencesGroup::builder()
-        .title("Logging")
-        .description("Select which messages are printed to the terminal.")
+        .title(t!("Logging"))
+        .description(t!("Select which messages are printed to the terminal."))
         .build();
 
     let log_errors_row = adw::SwitchRow::builder()
-        .title("Errors")
-        .subtitle("Show error messages from leyen and launched processes")
+        .title(t!("Errors"))
+        .subtitle(t!("Show error messages from leyen and launched processes"))
         .active(settings.log_errors)
         .build();
 
     let log_warnings_row = adw::SwitchRow::builder()
-        .title("Warnings")
-        .subtitle("Show warning messages (e.g. game not found)")
+        .title(t!("Warnings"))
+        .subtitle(t!("Show warning messages (e.g. game not found)"))
         .active(settings.log_warnings)
         .build();
 
     let log_operations_row = adw::SwitchRow::builder()
-        .title("Operations")
-        .subtitle("Show info about background operations")
+        .title(t!("Operations"))
+        .subtitle(t!("Show info about background operations"))
         .active(settings.log_operations)
         .build();
 
@@ -288,23 +289,23 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     // ── Maintenance ─────────────────────────────────────────────────────────
     let maintenance_group = adw::PreferencesGroup::builder()
-        .title("Maintenance")
+        .title(t!("Maintenance"))
         .build();
 
     let runtime_repair_row = adw::ExpanderRow::builder()
-        .title("Repair Runtime")
-        .subtitle("Reset internal umu-launcher components if dependency installation fails.")
+        .title(t!("Repair Runtime"))
+        .subtitle(t!("Reset internal umu-launcher components if dependency installation fails."))
         .build();
 
     let reset_row = adw::ActionRow::builder()
-        .title("Reset umu Runtime")
+        .title(t!("Reset umu Runtime"))
         .subtitle(
-            "Deletes steamrt3 directory. It will be re-downloaded on next dependency install.",
+            t!("Deletes steamrt3 directory. It will be re-downloaded on next dependency install."),
         )
         .build();
 
     let reset_btn = gtk4::Button::builder()
-        .label("Reset")
+        .label(t!("Reset"))
         .valign(gtk4::Align::Center)
         .css_classes(["destructive-action"])
         .build();
@@ -319,19 +320,19 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
             let snapshots = crate::launch::running_games_snapshot().await;
             if !snapshots.is_empty() {
                 overlay_for_reset.add_toast(adw::Toast::new(
-                    "Cannot reset runtime while games are running. Close all games first.",
+                    &t!("Cannot reset runtime while games are running. Close all games first."),
                 ));
                 return;
             }
 
             let confirm = gtk4::AlertDialog::builder()
-                .message("Reset umu Runtime?")
+                .message(t!("Reset umu Runtime?"))
                 .detail(
-                    "This deletes the Steam Linux Runtime (steamrt3) directory. \
+                    t!("This deletes the Steam Linux Runtime (steamrt3) directory. \
                      umu-launcher will re-download a clean copy the next time a dependency is installed.\n\n\
-                     Use this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
+                     Use this to fix \"pressure-vessel-wrap\" errors during dependency installations."),
                 )
-                .buttons(vec!["Cancel".to_string(), "Reset".to_string()])
+                .buttons(vec![t!("Cancel"), t!("Reset")])
                 .cancel_button(0)
                 .default_button(0)
                 .build();
@@ -355,19 +356,16 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                             match result {
                                 Ok(_) => {
                                     overlay_clone.add_toast(adw::Toast::new(
-                                        "umu runtime reset. Re-run any dependency install to download a fresh copy.",
+                                        &t!("umu runtime reset. Re-run any dependency install to download a fresh copy."),
                                     ));
                                 }
                                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                                     overlay_clone.add_toast(adw::Toast::new(
-                                        "umu runtime directory not found — nothing to reset.",
+                                        &t!("umu runtime directory not found — nothing to reset."),
                                     ));
                                 }
                                 Err(e) => {
-                                    overlay_clone.add_toast(adw::Toast::new(&format!(
-                                        "Failed to reset umu runtime: {}",
-                                        e
-                                    )));
+                                    overlay_clone.add_toast(adw::Toast::new(&t!("Failed to reset umu runtime: {}").replacen("{}", &e.to_string(), 1).to_string()));
                                 }
                             }
                         });

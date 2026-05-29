@@ -1,3 +1,4 @@
+use crate::t;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -20,13 +21,13 @@ pub async fn run_winecfg_in_prefix(
     let snapshots = crate::launch::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
-            "Blocked: Cannot run winecfg while games are running.",
+            &t!("Blocked: Cannot run winecfg while games are running."),
         ));
         return;
     }
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is still downloading, please wait…",
+            &t!("umu-launcher is still downloading, please wait…"),
         ));
         return;
     }
@@ -35,7 +36,7 @@ pub async fn run_winecfg_in_prefix(
         .unwrap_or(false)
     {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is not installed. Please check your internet connection and restart.",
+            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
         return;
     }
@@ -43,7 +44,7 @@ pub async fn run_winecfg_in_prefix(
     let proton = proton_path.trim().to_string();
     let prefix = prefix_path.trim().to_string();
     if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new("Prefix path is required"));
+        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required")));
         return;
     }
 
@@ -52,7 +53,7 @@ pub async fn run_winecfg_in_prefix(
         .await
         .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
     match result {
-        Ok(()) => overlay_clone.add_toast(adw::Toast::new("Wine Configuration launched")),
+        Ok(()) => overlay_clone.add_toast(adw::Toast::new(&t!("Wine Configuration launched"))),
         Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
     }
 }
@@ -65,13 +66,13 @@ pub async fn run_regedit_in_prefix(
     let snapshots = crate::launch::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
-            "Blocked: Cannot run regedit while games are running.",
+            &t!("Blocked: Cannot run regedit while games are running."),
         ));
         return;
     }
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is still downloading, please wait…",
+            &t!("umu-launcher is still downloading, please wait…"),
         ));
         return;
     }
@@ -80,7 +81,7 @@ pub async fn run_regedit_in_prefix(
         .unwrap_or(false)
     {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is not installed. Please check your internet connection and restart.",
+            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
         return;
     }
@@ -88,7 +89,7 @@ pub async fn run_regedit_in_prefix(
     let proton = proton_path.trim().to_string();
     let prefix = prefix_path.trim().to_string();
     if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new("Prefix path is required"));
+        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required")));
         return;
     }
 
@@ -97,7 +98,7 @@ pub async fn run_regedit_in_prefix(
         .await
         .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
     match result {
-        Ok(()) => overlay_clone.add_toast(adw::Toast::new("Registry Editor launched")),
+        Ok(()) => overlay_clone.add_toast(adw::Toast::new(&t!("Registry Editor launched"))),
         Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
     }
 }
@@ -130,7 +131,7 @@ pub async fn pick_and_run_in_prefix(
     let snapshots = crate::launch::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
-            "Blocked: Cannot run programs in prefix while games are running.",
+            &t!("Blocked: Cannot run programs in prefix while games are running."),
         ));
         return;
     }
@@ -139,13 +140,13 @@ pub async fn pick_and_run_in_prefix(
     let proton_path = proton_path.trim().to_string();
 
     if prefix_path.is_empty() {
-        overlay.add_toast(adw::Toast::new("Prefix path is required first"));
+        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required first")));
         return;
     }
 
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is still downloading, please wait…",
+            &t!("umu-launcher is still downloading, please wait…"),
         ));
         return;
     }
@@ -155,19 +156,19 @@ pub async fn pick_and_run_in_prefix(
         .unwrap_or_default()
     {
         overlay.add_toast(adw::Toast::new(
-            "umu-launcher is not installed. Please check your internet connection and restart.",
+            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
         return;
     }
 
     let filter = gtk4::FileFilter::new();
-    filter.set_name(Some("Windows programs"));
+    filter.set_name(Some(&t!("Windows programs")));
     for suffix in ["exe", "msi", "bat", "cmd", "com"] {
         filter.add_suffix(suffix);
     }
 
     let file_dialog = gtk4::FileDialog::builder()
-        .title("Select Program")
+        .title(t!("Select Program"))
         .default_filter(&filter)
         .build();
 
@@ -177,7 +178,7 @@ pub async fn pick_and_run_in_prefix(
             return;
         };
         let Some(path) = file.path() else {
-            overlay.add_toast(adw::Toast::new("Selected file has no local path"));
+            overlay.add_toast(adw::Toast::new(&t!("Selected file has no local path")));
             return;
         };
 
@@ -190,7 +191,7 @@ pub async fn pick_and_run_in_prefix(
             .await
             .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
             match result {
-                Ok(()) => overlay.add_toast(adw::Toast::new("Launched in prefix")),
+                Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Launched in prefix"))),
                 Err(err) => {
                     overlay.add_toast(adw::Toast::new(&format!("Failed to run in prefix: {err}")))
                 }

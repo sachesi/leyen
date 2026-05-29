@@ -1,3 +1,5 @@
+use crate::t;
+use crate::tn;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -67,11 +69,10 @@ pub fn build_group_card(
         .hexpand(true)
         .build();
     let count_label = gtk4::Label::builder()
-        .label(format!(
-            "{} game{}",
-            group.games.len(),
-            if group.games.len() == 1 { "" } else { "s" }
-        ))
+        .label(
+            tn!("{} game", "{} games", group.games.len() as u32)
+                .replacen("{}", &group.games.len().to_string(), 1),
+        )
         .xalign(0.0)
         .css_classes(["caption", "dim-label"])
         .build();
@@ -79,7 +80,7 @@ pub fn build_group_card(
     if running_count > 0 {
         meta_row.append(
             &gtk4::Label::builder()
-                .label(format!("{} running", running_count))
+                .label(t!("{} running").replacen("{}", &running_count.to_string(), 1))
                 .xalign(0.0)
                 .css_classes(["caption", "accent"])
                 .build(),
@@ -87,8 +88,8 @@ pub fn build_group_card(
     }
     let group_running_elapsed = group_running_elapsed_seconds(group, running_games);
     let status_label = gtk4::Label::builder()
-        .label(if let Some(elapsed_seconds) = group_running_elapsed {
-            format!("Running for {}", format_duration_brief(elapsed_seconds))
+        .label(&if let Some(elapsed_seconds) = group_running_elapsed {
+            t!("Running for {}").replacen("{}", &format_duration_brief(elapsed_seconds), 1)
         } else {
             format_last_played(group_last_played(group))
         })
@@ -125,16 +126,16 @@ pub fn build_group_card(
 
     let edit_btn = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
-        .tooltip_text("Edit Group")
+        .tooltip_text(t!("Edit Group"))
         .build();
     let delete_btn = gtk4::Button::builder()
         .icon_name("user-trash-symbolic")
-        .tooltip_text("Delete Group")
+        .tooltip_text(t!("Delete Group"))
         .css_classes(["destructive-action"])
         .build();
     let open_btn = gtk4::Button::builder()
         .icon_name("go-next-symbolic")
-        .tooltip_text("Open Group")
+        .tooltip_text(t!("Open Group"))
         .css_classes(["suggested-action", "circular"])
         .build();
 

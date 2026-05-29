@@ -96,22 +96,20 @@ fn try_append_new(
 
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
-        static ACTIVE_LOG_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
+        static ACTIVE_LOG_WINDOW: std::cell::RefCell<Option<adw::Dialog>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone())
         && existing.is_visible()
     {
-        existing.present();
+        existing.present(Some(parent));
         return;
     }
 
-    let window = adw::Window::builder()
+    let window = adw::Dialog::builder()
         .title(t!("Leyen – Logs"))
-        .default_width(820)
-        .default_height(440)
-        .transient_for(parent)
-        .modal(false)
+        .content_width(820)
+        .content_height(440)
         .build();
 
     ACTIVE_LOG_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
@@ -199,8 +197,8 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&content_box));
 
-    window.set_content(Some(&toolbar_view));
-    window.present();
+    window.set_child(Some(&toolbar_view));
+    window.present(Some(parent));
 
     let selected_filter = Rc::new(std::cell::RefCell::new(
         filter_ids[initial_selection as usize].clone(),

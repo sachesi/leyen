@@ -5,6 +5,7 @@ pub mod state;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use std::cell::RefCell;
 use std::collections::HashSet;
 
 pub use self::group_view::populate_group_view;
@@ -17,7 +18,32 @@ use crate::ui::utils::{
     find_group, format_duration_brief, game_is_running, group_running_started_at, running_game_map,
 };
 
+thread_local! {
+    /// Game ids with a primary (launch/stop) action in flight. Guards against
+    /// rapid double-clicks issuing duplicate stop/launch operations.
+    static PRIMARY_ACTION_INFLIGHT: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// Removes the game id from the in-flight set on drop — covers early returns
+/// and future cancellation.
+struct PrimaryActionGuard(String);
+
+impl Drop for PrimaryActionGuard {
+    fn drop(&mut self) {
+        PRIMARY_ACTION_INFLIGHT.with(|set| {
+            set.borrow_mut().remove(&self.0);
+        });
+    }
+}
+
 pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
+    let accepted =
+        PRIMARY_ACTION_INFLIGHT.with(|set| set.borrow_mut().insert(game.id.clone()));
+    if !accepted {
+        return;
+    }
+    let _guard = PrimaryActionGuard(game.id.clone());
+
     if game_is_running(&running_game_map().await, &game.id) {
         match stop_game(&game.id).await {
             Ok(true) => {
@@ -76,13 +102,37 @@ pub async fn refresh_library_view(
     overlay: &adw::ToastOverlay,
     window: &adw::ApplicationWindow,
 ) {
+    // Coalesce concurrent refreshes. The view rebuild clears a double-buffered
+    // list box, awaits, then swaps — two overlapping rebuilds race that swap and
+    // produce duplicated or missing cards. Run one at a time; collapse any
+    // refreshes requested while busy into a single follow-up pass.
+    if ui.refresh_busy.get() {
+        ui.refresh_pending.set(true);
+        return;
+    }
+    ui.refresh_busy.set(true);
+    loop {
+        ui.refresh_pending.set(false);
+        run_library_refresh(ui, overlay, window).await;
+        if !ui.refresh_pending.get() {
+            break;
+        }
+    }
+    ui.refresh_busy.set(false);
+}
+
+async fn run_library_refresh(
+    ui: &LibraryUi,
+    overlay: &adw::ToastOverlay,
+    window: &adw::ApplicationWindow,
+) {
     let ui_clone = ui.clone();
     let overlay_clone = overlay.clone();
     let window_clone = window.clone();
 
     let search_text = ui.search_entry.text().to_string().to_lowercase();
 
-    glib::spawn_future_local(async move {
+    {
         let items = match crate::config::load_library().await {
             Ok(items) => items,
             Err(err) => {
@@ -160,7 +210,7 @@ pub async fn refresh_library_view(
         }
 
         update_add_button_mode(&ui_clone);
-    });
+    }
 }
 
 fn update_add_button_mode(ui: &LibraryUi) {

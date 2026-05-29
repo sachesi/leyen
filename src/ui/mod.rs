@@ -286,6 +286,8 @@ pub fn build_ui(app: &adw::Application) {
         search_entry: search_entry.clone(),
         library_state: Rc::new(RefCell::new(Vec::new())),
         current_group_id: Rc::new(RefCell::new(None)),
+        refresh_busy: Rc::new(Cell::new(false)),
+        refresh_pending: Rc::new(Cell::new(false)),
     };
 
     search_bar.set_key_capture_widget(Some(&window));

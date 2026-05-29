@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -15,13 +15,32 @@ use super::log_window::show_log_window;
 use super::utils::format_duration_brief;
 use crate::ui::components::icon::build_library_icon;
 
+/// Clears `rebuild_busy` on drop so early returns and cancellation can't leave
+/// the rebuild permanently blocked.
+struct RebuildGuard(Rc<Cell<bool>>);
+
+impl Drop for RebuildGuard {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
+}
+
 async fn rebuild_running_games(
     list_box: &gtk4::Box,
     content_stack: &gtk4::Stack,
     overlay: &adw::ToastOverlay,
     parent: &adw::ApplicationWindow,
     running_duration_labels: &std::rc::Rc<std::cell::RefCell<HashMap<String, gtk4::Label>>>,
+    rebuild_busy: &Rc<Cell<bool>>,
 ) {
+    // Serialize rebuilds: each clears the list then awaits before re-appending,
+    // so two overlapping rebuilds would duplicate or drop cards.
+    if rebuild_busy.get() {
+        return;
+    }
+    rebuild_busy.set(true);
+    let _guard = RebuildGuard(rebuild_busy.clone());
+
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
@@ -254,13 +273,16 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     toolbar_view.set_content(Some(&overlay));
     window.set_content(Some(&toolbar_view));
 
+    let rebuild_busy = Rc::new(Cell::new(false));
+
     let lbox = list_box.clone();
     let cstack = content_stack.clone();
     let ov = overlay.clone();
     let p = parent.clone();
     let rdl = running_duration_labels.clone();
+    let rb = rebuild_busy.clone();
     glib::spawn_future_local(async move {
-        rebuild_running_games(&lbox, &cstack, &ov, &p, &rdl).await;
+        rebuild_running_games(&lbox, &cstack, &ov, &p, &rdl, &rb).await;
     });
     window.present();
 
@@ -283,6 +305,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         let parent_ref = parent_ref.clone();
         let running_duration_labels_ref = running_duration_labels_ref.clone();
         let running_state_version = running_state_version.clone();
+        let rebuild_busy_ref = rebuild_busy.clone();
 
         glib::spawn_future_local(async move {
             let current_version = crate::launch::running_games_version().await;
@@ -294,6 +317,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
                     &overlay_ref,
                     &parent_ref,
                     &running_duration_labels_ref,
+                    &rebuild_busy_ref,
                 )
                 .await;
             } else if current_version != 0 {

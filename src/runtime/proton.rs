@@ -63,10 +63,14 @@ pub fn check_or_install_protonge() {
                         .unwrap_or("")
                         .to_string()
                 }
-                _ => return,
+                _ => {
+                    PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                    return;
+                }
             };
 
             if tag.is_empty() || !tag.starts_with("GE-Proton") {
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                 return;
             }
 
@@ -112,20 +116,29 @@ pub fn check_or_install_protonge() {
                     ])
                     .status();
 
+                // Only the just-extracted version directory may be removed on
+                // failure — never the shared parent, which holds other installed
+                // Proton versions.
+                let extracted_dir = proton_dir.join(&tag);
                 match status {
                     Ok(s) if s.success() => {
                         log::info!("Successfully extracted ProtonGE");
                     }
                     Ok(s) => {
                         log::error!("Failed to extract ProtonGE: tar exited with status {}", s);
-                        let _ = fs::remove_dir_all(&proton_dir);
+                        let _ = fs::remove_dir_all(&extracted_dir);
+                        PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                     }
                     Err(e) => {
                         log::error!("Failed to extract ProtonGE: failed to spawn tar: {}", e);
-                        let _ = fs::remove_dir_all(&proton_dir);
+                        let _ = fs::remove_dir_all(&extracted_dir);
+                        PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                     }
                 }
                 let _ = fs::remove_file(&tarball_path);
+            } else {
+                let _ = fs::remove_file(&tarball_path);
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
             }
         })
         .await;

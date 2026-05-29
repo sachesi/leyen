@@ -55,6 +55,10 @@ fn config_lock_path() -> PathBuf {
     get_config_dir().join(".games.lock")
 }
 
+fn settings_lock_path() -> PathBuf {
+    get_config_dir().join(".settings.lock")
+}
+
 /// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
 /// Releases the lock on Drop — panic-safe.
 struct FlockGuard {
@@ -117,18 +121,39 @@ where
     };
 
     let path = get_config_path();
-    let mut items = fs::read_to_string(&path)
-        .ok()
-        .and_then(|data| toml::from_str::<GamesConfig>(&data).ok())
-        .map(|config| config.items)
-        .unwrap_or_default();
+    // Distinguish "file absent" (safe to default) from "present but unreadable /
+    // unparseable" (must NOT overwrite — would erase the entire library).
+    let mut items = match fs::read_to_string(&path) {
+        Ok(data) => match toml::from_str::<GamesConfig>(&data) {
+            Ok(config) => config.items,
+            Err(e) => {
+                log::error!(
+                    "Refusing to mutate games config: parse failed for '{}': {}",
+                    path.display(),
+                    e
+                );
+                return None;
+            }
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => {
+            log::error!(
+                "Refusing to mutate games config: read failed for '{}': {}",
+                path.display(),
+                e
+            );
+            return None;
+        }
+    };
 
     let result = f(&mut items);
 
     if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
-        let temp_path = path.with_extension("toml.tmp");
+        let temp_path = path.with_extension(format!("toml.tmp.{}", std::process::id()));
         if fs::write(&temp_path, data).is_ok() {
             let _ = fs::rename(&temp_path, path);
+        } else {
+            let _ = fs::remove_file(&temp_path);
         }
     }
     Some(result)
@@ -222,10 +247,19 @@ pub async fn load_settings() -> GlobalSettings {
 pub async fn save_settings(settings: GlobalSettings) {
     let path = get_settings_path();
     tokio::task::spawn_blocking(move || {
+        let _guard = match FlockGuard::lock(&settings_lock_path(), Duration::from_secs(5)) {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!("Failed to acquire settings lock: {}", e);
+                return;
+            }
+        };
         if let Ok(data) = toml::to_string_pretty(&settings) {
-            let temp_path = path.with_extension("toml.tmp");
+            let temp_path = path.with_extension(format!("toml.tmp.{}", std::process::id()));
             if fs::write(&temp_path, data).is_ok() {
                 let _ = fs::rename(&temp_path, path);
+            } else {
+                let _ = fs::remove_file(&temp_path);
             }
         }
     })
@@ -474,13 +508,15 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
         }
     }
 
-    // All IDs exhausted — use a wider range but still 4 digits
-    format!(
-        "{}{:0width$}",
-        LEYEN_ID_PREFIX,
-        fastrand::u32(10000..100000),
-        width = LEYEN_ID_DIGITS
-    )
+    // 4-digit pool fully exhausted — widen monotonically, guaranteeing uniqueness.
+    let mut n = 10u32.pow(LEYEN_ID_DIGITS as u32);
+    loop {
+        let id = format!("{}{}", LEYEN_ID_PREFIX, n);
+        if !existing_ids.contains(&id) {
+            return id;
+        }
+        n += 1;
+    }
 }
 
 #[cfg(test)]

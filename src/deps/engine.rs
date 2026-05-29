@@ -203,7 +203,10 @@ pub async fn execute_dep_step(
                         .map_err(|err| format!("Failed to open downloaded file: {err}"))?;
                     let mut hasher = Sha256::new();
                     let mut buffer = [0u8; 8192];
-                    while let Ok(n) = file.read(&mut buffer) {
+                    loop {
+                        let n = file
+                            .read(&mut buffer)
+                            .map_err(|err| format!("Failed to read downloaded file: {err}"))?;
                         if n == 0 {
                             break;
                         }

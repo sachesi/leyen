@@ -229,6 +229,7 @@ fn running_sessions_version(sessions: &[RunningGameSession]) -> u64 {
         session.pid.hash(&mut hasher);
         session.started_at_epoch_seconds.hash(&mut hasher);
         session.termination_requested.hash(&mut hasher);
+        session.known_pids.len().hash(&mut hasher);
     }
 
     hasher.finish().max(1)
@@ -573,13 +574,13 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
 }
 
 fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
-    let mut file = File::open(format!("/proc/{pid}/environ")).ok()?;
-    let mut buf = [0u8; 4096];
-    let n = file.read(&mut buf).ok()?;
-    let slice = &buf[..n];
+    // Read the whole file — process environments routinely exceed any fixed
+    // buffer; a truncated read drops trailing vars (WINEPREFIX/GAMEID) and
+    // breaks runtime session matching.
+    let data = fs::read(format!("/proc/{pid}/environ")).ok()?;
     let mut env = HashMap::new();
 
-    for entry in slice.split(|&byte| byte == 0) {
+    for entry in data.split(|&byte| byte == 0) {
         if entry.is_empty() {
             continue;
         }

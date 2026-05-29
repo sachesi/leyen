@@ -1,3 +1,4 @@
+use crate::t;
 use libadwaita as adw;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -106,7 +107,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     }
 
     let window = adw::Window::builder()
-        .title("Leyen – Logs")
+        .title(t!("Leyen – Logs"))
         .default_width(820)
         .default_height(440)
         .transient_for(parent)
@@ -117,7 +118,7 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
 
     let library = crate::config::load_library().await.unwrap_or_default();
     let mut filter_ids: Vec<Option<String>> = vec![None];
-    let mut filter_labels: Vec<String> = vec!["All Logs".to_string()];
+    let mut filter_labels: Vec<String> = vec![t!("All Logs")];
 
     for item in &library {
         match item {
@@ -149,11 +150,11 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     let filter_dropdown = gtk4::DropDown::builder()
         .model(&filter_model)
         .selected(initial_selection)
-        .tooltip_text("Filter logs by game")
+        .tooltip_text(t!("Filter logs by game"))
         .build();
     let clear_button = gtk4::Button::builder()
         .icon_name("edit-clear-all-symbolic")
-        .tooltip_text("Clear logs")
+        .tooltip_text(t!("Clear logs"))
         .build();
     header.pack_start(&filter_dropdown);
     header.pack_end(&clear_button);
@@ -180,8 +181,8 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
 
     let empty_state = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")
-        .title("No log lines to show")
-        .description("New logs will appear here automatically, or choose another filter.")
+        .title(t!("No log lines to show"))
+        .description(t!("New logs will appear here automatically, or choose another filter."))
         .hexpand(true)
         .vexpand(true)
         .build();

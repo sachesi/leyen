@@ -1,3 +1,4 @@
+use crate::t;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -882,7 +883,7 @@ async fn launch_game_managed(
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         return Err(LaunchError::Other(
-            "umu-launcher is still downloading, please wait…".to_string(),
+            t!("umu-launcher is still downloading, please wait…"),
         ));
     }
 
@@ -895,8 +896,7 @@ async fn launch_game_managed(
         })
     {
         return Err(LaunchError::Other(
-            "umu-launcher is not installed. Please check your internet connection and restart."
-                .to_string(),
+            t!("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
     }
 
@@ -908,7 +908,7 @@ async fn launch_game_managed(
 
     if is_game_running(&game.id) {
         return Err(LaunchError::Other(
-            "This game is already running".to_string(),
+            t!("This game is already running"),
         ));
     }
 
@@ -934,7 +934,7 @@ async fn launch_game_managed(
                         "Proton path for '{}' does not exist: {}", game.title, path
                     );
                     return Err(LaunchError::Other(
-                        "Selected Proton version was not found".to_string(),
+                        t!("Selected Proton version was not found"),
                     ));
                 }
             }
@@ -1024,7 +1024,7 @@ async fn launch_game_managed(
         PrefixLockState::Busy => {
             env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
             notices.push(
-                "Prefix is already in use. Launching with shared-container fallback.".to_string(),
+                t!("Prefix is already in use. Launching with shared-container fallback."),
             );
         }
         PrefixLockState::Unavailable => {}
@@ -1107,7 +1107,7 @@ async fn launch_game_managed(
                 .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
             let pid = child
                 .id()
-                .ok_or_else(|| LaunchError::Other("Failed to get child PID".to_string()))?;
+                .ok_or_else(|| LaunchError::Other(t!("Failed to get child PID")))?;
             let child_stdout = child.stdout.take();
             let child_stderr = child.stderr.take();
             Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
@@ -1129,7 +1129,7 @@ async fn launch_game_managed(
         let _ = unsafe { libc::kill(-(child_pid as i32), libc::SIGKILL) };
         let _ = child.wait().await;
         return Err(LaunchError::Other(
-            "This game is already running".to_string(),
+            t!("This game is already running"),
         ));
     }
 
@@ -1168,6 +1168,6 @@ async fn launch_game_managed(
         target: &format!("game:{}", game.id),
         "Spawned '{}' with pid {}", game.title, child_pid
     );
-    notices.push(format!("Launching {}...", game.title));
+    notices.push(t!("Launching {}...").replacen("{}", &game.title, 1));
     Ok(LaunchReport { notices })
 }

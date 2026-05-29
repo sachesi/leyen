@@ -1,0 +1,1024 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: leyen\n"
+"Report-Msgid-Bugs-To: \n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/ui/game_dialogs.rs:2250
+msgid "'{}' deleted successfully"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2248
+msgid "'{}' deleted successfully. {}"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:507
+msgid "'{}' installed successfully."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:505
+msgid "'{}' installed successfully. {}"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:608
+msgid "'{}' reinstalled successfully."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:605
+msgid "'{}' reinstalled successfully. {}"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:772
+msgid "'{}' removed successfully."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:769
+msgid "'{}' removed successfully. {}"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:118
+msgid "1 component installed"
+msgstr ""
+
+#: src/ui/mod.rs:84
+msgid "About Leyen"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:263
+#: src/ui/mod.rs:63
+msgid "Add"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:252
+#: src/ui/mod.rs:67
+msgid "Add Game"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:251
+msgid "Add Game to Group"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:253
+msgid "Add Group"
+msgstr ""
+
+#: src/ui/mod.rs:158
+msgid "Add a game or create a group to organize your library."
+msgstr ""
+
+#: src/ui/mod.rs:164
+msgid "Add a game while inside the group to populate it."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1595
+#: src/ui/game_dialogs.rs:1845
+msgid "Add to menu"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1854
+msgid "Added to menu"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:374
+msgid "Adding Into Group"
+msgstr ""
+
+#: src/ui/log_window.rs:121
+msgid "All Logs"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2187
+msgid "Are you sure you want to delete {}?\n\nThis action cannot be undone."
+msgstr ""
+
+#: src/ui/mod.rs:54
+msgid "Back to Library"
+msgstr ""
+
+#: src/prefix_tools.rs:134
+msgid "Blocked: Cannot run programs in prefix while games are running."
+msgstr ""
+
+#: src/prefix_tools.rs:69
+msgid "Blocked: Cannot run regedit while games are running."
+msgstr ""
+
+#: src/prefix_tools.rs:24
+msgid "Blocked: Cannot run winecfg while games are running."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:334
+#: src/ui/game_dialogs.rs:1508
+msgid "Browse for custom icon"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:277
+#: src/ui/game_dialogs.rs:1415
+msgid "Browse for executable"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:411
+#: src/ui/game_dialogs.rs:962
+msgid "Browse for group icon"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:291
+#: src/ui/game_dialogs.rs:398
+#: src/ui/game_dialogs.rs:932
+#: src/ui/game_dialogs.rs:1424
+#: src/ui/settings.rs:45
+msgid "Browse for prefix folder"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:658
+#: src/ui/game_dialogs.rs:261
+#: src/ui/game_dialogs.rs:911
+#: src/ui/game_dialogs.rs:1397
+#: src/ui/game_dialogs.rs:2190
+#: src/ui/settings.rs:335
+msgid "Cancel"
+msgstr ""
+
+#: src/deps/engine.rs:672
+msgid "Cannot remove '{}': still required by {}."
+msgstr ""
+
+#: src/ui/settings.rs:323
+msgid "Cannot reset runtime while games are running. Close all games first."
+msgstr ""
+
+#: src/ui/log_window.rs:157
+msgid "Clear logs"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:340
+#: src/ui/game_dialogs.rs:417
+#: src/ui/game_dialogs.rs:968
+#: src/ui/game_dialogs.rs:1514
+msgid "Custom Icon"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:298
+#: src/ui/game_dialogs.rs:425
+#: src/ui/game_dialogs.rs:976
+#: src/ui/game_dialogs.rs:1438
+msgid "Custom Prefix"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:321
+#: src/ui/game_dialogs.rs:1485
+msgid "Custom Proton"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1661
+#: src/ui/game_dialogs.rs:1696
+#: src/ui/game_dialogs.rs:1730
+#: src/ui/game_dialogs.rs:1767
+msgid "Custom game prefix path is required"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1057
+#: src/ui/game_dialogs.rs:1078
+#: src/ui/game_dialogs.rs:1098
+#: src/ui/game_dialogs.rs:1124
+msgid "Custom group prefix path is required"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:100
+#: src/ui/game_dialogs.rs:130
+msgid "Custom icon file is required"
+msgstr ""
+
+#: src/ui/settings.rs:35
+msgid "Default Paths"
+msgstr ""
+
+#: src/ui/settings.rs:39
+msgid "Default Prefix Path"
+msgstr ""
+
+#: src/ui/settings.rs:88
+msgid "Default Proton"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2190
+msgid "Delete"
+msgstr ""
+
+#: src/ui/components/game_card.rs:129
+msgid "Delete Game"
+msgstr ""
+
+#: src/ui/components/group_card.rs:133
+msgid "Delete Group"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2185
+msgid "Delete Item?"
+msgstr ""
+
+#: src/ui/settings.rs:303
+msgid "Deletes steamrt3 directory. It will be re-downloaded on next dependency install."
+msgstr ""
+
+#: src/deps/engine.rs:507
+msgid "Dependency is already installed."
+msgstr ""
+
+#: src/deps/engine.rs:663
+msgid "Dependency is no longer tracked."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:220
+msgid "Dependency manager is blocked while games are running. Close all games first."
+msgstr ""
+
+#: src/ui/mod.rs:245
+msgid "Downloading umu-launcher & winetricks… Please wait before starting games."
+msgstr ""
+
+#: src/ui/mod.rs:227
+#: src/ui/mod.rs:247
+msgid "Downloading umu-launcher… Please wait before starting games."
+msgstr ""
+
+#: src/deps/engine.rs:852
+#: src/ui/mod.rs:249
+msgid "Downloading winetricks…"
+msgstr ""
+
+#: src/ui/components/game_card.rs:125
+#: src/ui/game_dialogs.rs:1393
+msgid "Edit Game"
+msgstr ""
+
+#: src/ui/components/group_card.rs:129
+#: src/ui/game_dialogs.rs:907
+msgid "Edit Group"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:442
+#: src/ui/game_dialogs.rs:1568
+msgid "Environment"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2142
+msgid "Error: Game not found"
+msgstr ""
+
+#: src/ui/settings.rs:269
+msgid "Errors"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:274
+#: src/ui/game_dialogs.rs:1410
+msgid "Executable"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:795
+msgid "Executable path is required"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:855
+msgid "Failed to add game to the selected group"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1856
+msgid "Failed to create menu entry: {}"
+msgstr ""
+
+#: src/deps/engine.rs:869
+msgid "Failed to download winetricks. Check your internet connection."
+msgstr ""
+
+#: src/launch.rs:1110
+msgid "Failed to get child PID"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2236
+msgid "Failed to remove a menu entry: {}"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1848
+#: src/ui/game_dialogs.rs:2222
+msgid "Failed to remove menu entry: {}"
+msgstr ""
+
+#: src/ui/settings.rs:368
+msgid "Failed to reset umu runtime: {}"
+msgstr ""
+
+#: src/ui/library/mod.rs:55
+#: src/ui/running_games.rs:175
+msgid "Failed to stop game: {}"
+msgstr ""
+
+#: src/ui/log_window.rs:153
+msgid "Filter logs by game"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1544
+#: src/ui/mod.rs:58
+msgid "Game"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:313
+#: src/ui/game_dialogs.rs:1453
+msgid "Game ID"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:381
+msgid "Game Settings"
+msgstr ""
+
+#: src/ui/library/mod.rs:53
+#: src/ui/running_games.rs:172
+msgid "Game is no longer running"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2135
+msgid "Game updated successfully"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2137
+msgid "Game updated successfully. {}"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:360
+#: src/ui/game_dialogs.rs:1535
+#: src/ui/settings.rs:224
+msgid "GameMode"
+msgstr ""
+
+#: src/ui/running_games.rs:255
+msgid "Games you launch through Leyen will appear here while they are active."
+msgstr ""
+
+#: src/ui/mod.rs:447
+#: src/ui/mod.rs:452
+msgid "General"
+msgstr ""
+
+#: src/ui/settings.rs:214
+msgid "Global Environment"
+msgstr ""
+
+#: src/ui/settings.rs:29
+msgid "Global Settings"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:985
+#: src/ui/game_dialogs.rs:1550
+#: src/ui/library/group_view.rs:37
+#: src/ui/mod.rs:59
+msgid "Group"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:434
+#: src/ui/game_dialogs.rs:988
+msgid "Group Defaults"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1025
+msgid "Group tools unavailable"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1353
+msgid "Group updated successfully"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1351
+msgid "Group updated successfully. {}"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:371
+#: src/ui/game_dialogs.rs:1548
+msgid "Grouping"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:365
+#: src/ui/game_dialogs.rs:1540
+#: src/ui/settings.rs:245
+msgid "HDR"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:331
+#: src/ui/game_dialogs.rs:408
+#: src/ui/game_dialogs.rs:957
+#: src/ui/game_dialogs.rs:1503
+msgid "Icon File"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:388
+msgid "Install"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:514
+msgid "Installation failed."
+msgstr ""
+
+#: src/deps/engine.rs:626
+msgid "Installed prerequisites: {}."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:368
+msgid "Item"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:881
+msgid "Item added successfully"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:879
+msgid "Item added successfully. {}"
+msgstr ""
+
+#: src/ui/mod.rs:83
+msgid "Keyboard Shortcuts"
+msgstr ""
+
+#: src/ui/utils/mod.rs:89
+msgid "Last played: never"
+msgstr ""
+
+#: src/ui/utils/mod.rs:108
+msgid "Last played: {}"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:354
+#: src/ui/game_dialogs.rs:1529
+msgid "Launch Arguments"
+msgstr ""
+
+#: src/i18n.rs:62
+#: src/ui/components/game_card.rs:146
+msgid "Launch Game"
+msgstr ""
+
+#: src/prefix_tools.rs:194
+msgid "Launched in prefix"
+msgstr ""
+
+#: src/launch.rs:1171
+msgid "Launching {}..."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:989
+msgid "Leave prefix empty or Proton on Default to inherit global settings."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:435
+msgid "Leave prefix empty or Proton on Default to keep using global defaults."
+msgstr ""
+
+#: src/ui/library/mod.rs:190
+#: src/ui/library/mod.rs:208
+msgid "Leyen"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:308
+#: src/ui/game_dialogs.rs:1447
+msgid "Leyen ID"
+msgstr ""
+
+#: src/ui/log_window.rs:110
+msgid "Leyen – Logs"
+msgstr ""
+
+#: src/ui/running_games.rs:227
+msgid "Leyen – Running Games"
+msgstr ""
+
+#: src/ui/settings.rs:264
+msgid "Logging"
+msgstr ""
+
+#: src/ui/mod.rs:80
+msgid "Logs"
+msgstr ""
+
+#: src/ui/mod.rs:89
+msgid "Main Menu"
+msgstr ""
+
+#: src/ui/settings.rs:292
+msgid "Maintenance"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:259
+#: src/ui/game_dialogs.rs:1013
+#: src/ui/game_dialogs.rs:1611
+#: src/ui/settings.rs:117
+msgid "Manage Dependencies"
+msgstr ""
+
+#: src/ui/settings.rs:105
+msgid "Manage the default prefix inherited by games and groups."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1029
+#: src/ui/game_dialogs.rs:1627
+msgid "Managed by global preferences"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1623
+msgid "Managed by group prefix"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:358
+#: src/ui/game_dialogs.rs:1533
+#: src/ui/settings.rs:218
+msgid "MangoHud"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:364
+#: src/ui/game_dialogs.rs:1539
+#: src/ui/settings.rs:240
+msgid "NTSync"
+msgstr ""
+
+#: src/ui/log_window.rs:185
+msgid "New logs will appear here automatically, or choose another filter."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:117
+msgid "No components installed"
+msgstr ""
+
+#: src/ui/mod.rs:157
+msgid "No games added yet"
+msgstr ""
+
+#: src/ui/log_window.rs:184
+msgid "No log lines to show"
+msgstr ""
+
+#: src/ui/running_games.rs:254
+msgid "No running games"
+msgstr ""
+
+#: src/ui/components/group_card.rs:138
+msgid "Open Group"
+msgstr ""
+
+#: src/ui/settings.rs:281
+msgid "Operations"
+msgstr ""
+
+#: src/ui/running_games.rs:110
+msgid "PID {} | tracking {}"
+msgstr ""
+
+#: src/ui/utils/mod.rs:63
+msgid "Playtime: {}h {}m"
+msgstr ""
+
+#: src/ui/utils/mod.rs:67
+msgid "Playtime: {}m"
+msgstr ""
+
+#: src/ui/utils/mod.rs:69
+msgid "Playtime: {}s"
+msgstr ""
+
+#: src/ui/mod.rs:82
+msgid "Preferences"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:286
+#: src/ui/game_dialogs.rs:395
+#: src/ui/game_dialogs.rs:924
+#: src/ui/game_dialogs.rs:1421
+msgid "Prefix"
+msgstr ""
+
+#: src/launch.rs:1027
+msgid "Prefix is already in use. Launching with shared-container fallback."
+msgstr ""
+
+#: src/prefix_tools.rs:47
+#: src/prefix_tools.rs:92
+msgid "Prefix path is required"
+msgstr ""
+
+#: src/prefix_tools.rs:143
+msgid "Prefix path is required first"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:317
+#: src/ui/game_dialogs.rs:405
+#: src/ui/game_dialogs.rs:940
+#: src/ui/game_dialogs.rs:1460
+msgid "Proton"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:366
+#: src/ui/game_dialogs.rs:1541
+#: src/ui/settings.rs:250
+msgid "Proton Log"
+msgstr ""
+
+#: src/ui/mod.rs:439
+msgid "Quit Leyen"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1009
+#: src/ui/game_dialogs.rs:1607
+#: src/ui/settings.rs:113
+msgid "Registry Editor"
+msgstr ""
+
+#: src/prefix_tools.rs:101
+msgid "Registry Editor launched"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:396
+msgid "Reinstall"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:616
+msgid "Reinstall failed."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:403
+#: src/ui/deps_dialog.rs:658
+msgid "Remove"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:657
+msgid "Remove '{}'?"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:780
+msgid "Remove failed."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1593
+#: src/ui/game_dialogs.rs:1853
+msgid "Remove from menu"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:147
+msgid "Remove this managed dependency"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1846
+msgid "Removed from menu"
+msgstr ""
+
+#: src/deps/engine.rs:799
+msgid "Removed from tracking."
+msgstr ""
+
+#: src/ui/settings.rs:296
+msgid "Repair Runtime"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:151
+msgid "Required by: {}"
+msgstr ""
+
+#: src/ui/settings.rs:308
+#: src/ui/settings.rs:335
+msgid "Reset"
+msgstr ""
+
+#: src/ui/settings.rs:297
+msgid "Reset internal umu-launcher components if dependency installation fails."
+msgstr ""
+
+#: src/ui/settings.rs:301
+msgid "Reset umu Runtime"
+msgstr ""
+
+#: src/ui/settings.rs:329
+msgid "Reset umu Runtime?"
+msgstr ""
+
+#: src/ui/settings.rs:121
+msgid "Run in default prefix"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1016
+#: src/ui/game_dialogs.rs:1614
+msgid "Run in prefix"
+msgstr ""
+
+#: src/ui/mod.rs:79
+msgid "Running Games"
+msgstr ""
+
+#: src/ui/components/game_card.rs:81
+#: src/ui/components/group_card.rs:92
+#: src/ui/library/mod.rs:74
+#: src/ui/library/mod.rs:81
+#: src/ui/library/mod.rs:95
+#: src/ui/running_games.rs:125
+#: src/ui/running_games.rs:210
+msgid "Running for {}"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:913
+#: src/ui/game_dialogs.rs:1399
+msgid "Save"
+msgstr ""
+
+#: src/ui/mod.rs:93
+msgid "Search"
+msgstr ""
+
+#: src/ui/mod.rs:443
+msgid "Search Games"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:266
+msgid "Search dependencies…"
+msgstr ""
+
+#: src/ui/mod.rs:98
+msgid "Search games..."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:593
+#: src/ui/game_dialogs.rs:1946
+msgid "Select Executable"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:655
+#: src/ui/game_dialogs.rs:1252
+msgid "Select Group Icon"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:641
+#: src/ui/game_dialogs.rs:1978
+msgid "Select Icon"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:610
+#: src/ui/game_dialogs.rs:626
+#: src/ui/game_dialogs.rs:1237
+#: src/ui/game_dialogs.rs:1963
+#: src/ui/settings.rs:56
+msgid "Select Prefix Folder"
+msgstr ""
+
+#: src/prefix_tools.rs:171
+msgid "Select Program"
+msgstr ""
+
+#: src/ui/settings.rs:265
+msgid "Select which messages are printed to the terminal."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:743
+#: src/ui/game_dialogs.rs:789
+#: src/ui/game_dialogs.rs:1303
+#: src/ui/game_dialogs.rs:2061
+msgid "Selected Proton path does not exist"
+msgstr ""
+
+#: src/launch.rs:937
+msgid "Selected Proton version was not found"
+msgstr ""
+
+#: src/prefix_tools.rs:181
+msgid "Selected file has no local path"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:418
+#: src/ui/game_dialogs.rs:969
+msgid "Set an optional custom icon for this group."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1556
+msgid "Settings"
+msgstr ""
+
+#: src/ui/settings.rs:270
+msgid "Show error messages from leyen and launched processes"
+msgstr ""
+
+#: src/ui/settings.rs:282
+msgid "Show info about background operations"
+msgstr ""
+
+#: src/ui/settings.rs:276
+msgid "Show warning messages (e.g. game not found)"
+msgstr ""
+
+#: src/ui/components/game_card.rs:144
+#: src/ui/running_games.rs:150
+msgid "Stop Game"
+msgstr ""
+
+#: src/ui/library/mod.rs:51
+msgid "Stopping {}..."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:75
+msgid "Supported images"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1148
+#: src/ui/game_dialogs.rs:1163
+msgid "These games use their own prefixes: {}."
+msgstr ""
+
+#: src/ui/deps_dialog.rs:695
+msgid "This dependency could not be located."
+msgstr ""
+
+#: src/launch.rs:911
+#: src/launch.rs:1132
+msgid "This game is already running"
+msgstr ""
+
+#: src/ui/mod.rs:163
+msgid "This group is empty"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:689
+msgid "This removes the dependency from Leyen's tracking."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:273
+#: src/ui/game_dialogs.rs:920
+#: src/ui/game_dialogs.rs:1406
+msgid "Title"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2013
+msgid "Title and executable path are required"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:718
+#: src/ui/game_dialogs.rs:1273
+msgid "Title is required"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:995
+#: src/ui/game_dialogs.rs:1578
+#: src/ui/settings.rs:104
+msgid "Tools"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1030
+#: src/ui/game_dialogs.rs:1628
+msgid "Use Global Settings to manage dependencies or run a program in the default prefix."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:341
+#: src/ui/game_dialogs.rs:1515
+msgid "Use a custom icon instead of extracting one from the executable."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:426
+#: src/ui/game_dialogs.rs:977
+msgid "Use a group-specific prefix instead of the global default."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:322
+#: src/ui/game_dialogs.rs:1486
+msgid "Use a per-game Proton version instead of the inherited default."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:299
+#: src/ui/game_dialogs.rs:1439
+msgid "Use a per-game prefix instead of the inherited group and global defaults."
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1799
+#: src/ui/game_dialogs.rs:1818
+msgid "Use {} settings to manage dependencies or run a program in that prefix."
+msgstr ""
+
+#: src/ui/running_games.rs:145
+msgid "View Game Logs"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:321
+msgid "Wait for the dependency operation to finish."
+msgstr ""
+
+#: src/ui/settings.rs:275
+msgid "Warnings"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:362
+#: src/ui/game_dialogs.rs:1537
+#: src/ui/settings.rs:230
+msgid "Wayland"
+msgstr ""
+
+#: src/prefix_tools.rs:165
+#: src/ui/game_dialogs.rs:588
+#: src/ui/game_dialogs.rs:1941
+msgid "Windows programs"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:1005
+#: src/ui/game_dialogs.rs:1603
+#: src/ui/settings.rs:109
+msgid "Wine Configuration"
+msgstr ""
+
+#: src/prefix_tools.rs:56
+msgid "Wine Configuration launched"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:363
+#: src/ui/game_dialogs.rs:1538
+#: src/ui/settings.rs:235
+msgid "WoW64"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2166
+#: src/ui/game_dialogs.rs:2178
+msgid "game '{}'"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2168
+msgid "group '{}'"
+msgstr ""
+
+#: src/ui/game_dialogs.rs:2182
+msgid "item"
+msgstr ""
+
+#: src/ui/settings.rs:364
+msgid "umu runtime directory not found — nothing to reset."
+msgstr ""
+
+#: src/ui/settings.rs:359
+msgid "umu runtime reset. Re-run any dependency install to download a fresh copy."
+msgstr ""
+
+#: src/deps/engine.rs:829
+#: src/launch.rs:899
+#: src/prefix_tools.rs:39
+#: src/prefix_tools.rs:84
+#: src/prefix_tools.rs:159
+msgid "umu-launcher is not installed. Please check your internet connection and restart."
+msgstr ""
+
+#: src/deps/engine.rs:815
+#: src/launch.rs:886
+#: src/prefix_tools.rs:30
+#: src/prefix_tools.rs:75
+#: src/prefix_tools.rs:149
+msgid "umu-launcher is still downloading, please wait…"
+msgstr ""
+
+#: src/deps/engine.rs:839
+msgid "winetricks is still downloading, please wait…"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:119
+msgid "{} components installed"
+msgstr ""
+
+#: src/i18n.rs:70
+msgid "{} file"
+msgid_plural "{} files"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/components/group_card.rs:73
+msgid "{} game"
+msgid_plural "{} games"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/running_games.rs:108
+msgid "{} process"
+msgid_plural "{} processes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/components/group_card.rs:83
+msgid "{} running"
+msgstr ""
+
+#: src/ui/utils/mod.rs:105
+msgid "{}d ago"
+msgstr ""
+
+#: src/ui/utils/mod.rs:103
+msgid "{}h ago"
+msgstr ""
+
+#: src/ui/utils/mod.rs:101
+msgid "{}m ago"
+msgstr ""
+
+#: src/ui/utils/mod.rs:99
+msgid "{}s ago"
+msgstr ""
+
+#: src/ui/deps_dialog.rs:410
+msgid "✓ Installed"
+msgstr ""

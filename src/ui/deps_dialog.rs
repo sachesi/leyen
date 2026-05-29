@@ -1,3 +1,4 @@
+use crate::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -113,9 +114,9 @@ fn redistribute_rows(
 
 fn installed_subtitle(n: usize) -> String {
     match n {
-        0 => "No components installed".to_string(),
-        1 => "1 component installed".to_string(),
-        n => format!("{} components installed", n),
+        0 => t!("No components installed"),
+        1 => t!("1 component installed"),
+        n => t!("{} components installed").replacen("{}", &n.to_string(), 1),
     }
 }
 
@@ -143,11 +144,11 @@ fn sync_dep_row(
     if can_remove {
         handle
             .remove_btn
-            .set_tooltip_text(Some("Remove this managed dependency"));
+            .set_tooltip_text(Some(&t!("Remove this managed dependency")));
     } else if is_installed {
         handle
             .remove_btn
-            .set_tooltip_text(Some(&format!("Required by: {}", dependents.join(", "))));
+            .set_tooltip_text(Some(&t!("Required by: {}").replacen("{}", &dependents.join(", "), 1)));
     } else {
         handle.remove_btn.set_tooltip_text(None);
     }
@@ -216,7 +217,7 @@ pub async fn show_dependencies_dialog(
     let snapshots = crate::launch::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
-            "Dependency manager is blocked while games are running. Close all games first.",
+            &t!("Dependency manager is blocked while games are running. Close all games first."),
         ));
         return;
     }
@@ -255,14 +256,14 @@ pub async fn show_dependencies_dialog(
 
     let subtitle = installed_subtitle(installed.len());
 
-    let title_widget = adw::WindowTitle::new("Manage Dependencies", &subtitle);
+    let title_widget = adw::WindowTitle::new(&t!("Manage Dependencies"), &subtitle);
 
     let header = adw::HeaderBar::builder()
         .title_widget(&title_widget)
         .build();
 
     let search_entry = gtk4::SearchEntry::builder()
-        .placeholder_text("Search dependencies…")
+        .placeholder_text(t!("Search dependencies…"))
         .margin_top(8)
         .margin_bottom(4)
         .margin_start(12)
@@ -294,21 +295,19 @@ pub async fn show_dependencies_dialog(
     let dialog_dead = Rc::new(Cell::new(false));
     {
         let dead = dialog_dead.clone();
-        if let Some(surface) = parent.surface() {
-            if let Some(toplevel) = surface.downcast_ref::<gdk::Toplevel>() {
+        if let Some(surface) = parent.surface()
+            && let Some(toplevel) = surface.downcast_ref::<gdk::Toplevel>() {
                 let weak = dialog.downgrade();
                 let prev = Rc::new(Cell::new(false));
                 toplevel.connect_state_notify(move |s| {
                     let is_suspended = s.state().contains(gdk::ToplevelState::SUSPENDED);
                     let was_suspended = prev.replace(is_suspended);
-                    if was_suspended && !is_suspended && !dead.get() {
-                        if let Some(d) = weak.upgrade() {
+                    if was_suspended && !is_suspended && !dead.get()
+                        && let Some(d) = weak.upgrade() {
                             d.present();
                         }
-                    }
                 });
             }
-        }
     }
 
     let dialog_busy = Rc::new(Cell::new(false));
@@ -319,7 +318,7 @@ pub async fn show_dependencies_dialog(
         dialog.connect_close_request(move |_| {
             if dialog_busy.get() {
                 overlay_for_close.add_toast(adw::Toast::new(
-                    "Wait for the dependency operation to finish.",
+                    &t!("Wait for the dependency operation to finish."),
                 ));
                 gtk4::glib::Propagation::Stop
             } else {
@@ -386,7 +385,7 @@ pub async fn show_dependencies_dialog(
                 .build();
 
             let install_btn = gtk4::Button::builder()
-                .label("Install")
+                .label(t!("Install"))
                 .css_classes(["suggested-action"])
                 .valign(gtk4::Align::Center)
                 .visible(!is_installed)
@@ -394,21 +393,21 @@ pub async fn show_dependencies_dialog(
 
             let reinstall_btn = gtk4::Button::builder()
                 .icon_name("view-refresh-symbolic")
-                .tooltip_text("Reinstall")
+                .tooltip_text(t!("Reinstall"))
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
                 .build();
 
             let remove_btn = gtk4::Button::builder()
                 .icon_name("user-trash-symbolic")
-                .tooltip_text("Remove")
+                .tooltip_text(t!("Remove"))
                 .css_classes(["destructive-action"])
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
                 .build();
 
             let badge = gtk4::Label::builder()
-                .label("✓ Installed")
+                .label(t!("✓ Installed"))
                 .css_classes(["success", "caption"])
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
@@ -503,16 +502,16 @@ pub async fn show_dependencies_dialog(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    format!("'{}' installed successfully. {}", dep_id, note)
+                                    t!("'{}' installed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                 })
-                                .unwrap_or_else(|| format!("'{}' installed successfully.", dep_id));
+                                .unwrap_or_else(|| t!("'{}' installed successfully.").replacen("{}", dep_id, 1));
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(true);
                             reinstall_btn3.set_visible(false);
                             remove_btn3.set_visible(false);
                             let msg =
-                                note_or_error.unwrap_or_else(|| "Installation failed.".to_string());
+                                note_or_error.unwrap_or_else(|| t!("Installation failed."));
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -603,10 +602,10 @@ pub async fn show_dependencies_dialog(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    format!("'{}' reinstalled successfully. {}", dep_id, note)
+                                    t!("'{}' reinstalled successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                 })
                                 .unwrap_or_else(|| {
-                                    format!("'{}' reinstalled successfully.", dep_id)
+                                    t!("'{}' reinstalled successfully.").replacen("{}", dep_id, 1)
                                 });
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
@@ -614,7 +613,7 @@ pub async fn show_dependencies_dialog(
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
                             let msg =
-                                note_or_error.unwrap_or_else(|| "Reinstall failed.".to_string());
+                                note_or_error.unwrap_or_else(|| t!("Reinstall failed."));
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -655,8 +654,8 @@ pub async fn show_dependencies_dialog(
                     let prefix_for_dep = prefix2.clone();
                     let dep_id_for_dep = dep_id.to_string();
                     let confirm_builder = gtk4::AlertDialog::builder()
-                        .message(format!("Remove '{}'?", dep_id))
-                        .buttons(vec!["Cancel".to_string(), "Remove".to_string()])
+                        .message(t!("Remove '{}'?").replacen("{}", dep_id, 1))
+                        .buttons(vec![t!("Cancel"), t!("Remove")])
                         .cancel_button(0)
                         .default_button(0);
 
@@ -687,13 +686,13 @@ pub async fn show_dependencies_dialog(
                             get_installed_dep(&prefix_for_dep, &dep_id_for_dep)
                                 .map(|installed| installed.removal_detail())
                                 .unwrap_or_else(|| {
-                                    "This removes the dependency from Leyen's tracking.".to_string()
+                                    t!("This removes the dependency from Leyen's tracking.")
                                 })
                         })
                         .await
                         .unwrap_or_else(|e| {
                             log::warn!("deps dialog: get dep detail task failed: {e}");
-                            "This dependency could not be located.".to_string()
+                            t!("This dependency could not be located.")
                         });
 
                         let confirm = confirm_builder.detail(&detail).build();
@@ -767,13 +766,10 @@ pub async fn show_dependencies_dialog(
                                             remove_btn4.set_visible(false);
                                             let message = note_or_error
                                                 .map(|note| {
-                                                    format!(
-                                                        "'{}' removed successfully. {}",
-                                                        dep_id, note
-                                                    )
+                                                    t!("'{}' removed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                                 })
                                                 .unwrap_or_else(|| {
-                                                    format!("'{}' removed successfully.", dep_id)
+                                                    t!("'{}' removed successfully.").replacen("{}", dep_id, 1)
                                                 });
                                             overlay4.add_toast(adw::Toast::new(&message));
                                         } else {
@@ -781,7 +777,7 @@ pub async fn show_dependencies_dialog(
                                             reinstall_btn4.set_visible(true);
                                             remove_btn4.set_visible(true);
                                             let msg = note_or_error
-                                                .unwrap_or_else(|| "Remove failed.".to_string());
+                                                .unwrap_or_else(|| t!("Remove failed."));
                                             overlay4.add_toast(adw::Toast::new(&msg));
                                         }
                                     };

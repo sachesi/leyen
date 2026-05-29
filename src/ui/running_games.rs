@@ -1,3 +1,5 @@
+use crate::t;
+use crate::tn;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -101,16 +103,14 @@ async fn rebuild_running_games(
             .build();
 
         let pid_label = gtk4::Label::builder()
-            .label(format!(
-                "PID {} | tracking {} process{}",
-                snapshot.pid,
-                snapshot.tracked_pid_count,
-                if snapshot.tracked_pid_count == 1 {
-                    ""
-                } else {
-                    "es"
-                }
-            ))
+            .label({
+                let tracked = snapshot.tracked_pid_count as u32;
+                let processes = tn!("{} process", "{} processes", tracked)
+                    .replacen("{}", &tracked.to_string(), 1);
+                t!("PID {} | tracking {}")
+                    .replacen("{}", &snapshot.pid.to_string(), 1)
+                    .replacen("{}", &processes, 1)
+            })
             .xalign(0.0)
             .css_classes(["caption", "dim-label"])
             .build();
@@ -122,7 +122,7 @@ async fn rebuild_running_games(
         let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
 
         let runtime_label = gtk4::Label::builder()
-            .label(format!("Running for {}", format_duration_brief(elapsed)))
+            .label(t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1))
             .xalign(0.0)
             .css_classes(["caption", "accent"])
             .build();
@@ -142,12 +142,12 @@ async fn rebuild_running_games(
 
         let logs_btn = gtk4::Button::builder()
             .icon_name("utilities-terminal-symbolic")
-            .tooltip_text("View Game Logs")
+            .tooltip_text(t!("View Game Logs"))
             .build();
 
         let stop_btn = gtk4::Button::builder()
             .icon_name("media-playback-stop-symbolic")
-            .tooltip_text("Stop Game")
+            .tooltip_text(t!("Stop Game"))
             .css_classes(["destructive-action", "circular"])
             .build();
 
@@ -169,10 +169,10 @@ async fn rebuild_running_games(
             glib::spawn_future_local(async move {
                 match crate::launch::stop_game(&game_id).await {
                     Ok(true) => {}
-                    Ok(false) => overlay.add_toast(adw::Toast::new("Game is no longer running")),
+                    Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
                     Err(err) => {
                         overlay
-                            .add_toast(adw::Toast::new(&format!("Failed to stop game: {}", err)));
+                            .add_toast(adw::Toast::new(&t!("Failed to stop game: {}").replacen("{}", &err.to_string(), 1)));
                     }
                 }
             });
@@ -207,7 +207,7 @@ pub async fn update_running_duration_labels(
     for (game_id, label) in running_duration_labels.borrow().iter() {
         if let Some(started_at) = snapshots.get(game_id) {
             let elapsed = now.saturating_sub(*started_at);
-            label.set_label(&format!("Running for {}", format_duration_brief(elapsed)));
+            label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
         }
     }
 }
@@ -224,7 +224,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         }
 
     let window = adw::Window::builder()
-        .title("Leyen – Running Games")
+        .title(t!("Leyen – Running Games"))
         .default_width(560)
         .default_height(420)
         .transient_for(parent)
@@ -251,8 +251,8 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         .build();
     let empty_state = adw::StatusPage::builder()
         .icon_name("media-playback-stop-symbolic")
-        .title("No running games")
-        .description("Games you launch through Leyen will appear here while they are active.")
+        .title(t!("No running games"))
+        .description(t!("Games you launch through Leyen will appear here while they are active."))
         .build();
     let content_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)

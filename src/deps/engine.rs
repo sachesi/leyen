@@ -237,12 +237,6 @@ pub async fn execute_dep_step(
             extra_env,
         } => {
             let exe_path = Path::new(cache_dir).join(file_name);
-            info!("[dep] Snapshotting prefix before {}", file_name);
-            let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-
             info!("[dep] Running {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
             let output = {
                 let prefix_owned = prefix_path.to_string();
@@ -297,22 +291,11 @@ pub async fn execute_dep_step(
                 );
             }
 
-            info!("[dep] Snapshotting prefix after {}", file_name);
-            let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-            Ok(diff_snapshots(&before, &after))
+            Ok(StepChanges::default())
         }
 
         DepStepAction::RunMsi { file_name, args } => {
             let msi_path = Path::new(cache_dir).join(file_name);
-            info!("[dep] Snapshotting prefix before msiexec {}", file_name);
-            let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-
             info!("[dep] Running msiexec /i {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
             let output = {
                 let prefix_owned = prefix_path.to_string();
@@ -358,12 +341,7 @@ pub async fn execute_dep_step(
                 );
             }
 
-            info!("[dep] Snapshotting prefix after msiexec {}", file_name);
-            let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-            Ok(diff_snapshots(&before, &after))
+            Ok(StepChanges::default())
         }
 
         DepStepAction::OverrideDlls { dlls, .. } => {
@@ -376,12 +354,6 @@ pub async fn execute_dep_step(
         }
 
         DepStepAction::RunWinetricks { verb } => {
-            info!("[dep] Snapshotting prefix before winetricks {}", verb);
-            let prefix_path_clone = prefix_path.to_string();
-            let before = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-
             info!("[dep] Running winetricks {} (timeout: {}s)", verb, COMMAND_TIMEOUT_SECS);
             let output = {
                 let prefix_owned = prefix_path.to_string();
@@ -409,18 +381,13 @@ pub async fn execute_dep_step(
             }
             info!("[dep] winetricks {} completed", verb);
 
-            info!("[dep] Snapshotting prefix after winetricks {}", verb);
-            let prefix_path_clone = prefix_path.to_string();
-            let after = tokio::task::spawn_blocking(move || snapshot_prefix(&prefix_path_clone))
-                .await
-                .map_err(join_err).and_then(|r| r)?;
-            let mut changes = diff_snapshots(&before, &after);
-            // Winetricks verbs may set registry DLL overrides invisible to file snapshots
+            // Winetricks verbs may set registry DLL overrides invisible to file
+            // snapshots; record the known ones so uninstall can revert them.
+            let mut changes = StepChanges::default();
             let known = winetricks_known_dll_overrides(verb);
             if !known.is_empty() {
-                info!("[dep] Merging {} known DLL overrides for winetricks {}", known.len(), verb);
-                changes.dll_overrides =
-                    merge_unique_strings(&changes.dll_overrides, &known);
+                info!("[dep] Recording {} known DLL overrides for winetricks {}", known.len(), verb);
+                changes.dll_overrides = known;
             }
             Ok(changes)
         }
@@ -562,6 +529,25 @@ pub fn install_dep_async(
                 completed_steps += download_steps.len();
             }
 
+            // Snapshot the prefix once before the file-creating steps; all new
+            // or changed files are attributed to this profile after they run.
+            // This is cheaper than per-step scans and more robust.
+            let snapshot_before = {
+                let p = prefix_path.clone();
+                match tokio::task::spawn_blocking(move || snapshot_prefix(&p))
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r)
+                {
+                    Ok(s) => s,
+                    Err(error) => {
+                        on_finish(false, Some(error));
+                        return;
+                    }
+                }
+            };
+
+            let mut step_error: Option<String> = None;
             for step in &execution_steps {
                 completed_steps += 1;
                 let description = if install_plan.len() > 1 {
@@ -580,9 +566,23 @@ pub fn install_dep_async(
                     Ok(changes) => recorded.merge(changes),
                     Err(error) => {
                         error!("[dep:{}] install failed: {}", profile.id, error);
-                        on_finish(false, Some(error));
-                        return;
+                        step_error = Some(error);
+                        break;
                     }
+                }
+            }
+
+            // Diff once after the steps — even on partial failure — so created
+            // files are tracked and a later uninstall can remove them instead of
+            // leaving orphans behind.
+            {
+                let p = prefix_path.clone();
+                if let Ok(after) = tokio::task::spawn_blocking(move || snapshot_prefix(&p))
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r)
+                {
+                    recorded.merge(diff_snapshots(&snapshot_before, &after));
                 }
             }
 
@@ -598,6 +598,11 @@ pub fn install_dep_async(
                     on_finish(false, Some(error));
                     return;
                 }
+            }
+
+            if let Some(error) = step_error {
+                on_finish(false, Some(error));
+                return;
             }
 
             for provided_id in profile.provides {

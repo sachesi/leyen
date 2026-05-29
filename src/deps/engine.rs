@@ -88,6 +88,19 @@ async fn run_umu_command(
         });
     }
 
+    // Run on the Tokio runtime (not the GTK/glib executor) so the process and
+    // timer drivers advance while the main loop stays responsive for Cancel.
+    tokio::spawn(run_umu_command_inner(cmd, label, cancel))
+        .await
+        .map_err(|e| format!("Command task panicked: {e}"))
+        .and_then(|r| r)
+}
+
+async fn run_umu_command_inner(
+    mut cmd: AsyncCommand,
+    label: String,
+    cancel: Arc<AtomicBool>,
+) -> Result<std::process::Output, String> {
     let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to launch {}: {}", label, e))?;

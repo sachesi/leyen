@@ -664,9 +664,7 @@ pub fn install_dep_async(
                 }
             }
 
-            // Diff once after the steps — even on partial failure — so created
-            // files are tracked and a later uninstall can remove them instead of
-            // leaving orphans behind.
+            // Diff once after the steps so we know what this attempt created.
             {
                 let p = prefix_path.clone();
                 if let Ok(after) = tokio::task::spawn_blocking(move || snapshot_prefix(&p))
@@ -676,6 +674,27 @@ pub fn install_dep_async(
                 {
                     recorded.merge(diff_snapshots(&snapshot_before, &after));
                 }
+            }
+
+            // On cancel or a failed step, do NOT mark the dependency installed.
+            // Best-effort remove the files this attempt created so the prefix is
+            // left clean and the entry stays in the available list.
+            if let Some(error) = step_error {
+                let cleanup_files = recorded.created_files.clone();
+                if !cleanup_files.is_empty() {
+                    let cleanup_prefix = prefix_path.clone();
+                    info!(
+                        "[dep:{}] rolling back {} files from the cancelled/failed attempt",
+                        profile.id,
+                        cleanup_files.len()
+                    );
+                    let _ = tokio::task::spawn_blocking(move || {
+                        remove_created_files(&cleanup_prefix, &cleanup_files)
+                    })
+                    .await;
+                }
+                on_finish(false, Some(error));
+                return;
             }
 
             {
@@ -690,11 +709,6 @@ pub fn install_dep_async(
                     on_finish(false, Some(error));
                     return;
                 }
-            }
-
-            if let Some(error) = step_error {
-                on_finish(false, Some(error));
-                return;
             }
 
             for provided_id in profile.provides {

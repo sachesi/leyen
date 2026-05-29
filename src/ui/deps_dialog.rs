@@ -2,7 +2,7 @@ use crate::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
-use gtk4::{gdk, gio, glib};
+use gtk4::{gio, glib};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -12,8 +12,6 @@ use crate::deps::{
     get_installed_dep, install_dep_async, read_installed_deps, read_prefix_dep_state,
     uninstall_dep_async, InstalledDependency,
 };
-
-use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 
 #[derive(Clone)]
 struct DepRowHandle {
@@ -208,8 +206,8 @@ fn set_dialog_busy(
     }
 }
 
-pub async fn show_dependencies_dialog(
-    parent: &adw::ApplicationWindow,
+pub async fn open_dependencies_page(
+    nav: &adw::NavigationView,
     prefix_path: &str,
     proton_path: &str,
     overlay: &adw::ToastOverlay,
@@ -245,14 +243,6 @@ pub async fn show_dependencies_dialog(
                 log::warn!("deps dialog: read installed deps task failed: {e}");
                 Default::default()
             });
-
-    let dialog = adw::Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
-        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
-        .destroy_with_parent(true)
-        .build();
 
     let subtitle = installed_subtitle(installed.len());
 
@@ -290,43 +280,12 @@ pub async fn show_dependencies_dialog(
 
     let overlay = adw::ToastOverlay::new();
     overlay.set_child(Some(&toolbar_view));
-    dialog.set_content(Some(&overlay));
 
-    let dialog_dead = Rc::new(Cell::new(false));
-    {
-        let dead = dialog_dead.clone();
-        if let Some(surface) = parent.surface()
-            && let Some(toplevel) = surface.downcast_ref::<gdk::Toplevel>() {
-                let weak = dialog.downgrade();
-                let prev = Rc::new(Cell::new(false));
-                toplevel.connect_state_notify(move |s| {
-                    let is_suspended = s.state().contains(gdk::ToplevelState::SUSPENDED);
-                    let was_suspended = prev.replace(is_suspended);
-                    if was_suspended && !is_suspended && !dead.get()
-                        && let Some(d) = weak.upgrade() {
-                            d.present();
-                        }
-                });
-            }
-    }
-
+    // The dependency manager is a navigation subpage pushed into the opener
+    // dialog's AdwNavigationView — a single dialog, never a second stacked one,
+    // so the GNOME overview renders it correctly. A running operation only
+    // disables the action buttons; navigating back does not interrupt it.
     let dialog_busy = Rc::new(Cell::new(false));
-    {
-        let dialog_busy = dialog_busy.clone();
-        let overlay_for_close = overlay.clone();
-        let dialog_dead = dialog_dead.clone();
-        dialog.connect_close_request(move |_| {
-            if dialog_busy.get() {
-                overlay_for_close.add_toast(adw::Toast::new(
-                    &t!("Wait for the dependency operation to finish."),
-                ));
-                gtk4::glib::Propagation::Stop
-            } else {
-                dialog_dead.set(true);
-                gtk4::glib::Propagation::Proceed
-            }
-        });
-    }
 
     let mut entries: Vec<&crate::deps::DepProfile> = DEP_PROFILES.iter().collect();
     entries.sort_by(|a, b| {
@@ -642,7 +601,7 @@ pub async fn show_dependencies_dialog(
                 let prefix2 = resolved_prefix.clone();
                 let proton2 = proton_path.to_string();
                 let overlay2 = overlay.clone();
-                let dialog2 = dialog.clone();
+                let dialog2 = overlay.clone();
                 let row_handles2 = row_handles.clone();
                 let search_entry2 = search_entry.clone();
                 let dialog_busy2 = dialog_busy.clone();
@@ -696,7 +655,10 @@ pub async fn show_dependencies_dialog(
                         });
 
                         let confirm = confirm_builder.detail(&detail).build();
-                        confirm.choose(Some(&dialog3), gio::Cancellable::NONE, move |result| {
+                        let root3 = dialog3
+                            .root()
+                            .and_then(|r| r.downcast::<gtk4::Window>().ok());
+                        confirm.choose(root3.as_ref(), gio::Cancellable::NONE, move |result| {
                             if let Ok(1) = result {
                                 let groups5 = groups4.clone();
                                 let page5 = page4.clone();
@@ -829,5 +791,10 @@ pub async fn show_dependencies_dialog(
 
     let initial_snapshot = row_handles.borrow().clone();
     refresh_dep_rows(&resolved_prefix, &title_widget, &initial_snapshot).await;
-    dialog.present();
+
+    let nav_page = adw::NavigationPage::builder()
+        .title(t!("Manage Dependencies"))
+        .child(&overlay)
+        .build();
+    nav.push(&nav_page);
 }

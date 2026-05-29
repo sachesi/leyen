@@ -6,7 +6,7 @@ use gtk4::gio;
 use std::fs;
 use std::path::PathBuf;
 
-use super::deps_dialog::show_dependencies_dialog;
+use super::deps_dialog::open_dependencies_page;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
 use crate::runtime::proton::resolve_proton_path;
@@ -17,13 +17,15 @@ use gtk4::glib;
 pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let settings = crate::config::load_settings().await;
 
-    let dialog = adw::Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
-        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
-        .destroy_with_parent(true)
+    let dialog = adw::Dialog::builder()
+        .title(t!("Global Settings"))
+        .content_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .content_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .build();
+
+    // Created early so the "Manage Dependencies" handler can push a subpage; the
+    // root page is added once the content is built (below).
+    let nav = adw::NavigationView::new();
 
     let header = adw::HeaderBar::builder()
         .title_widget(&adw::WindowTitle::new(&t!("Global Settings"), ""))
@@ -49,13 +51,13 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     prefix_row.add_suffix(&prefix_browse_btn);
 
     let prefix_row_clone = prefix_row.clone();
-    let dialog_clone = dialog.clone();
+    let parent_for_fd = parent.clone();
     prefix_browse_btn.connect_clicked(move |_| {
         let prefix_row_clone = prefix_row_clone.clone();
         let file_dialog = gtk4::FileDialog::builder()
             .title(t!("Select Prefix Folder"))
             .build();
-        file_dialog.select_folder(Some(&dialog_clone), gio::Cancellable::NONE, move |result| {
+        file_dialog.select_folder(Some(&parent_for_fd), gio::Cancellable::NONE, move |result| {
             if let Ok(file) = result
                 && let Some(path) = file.path()
             {
@@ -163,7 +165,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         });
     });
 
-    let parent_for_deps = parent.clone();
+    let nav_for_deps = nav.clone();
     let overlay_for_deps = overlay.clone();
     let prefix_row_for_deps = prefix_row.clone();
     let proton_row_for_deps = proton_row.clone();
@@ -177,10 +179,10 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                 "Default".to_string()
             };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
-        let parent = parent_for_deps.clone();
+        let nav = nav_for_deps.clone();
         let overlay = overlay_for_deps.clone();
         glib::spawn_future_local(async move {
-            show_dependencies_dialog(&parent, &prefix, &proton, &overlay).await;
+            open_dependencies_page(&nav, &prefix, &proton, &overlay).await;
         });
     });
 
@@ -312,7 +314,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     reset_row.add_suffix(&reset_btn);
 
     let overlay_for_reset = overlay.clone();
-    let dialog_for_reset = dialog.clone();
+    let dialog_for_reset = parent.clone();
     reset_btn.connect_clicked(move |_| {
         let overlay_for_reset = overlay_for_reset.clone();
         let dialog_for_reset = dialog_for_reset.clone();
@@ -394,11 +396,19 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&scroll));
 
-    overlay.set_child(Some(&toolbar_view));
-    dialog.set_content(Some(&overlay));
+    // Host the content in the navigation view so the dependency manager can be
+    // pushed as a subpage instead of opening a second stacked dialog.
+    let root_page = adw::NavigationPage::builder()
+        .title(t!("Global Settings"))
+        .child(&toolbar_view)
+        .build();
+    nav.add(&root_page);
 
-    // Save settings when window is closed
-    dialog.connect_close_request(move |_| {
+    overlay.set_child(Some(&nav));
+    dialog.set_child(Some(&overlay));
+
+    // Save settings when the dialog is closed
+    dialog.connect_closed(move |_| {
         let updated_settings = crate::models::GlobalSettings {
             default_prefix_path: prefix_row.text().to_string(),
             default_proton: if (proton_row.selected() as usize) < available_versions.len() {
@@ -422,8 +432,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
             crate::logging::apply_log_settings(&updated_settings);
             crate::config::save_settings(updated_settings).await;
         });
-        gtk4::glib::Propagation::Proceed
     });
 
-    dialog.present();
+    dialog.present(Some(parent));
 }

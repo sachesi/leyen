@@ -26,7 +26,7 @@ use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_win
 use crate::runtime::proton::resolve_proton_path;
 use crate::tools::{gamemode_available, join_err, mangohud_available};
 
-use super::deps_dialog::show_dependencies_dialog;
+use super::deps_dialog::open_dependencies_page;
 use super::{
     LibraryUi, SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH,
     refresh_library_view,
@@ -239,13 +239,11 @@ pub async fn show_add_library_item_dialog(
         .and_then(|group_id| find_group(&library, group_id))
         .cloned();
 
-    let dialog = adw::Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
-        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
-        .destroy_with_parent(true)
+    let dialog = adw::Dialog::builder()
+        .content_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .content_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .build();
+    let nav = adw::NavigationView::new();
 
     let title = match (kind, inside_group) {
         (AddLibraryItemKind::Game, true) => t!("Add Game to Group"),
@@ -669,11 +667,15 @@ pub async fn show_add_library_item_dialog(
     toolbar_view.set_content(Some(&scroll));
 
     let overlay = adw::ToastOverlay::new();
-    overlay.set_child(Some(&toolbar_view));
-    dialog.set_content(Some(&overlay));
+    let root_page = adw::NavigationPage::builder()
+        .child(&toolbar_view)
+        .build();
+    nav.add(&root_page);
+    overlay.set_child(Some(&nav));
+    dialog.set_child(Some(&overlay));
 
     let dialog_clone = dialog.clone();
-    cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
+    cancel_btn.connect_clicked(move |_| { dialog_clone.close(); });
 
     let ui_clone = ui.clone();
     let overlay_clone = overlay.clone();
@@ -881,11 +883,11 @@ pub async fn show_add_library_item_dialog(
                 t!("Item added successfully")
             };
             overlay_clone.add_toast(adw::Toast::new(&success_message));
-            dialog_clone.destroy();
+            dialog_clone.close();
         });
     });
 
-    dialog.present();
+    dialog.present(Some(parent));
 }
 
 pub async fn show_edit_group_dialog(
@@ -895,13 +897,11 @@ pub async fn show_edit_group_dialog(
     group: &GameGroup,
 ) {
     let settings = load_settings().await;
-    let dialog = adw::Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
-        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
-        .destroy_with_parent(true)
+    let dialog = adw::Dialog::builder()
+        .content_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .content_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .build();
+    let nav = adw::NavigationView::new();
 
     let header = adw::HeaderBar::builder()
         .title_widget(&adw::WindowTitle::new(&t!("Edit Group"), ""))
@@ -1033,7 +1033,7 @@ pub async fn show_edit_group_dialog(
     tools_stack.add_named(&global_notice_row, Some("global"));
     tools_group.add(&tools_stack);
 
-    let dialog_parent = parent.clone();
+    let nav_for_deps = nav.clone();
     let overlay_clone_deps = overlay.clone();
     let overlay_clone_winecfg = overlay.clone();
     let overlay_clone_regedit = overlay.clone();
@@ -1105,10 +1105,10 @@ pub async fn show_edit_group_dialog(
             proton_choice
         };
         let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        let p = dialog_parent.clone();
+        let nav = nav_for_deps.clone();
         let o = overlay_clone_deps.clone();
         glib::spawn_future_local(async move {
-            show_dependencies_dialog(&p, deps_prefix.as_str(), &deps_proton, &o).await;
+            open_dependencies_page(&nav, deps_prefix.as_str(), &deps_proton, &o).await;
         });
     });
 
@@ -1179,8 +1179,12 @@ pub async fn show_edit_group_dialog(
     toolbar_view.set_content(Some(&page));
 
     let overlay = adw::ToastOverlay::new();
-    overlay.set_child(Some(&toolbar_view));
-    dialog.set_content(Some(&overlay));
+    let root_page = adw::NavigationPage::builder()
+        .child(&toolbar_view)
+        .build();
+    nav.add(&root_page);
+    overlay.set_child(Some(&nav));
+    dialog.set_child(Some(&overlay));
 
     let prefix_row_clone = prefix_row.clone();
     let prefix_override_row_clone = prefix_override_row.clone();
@@ -1260,7 +1264,7 @@ pub async fn show_edit_group_dialog(
     });
 
     let dialog_clone = dialog.clone();
-    cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
+    cancel_btn.connect_clicked(move |_| { dialog_clone.close(); });
 
     let ui_clone = ui.clone();
     let overlay_clone = overlay.clone();
@@ -1353,12 +1357,12 @@ pub async fn show_edit_group_dialog(
                     t!("Group updated successfully")
                 };
                 overlay_clone.add_toast(adw::Toast::new(&success_message));
-                dialog_clone.destroy();
+                dialog_clone.close();
             }
         });
     });
 
-    dialog.present();
+    dialog.present(Some(parent));
 }
 
 pub async fn show_edit_game_dialog(
@@ -1381,13 +1385,11 @@ pub async fn show_edit_game_dialog(
         .as_deref()
         .and_then(|group_id| find_group(&library, group_id))
         .cloned();
-    let dialog = adw::Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .default_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
-        .default_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
-        .destroy_with_parent(true)
+    let dialog = adw::Dialog::builder()
+        .content_width(SECONDARY_WINDOW_DEFAULT_WIDTH)
+        .content_height(SECONDARY_WINDOW_DEFAULT_HEIGHT)
         .build();
+    let nav = adw::NavigationView::new();
 
     let header = adw::HeaderBar::builder()
         .title_widget(&adw::WindowTitle::new(&t!("Edit Game"), ""))
@@ -1631,7 +1633,7 @@ pub async fn show_edit_game_dialog(
     tools_stack.add_named(&global_notice_row, Some("global"));
     tools.add(&tools_stack);
 
-    let dialog_parent = parent.clone();
+    let nav_for_deps = nav.clone();
     let overlay_clone_deps = overlay.clone();
     let overlay_clone_winecfg = overlay.clone();
     let overlay_clone_regedit = overlay.clone();
@@ -1746,10 +1748,10 @@ pub async fn show_edit_game_dialog(
             proton_choice
         };
         let deps_proton = resolve_proton_path(&resolved_choice).unwrap_or_default();
-        let p = dialog_parent.clone();
+        let nav = nav_for_deps.clone();
         let o = overlay_clone_deps.clone();
         glib::spawn_future_local(async move {
-            show_dependencies_dialog(&p, deps_prefix.as_str(), &deps_proton, &o).await;
+            open_dependencies_page(&nav, deps_prefix.as_str(), &deps_proton, &o).await;
         });
     });
 
@@ -1994,11 +1996,15 @@ pub async fn show_edit_game_dialog(
     toolbar_view.set_content(Some(&scroll));
 
     let overlay = adw::ToastOverlay::new();
-    overlay.set_child(Some(&toolbar_view));
-    dialog.set_content(Some(&overlay));
+    let root_page = adw::NavigationPage::builder()
+        .child(&toolbar_view)
+        .build();
+    nav.add(&root_page);
+    overlay.set_child(Some(&nav));
+    dialog.set_child(Some(&overlay));
 
     let dialog_clone = dialog.clone();
-    cancel_btn.connect_clicked(move |_| dialog_clone.destroy());
+    cancel_btn.connect_clicked(move |_| { dialog_clone.close(); });
 
     let ui_clone = ui.clone();
     let overlay_clone = overlay.clone();
@@ -2137,14 +2143,14 @@ pub async fn show_edit_game_dialog(
                     t!("Game updated successfully. {}").replacen("{}", &notices.join(" "), 1)
                 };
                 overlay_clone.add_toast(adw::Toast::new(&success_message));
-                dialog_clone.destroy();
+                dialog_clone.close();
             } else {
                 overlay_clone.add_toast(adw::Toast::new(&t!("Error: Game not found")));
             }
         });
     });
 
-    dialog.present();
+    dialog.present(Some(parent));
 }
 
 pub async fn show_delete_confirmation(

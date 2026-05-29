@@ -1,10 +1,11 @@
 use crate::t;
 use libadwaita as adw;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use futures::future::join_all;
@@ -26,6 +27,36 @@ use super::{
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
+
+/// Prefixes with a dependency install/uninstall in progress. Prevents two
+/// concurrent operations on the same prefix (e.g. the deps page opened from both
+/// Preferences and a game's edit dialog) from interleaving their prefix
+/// snapshots and corrupting the tracked file list.
+fn busy_prefixes() -> &'static Mutex<HashSet<String>> {
+    static BUSY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    BUSY.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Releases the prefix lock on drop.
+struct PrefixOpGuard(String);
+
+impl Drop for PrefixOpGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = busy_prefixes().lock() {
+            set.remove(&self.0);
+        }
+    }
+}
+
+/// Acquires an exclusive lock for dependency operations on `prefix`, or returns
+/// `None` if one is already in progress.
+fn try_lock_prefix_op(prefix: &str) -> Option<PrefixOpGuard> {
+    let mut set = busy_prefixes().lock().ok()?;
+    if !set.insert(prefix.to_string()) {
+        return None;
+    }
+    Some(PrefixOpGuard(prefix.to_string()))
+}
 
 fn join_err(e: tokio::task::JoinError) -> String {
     if e.is_panic() {
@@ -458,6 +489,13 @@ pub fn install_dep_async(
     let overlay = overlay.clone();
 
     glib::spawn_future_local(async move {
+        let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+            on_finish(
+                false,
+                Some(t!("Another dependency operation is already running for this prefix.")),
+            );
+            return;
+        };
         if let Err(message) = ensure_umu_ready(&overlay, needs_winetricks).await {
             on_finish(false, Some(message));
             return;
@@ -656,6 +694,13 @@ pub fn uninstall_dep_async(
     let overlay = overlay.clone();
 
     glib::spawn_future_local(async move {
+        let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+            on_finish(
+                false,
+                Some(t!("Another dependency operation is already running for this prefix.")),
+            );
+            return;
+        };
         let prefix_path_for_state = prefix_path.clone();
         let state =
             tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))

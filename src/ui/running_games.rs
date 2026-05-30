@@ -214,19 +214,22 @@ pub async fn update_running_duration_labels(
 
 pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
-        static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Dialog>> = const { std::cell::RefCell::new(None) };
+        static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone())
         && existing.is_visible() {
-            existing.present(Some(parent));
+            existing.present();
             return;
         }
 
-    let window = adw::Dialog::builder()
+    let window = adw::Window::builder()
         .title(t!("Leyen – Running Games"))
-        .content_width(560)
-        .content_height(420)
+        .default_width(560)
+        .default_height(420)
+        .transient_for(parent)
+        .modal(false)
+        .destroy_with_parent(true)
         .build();
 
     ACTIVE_RUNNING_GAMES_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
@@ -269,7 +272,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     let toolbar_view = adw::ToolbarView::builder().build();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&overlay));
-    window.set_child(Some(&toolbar_view));
+    window.set_content(Some(&toolbar_view));
 
     let rebuild_busy = Rc::new(Cell::new(false));
 
@@ -282,7 +285,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     glib::spawn_future_local(async move {
         rebuild_running_games(&lbox, &cstack, &ov, &p, &rdl, &rb).await;
     });
-    window.present(Some(parent));
+    window.present();
 
     let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
     let list_box_ref = list_box.clone();

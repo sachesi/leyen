@@ -357,12 +357,23 @@ pub fn start_running_sessions_monitor() {
                     if let Ok(mut cache) = get_running_sessions_cache().write() {
                         *cache = snapshots;
                     }
-                    RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Relaxed);
+                    // Release pairs with the Acquire load in running_games_version
+                    // so a reader seeing the new version also sees the new snapshot.
+                    RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Release);
                     consecutive_errors = 0;
                 }
                 Err(e) => {
                     consecutive_errors = consecutive_errors.saturating_add(1);
                     warn!("Session monitor sync failed (attempt {consecutive_errors}): {e}");
+                    // After repeated failures the cached snapshot is stale and may
+                    // show phantom "running" games forever. Clear it so the UI
+                    // reflects unknown-but-empty rather than a frozen state.
+                    if consecutive_errors == 3 {
+                        if let Ok(mut cache) = get_running_sessions_cache().write() {
+                            cache.clear();
+                        }
+                        RUNNING_SESSIONS_VERSION_CACHE.fetch_add(1, Ordering::Release);
+                    }
                 }
             }
             let base_delay = 2;
@@ -396,7 +407,7 @@ pub fn is_any_game_running() -> bool {
 }
 
 pub async fn running_games_version() -> u64 {
-    RUNNING_SESSIONS_VERSION_CACHE.load(Ordering::Relaxed)
+    RUNNING_SESSIONS_VERSION_CACHE.load(Ordering::Acquire)
 }
 
 pub async fn read_running_games_snapshot() -> Result<Vec<RunningGameSnapshot>, LaunchError> {
@@ -436,47 +447,65 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     
 
     tokio::task::spawn_blocking(move || {
-        let scan = get_proc_scan();
         let mut session = session;
-        let tracked_pids = refresh_known_pids(&mut session, &scan.children, &scan.envs);
-        let mut killed_any = false;
+        let root = session.pid;
 
-        let pgid = -(session.pid as i32);
-        let group_result = unsafe { libc::kill(pgid, libc::SIGKILL) };
-        if group_result == 0 {
-            info!(
-                target: &format!("game:{}", session.game_id),
-                "Sent SIGKILL to process group {}", session.pid
-            );
-            killed_any = true;
+        // Fresh scan (bypass the 1s cache) so we catch children spawned right
+        // before the stop request.
+        let scan = scan_all_procs();
+        let targets = refresh_known_pids(&mut session, &scan.children, &scan.envs);
+
+        // Nothing alive — the game exited between discovery and now.
+        if targets.is_empty() {
+            return Ok(true);
         }
 
-        let group_error = std::io::Error::last_os_error();
-        for tracked_pid in &tracked_pids {
-            if unsafe { libc::kill(*tracked_pid as i32, libc::SIGKILL) } == 0 {
-                killed_any = true;
+        let _ = mark_running_session_termination_requested(&game_id_clone);
+
+        // Graceful first: SIGTERM lets Wine/Proton flush and the game save state.
+        let signaled = signal_targets(root, &targets, libc::SIGTERM);
+        info!(
+            target: &format!("game:{}", game_id_clone),
+            "Sent SIGTERM to process tree of pid {} ({} targets)", root, targets.len()
+        );
+
+        // Wait up to ~3s for a clean exit before escalating.
+        let mut survivors = wait_for_exit(&targets, 15);
+
+        if !survivors.is_empty() {
+            // Re-discover the live tree (children may have moved) and SIGKILL it.
+            let scan = scan_all_procs();
+            survivors = refresh_known_pids(&mut session, &scan.children, &scan.envs);
+        }
+
+        if !survivors.is_empty() {
+            let forced = signal_targets(root, &survivors, libc::SIGKILL);
+            info!(
+                target: &format!("game:{}", game_id_clone),
+                "Escalated to SIGKILL for pid {} ({} survivors)", root, survivors.len()
+            );
+            // Wait up to ~2s for SIGKILL to take effect.
+            survivors = wait_for_exit(&survivors, 10);
+
+            if !signaled && !forced {
+                return Err(LaunchError::Other(format!(
+                    "Failed to signal any process for pid {}: {}",
+                    root,
+                    std::io::Error::last_os_error()
+                )));
             }
         }
 
-        if killed_any {
-            let _ = mark_running_session_termination_requested(&game_id_clone);
-            info!(
+        if !survivors.is_empty() {
+            warn!(
                 target: &format!("game:{}", game_id_clone),
-                "Sent SIGKILL to tracked processes for root pid {}",
-                session.pid
+                "{} process(es) survived SIGKILL for pid {} (likely uninterruptible); \
+                 they will be cleared once the kernel reaps them",
+                survivors.len(), root
             );
-            return Ok(true);
         }
 
-        if tracked_pids.is_empty() {
-            return Ok(true);
-        }
-
-        Err(LaunchError::Other(format!(
-            "Failed to stop pid {}: {}",
-            session.pid,
-            group_error
-        )))
+        Ok(true)
     })
     .await
     .map_err(|e| LaunchError::Other(join_err(e)))
@@ -709,6 +738,58 @@ fn is_pid_alive(pid: u32) -> bool {
 
     // Process is alive if it exists and its state is not 'Z' (Zombie)
     state != "Z"
+}
+
+/// Reads the process group id (field 5 of /proc/PID/stat). Used to confirm a PID
+/// still leads the group we created before issuing a `kill(-pgid)` — guards
+/// against signalling an unrelated process that reused the PID.
+fn read_proc_pgrp(pid: u32) -> Option<i32> {
+    let mut file = File::open(format!("/proc/{pid}/stat")).ok()?;
+    let mut buf = [0u8; 1024];
+    let n = file.read(&mut buf).ok()?;
+    let stat = String::from_utf8_lossy(&buf[..n]);
+    let after_name = stat.rsplit_once(") ")?.1;
+    let mut fields = after_name.split_whitespace();
+    let _state = fields.next()?;
+    let _ppid = fields.next()?;
+    fields.next()?.parse::<i32>().ok()
+}
+
+/// Sends `signal` to the process group led by `root` (only if `root` still leads
+/// it) and to every individually tracked PID. Returns true if at least one
+/// `kill` syscall was accepted.
+fn signal_targets(root: u32, targets: &HashSet<u32>, signal: libc::c_int) -> bool {
+    let mut signaled = false;
+
+    // Only group-kill when the root PID is still the leader of its own group.
+    // After PID reuse the reused process leads a different group (or none), so
+    // this avoids killing an unrelated process tree.
+    if read_proc_pgrp(root) == Some(root as i32)
+        && unsafe { libc::kill(-(root as i32), signal) } == 0
+    {
+        signaled = true;
+    }
+
+    for &pid in targets {
+        if unsafe { libc::kill(pid as i32, signal) } == 0 {
+            signaled = true;
+        }
+    }
+
+    signaled
+}
+
+/// Polls the given PIDs and returns the subset still alive after waiting up to
+/// `attempts * 200ms`. Returns early as soon as all have exited.
+fn wait_for_exit(pids: &HashSet<u32>, attempts: u32) -> HashSet<u32> {
+    let mut alive: HashSet<u32> = pids.iter().copied().filter(|p| is_pid_alive(*p)).collect();
+    let mut remaining = attempts;
+    while !alive.is_empty() && remaining > 0 {
+        std::thread::sleep(Duration::from_millis(200));
+        alive.retain(|p| is_pid_alive(*p));
+        remaining -= 1;
+    }
+    alive
 }
 
 fn collect_descendant_pids(

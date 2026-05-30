@@ -9,11 +9,23 @@ use gtk4::glib;
 use crate::logging::{clear_log_buffer, get_log_entries, get_log_entry_count};
 use crate::models::LibraryItem;
 
+/// Scrolls the view so the end of the buffer is visible. Uses a persistent mark
+/// and `scroll_to_mark`, which defers until the TextView has validated its line
+/// heights — unlike poking the adjustment, which fires mid-validation with a
+/// stale `upper`/`page_size` and produces jitter or under-scrolling.
+fn scroll_to_end(text_view: &gtk4::TextView, buffer: &gtk4::TextBuffer, end_mark: &gtk4::TextMark) {
+    buffer.move_mark(end_mark, &buffer.end_iter());
+    text_view.scroll_to_mark(end_mark, 0.0, true, 0.0, 1.0);
+}
+
 fn full_rebuild(
     buffer: &gtk4::TextBuffer,
     filter: &Option<String>,
     scroll: &gtk4::ScrolledWindow,
     empty_state: &adw::StatusPage,
+    text_view: &gtk4::TextView,
+    end_mark: &gtk4::TextMark,
+    autoscroll: &Cell<bool>,
 ) -> usize {
     let entries = get_log_entries();
     let lines: Vec<String> = entries
@@ -28,15 +40,11 @@ fn full_rebuild(
         empty_state.set_visible(true);
     } else {
         buffer.set_text(&lines.join("\n"));
-        scroll.set_visible(false);
         scroll.set_visible(true);
         empty_state.set_visible(false);
-        let sc = scroll.clone();
-        glib::idle_add_local(move || {
-            let adj = sc.vadjustment();
-            adj.set_value(adj.upper() - adj.page_size());
-            glib::ControlFlow::Break
-        });
+        if autoscroll.get() {
+            scroll_to_end(text_view, buffer, end_mark);
+        }
     }
     get_log_entry_count()
 }
@@ -47,6 +55,9 @@ fn try_append_new(
     scroll: &gtk4::ScrolledWindow,
     empty_state: &adw::StatusPage,
     last_total: usize,
+    text_view: &gtk4::TextView,
+    end_mark: &gtk4::TextMark,
+    autoscroll: &Cell<bool>,
 ) -> Option<usize> {
     let current_total = get_log_entry_count();
     if current_total == last_total {
@@ -61,9 +72,6 @@ fn try_append_new(
     if delta > entries.len() {
         return None;
     }
-
-    let adj = scroll.vadjustment();
-    let at_bottom = (adj.upper() - adj.page_size() - adj.value()).abs() < 4.0;
 
     let start_idx = entries.len() - delta;
     let mut appended = false;
@@ -82,13 +90,8 @@ fn try_append_new(
         }
     }
 
-    if appended && at_bottom {
-        let sc = scroll.clone();
-        glib::idle_add_local(move || {
-            let adj = sc.vadjustment();
-            adj.set_value(adj.upper() - adj.page_size());
-            glib::ControlFlow::Break
-        });
+    if appended && autoscroll.get() {
+        scroll_to_end(text_view, buffer, end_mark);
     }
 
     Some(current_total)
@@ -96,20 +99,23 @@ fn try_append_new(
 
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
-        static ACTIVE_LOG_WINDOW: std::cell::RefCell<Option<adw::Dialog>> = const { std::cell::RefCell::new(None) };
+        static ACTIVE_LOG_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone())
         && existing.is_visible()
     {
-        existing.present(Some(parent));
+        existing.present();
         return;
     }
 
-    let window = adw::Dialog::builder()
+    let window = adw::Window::builder()
         .title(t!("Leyen – Logs"))
-        .content_width(820)
-        .content_height(440)
+        .default_width(820)
+        .default_height(440)
+        .transient_for(parent)
+        .modal(false)
+        .destroy_with_parent(true)
         .build();
 
     ACTIVE_LOG_WINDOW.with(|w| *w.borrow_mut() = Some(window.clone()));
@@ -169,6 +175,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .build();
 
     let buffer = text_view.buffer();
+    // Right-gravity mark that rides the end of the buffer as lines are inserted.
+    let end_mark = buffer.create_mark(Some("scroll-end"), &buffer.end_iter(), false);
+
     let scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
@@ -176,6 +185,20 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         .vexpand(true)
         .child(&text_view)
         .build();
+
+    // Follow new output only while the user is at the bottom. Scrolling up pauses
+    // the follow; scrolling back to the bottom resumes it. Reading the position
+    // on `value-changed` is enough — our own `scroll_to_mark` lands at the bottom,
+    // so it re-arms the flag rather than fighting the user.
+    let autoscroll = Rc::new(Cell::new(true));
+    {
+        let autoscroll = autoscroll.clone();
+        scroll.vadjustment().connect_value_changed(move |adj| {
+            let at_bottom = adj.upper() <= adj.page_size()
+                || adj.value() + adj.page_size() >= adj.upper() - 8.0;
+            autoscroll.set(at_bottom);
+        });
+    }
 
     let empty_state = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")
@@ -197,8 +220,8 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&content_box));
 
-    window.set_child(Some(&toolbar_view));
-    window.present(Some(parent));
+    window.set_content(Some(&toolbar_view));
+    window.present();
 
     let selected_filter = Rc::new(std::cell::RefCell::new(
         filter_ids[initial_selection as usize].clone(),
@@ -209,6 +232,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         &selected_filter.borrow(),
         &scroll,
         &empty_state,
+        &text_view,
+        &end_mark,
+        &autoscroll,
     )));
 
     {
@@ -217,6 +243,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let es = empty_state.clone();
         let sf = selected_filter.clone();
         let rc = rendered_count.clone();
+        let tv = text_view.clone();
+        let em = end_mark.clone();
+        let asc = autoscroll.clone();
         filter_dropdown.connect_selected_notify(move |dropdown| {
             let idx = dropdown.selected() as usize;
             *sf.borrow_mut() = filter_ids.get(idx).cloned().unwrap_or(None);
@@ -225,8 +254,13 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
             let es = es.clone();
             let filter = sf.borrow().clone();
             let rc = rc.clone();
+            let tv = tv.clone();
+            let em = em.clone();
+            let asc = asc.clone();
+            // Switching filter shows a fresh view — jump to its bottom.
+            asc.set(true);
             glib::spawn_future_local(async move {
-                rc.set(full_rebuild(&b, &filter, &sc, &es));
+                rc.set(full_rebuild(&b, &filter, &sc, &es, &tv, &em, &asc));
             });
         });
     }
@@ -237,6 +271,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let es = empty_state.clone();
         let sf = selected_filter.clone();
         let rc = rendered_count.clone();
+        let tv = text_view.clone();
+        let em = end_mark.clone();
+        let asc = autoscroll.clone();
         clear_button.connect_clicked(move |_| {
             clear_log_buffer();
             let b = b.clone();
@@ -244,8 +281,12 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
             let es = es.clone();
             let filter = sf.borrow().clone();
             let rc = rc.clone();
+            let tv = tv.clone();
+            let em = em.clone();
+            let asc = asc.clone();
+            asc.set(true);
             glib::spawn_future_local(async move {
-                rc.set(full_rebuild(&b, &filter, &sc, &es));
+                rc.set(full_rebuild(&b, &filter, &sc, &es, &tv, &em, &asc));
             });
         });
     }
@@ -256,6 +297,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     let es = empty_state.clone();
     let sf = selected_filter.clone();
     let rc = rendered_count.clone();
+    let tv = text_view.clone();
+    let em = end_mark.clone();
+    let asc = autoscroll.clone();
     glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
@@ -266,13 +310,16 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let es = es.clone();
         let filter = sf.borrow().clone();
         let rc = rc.clone();
+        let tv = tv.clone();
+        let em = em.clone();
+        let asc = asc.clone();
 
         glib::spawn_future_local(async move {
             let last = rc.get();
-            if let Some(new_total) = try_append_new(&b, &filter, &sc, &es, last) {
+            if let Some(new_total) = try_append_new(&b, &filter, &sc, &es, last, &tv, &em, &asc) {
                 rc.set(new_total);
             } else {
-                rc.set(full_rebuild(&b, &filter, &sc, &es));
+                rc.set(full_rebuild(&b, &filter, &sc, &es, &tv, &em, &asc));
             }
         });
 

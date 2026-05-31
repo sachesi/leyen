@@ -227,13 +227,17 @@ fn running_sessions_version(sessions: &[RunningGameSession]) -> u64 {
     let mut ordered = sessions.to_vec();
     ordered.sort_by(|left, right| left.game_id.cmp(&right.game_id));
 
+    // Hash only fields that identify the running *set* and its discrete state
+    // transitions. Deliberately exclude `known_pids.len()`: Wine/Proton spawn and
+    // reap helper processes constantly, so the tracked-pid count flutters on every
+    // 1s monitor tick. Hashing it bumped the version each second while a game ran,
+    // forcing a full library teardown+rebuild on the GTK main thread every tick.
     let mut hasher = DefaultHasher::new();
     for session in &ordered {
         session.game_id.hash(&mut hasher);
         session.pid.hash(&mut hasher);
         session.started_at_epoch_seconds.hash(&mut hasher);
         session.termination_requested.hash(&mut hasher);
-        session.known_pids.len().hash(&mut hasher);
     }
 
     hasher.finish().max(1)

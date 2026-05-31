@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
@@ -162,10 +162,16 @@ pub fn save_prefix_dep_state(
     }
     let content = toml::to_string_pretty(state)
         .map_err(|err| format!("Failed to serialize dependency state: {err}"))?;
-    
+
     let temp_path = path.with_extension(format!("toml.tmp.{}", std::process::id()));
-    fs::write(&temp_path, content)
-        .map_err(|err| format!("Failed to write temporary dependency state: {err}"))?;
+    {
+        let mut file = File::create(&temp_path)
+            .map_err(|err| format!("Failed to write temporary dependency state: {err}"))?;
+        file.write_all(content.as_bytes())
+            .map_err(|err| format!("Failed to write temporary dependency state: {err}"))?;
+        file.sync_all()
+            .map_err(|err| format!("Failed to sync temporary dependency state: {err}"))?;
+    }
 
     fs::rename(&temp_path, &path).map_err(|err| {
         let _ = fs::remove_file(&temp_path);

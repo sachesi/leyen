@@ -91,7 +91,10 @@ fn current_epoch_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
-        .unwrap_or(0)
+        .unwrap_or_else(|e| {
+            log::warn!("system clock before UNIX_EPOCH: {e}");
+            0
+        })
 }
 
 fn running_registry_path() -> PathBuf {

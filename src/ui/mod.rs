@@ -386,6 +386,10 @@ pub fn build_ui(app: &adw::Application) {
             return glib::ControlFlow::Break;
         }
 
+        if !window_refresh.is_visible() {
+            return glib::ControlFlow::Continue;
+        }
+
         let ui_refresh = ui_refresh.clone();
         let overlay_refresh = overlay_refresh.clone();
         let window_refresh = window_refresh.clone();

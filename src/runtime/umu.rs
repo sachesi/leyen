@@ -56,15 +56,13 @@ pub fn get_umu_runtime_dir() -> String {
         .to_string()
 }
 
-/// Returns `true` if `cmd` is found in `$PATH` via `which`.
+/// Returns `true` if `cmd` is found in `$PATH`.
+/// In-process search via PATH iteration; no subprocess overhead or hang risk.
 fn is_in_path(cmd: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let path_env = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path_env).any(|dir| {
+        dir.join(cmd).is_file()
+    })
 }
 
 static NIXOS: OnceLock<bool> = OnceLock::new();

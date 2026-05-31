@@ -217,6 +217,7 @@ struct PrefixSnapshot {
     files: BTreeMap<String, FileFingerprint>,
 }
 
+/// File signature: (len, mtime). May miss same-size+same-mtime in-place edits.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FileFingerprint {
     len: u64,
@@ -688,10 +689,14 @@ pub fn install_dep_async(
                         profile.id,
                         cleanup_files.len()
                     );
-                    let _ = tokio::task::spawn_blocking(move || {
+                    if let Err(cleanup_err) = tokio::task::spawn_blocking(move || {
                         remove_created_files(&cleanup_prefix, &cleanup_files)
                     })
-                    .await;
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r) {
+                        warn!("[dep:{}] cleanup failed during rollback: {}", profile.id, cleanup_err);
+                    }
                 }
                 on_finish(false, Some(error));
                 return;
@@ -825,21 +830,13 @@ pub fn uninstall_dep_async(
             let prefix_path = prefix_path.clone();
             let proton_path = proton_path.clone();
             let verb = verb.clone();
-            let result: Result<(), String> = tokio::spawn(async move {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let result: Result<(), String> = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
                 cmd.args([get_winetricks_path().as_str(), "--uninstall", &verb]);
-                let output = tokio::time::timeout(
-                    Duration::from_secs(COMMAND_TIMEOUT_SECS),
-                    cmd.output(),
-                ).await.map_err(|_| format!("winetricks --uninstall '{}' timed out", verb))?
-                 .map_err(|e| format!("Failed to run winetricks --uninstall {}: {}", verb, e))?;
-                if !output.status.success() {
-                    warn!("[dep] winetricks --uninstall {} failed, may leave stale registry: {}", verb, String::from_utf8_lossy(&output.stderr).trim());
-                }
-                Ok(())
-            }).await.map_err(|e| format!("Command task panicked: {e}"))
-             .and_then(|r| r);
+                run_umu_command(cmd, format!("winetricks --uninstall {}", verb), cancel.clone()).await.map(|_| ())
+            };
             if let Err(e) = result {
                 warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
             }

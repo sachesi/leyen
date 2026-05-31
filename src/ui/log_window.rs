@@ -39,7 +39,14 @@ fn full_rebuild(
         scroll.set_visible(false);
         empty_state.set_visible(true);
     } else {
-        buffer.set_text(&lines.join("\n"));
+        buffer.set_text("");
+        let mut iter = buffer.end_iter();
+        for (idx, line) in lines.iter().enumerate() {
+            if idx > 0 {
+                buffer.insert(&mut iter, "\n");
+            }
+            buffer.insert(&mut iter, line);
+        }
         scroll.set_visible(true);
         empty_state.set_visible(false);
         if autoscroll.get() {

@@ -74,6 +74,11 @@ pub fn check_or_install_protonge() {
                 return;
             }
 
+            if !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                return;
+            }
+
             let tarball = format!("{}.tar.gz", tag);
             let tarball_path = proton_dir.join(&tarball);
             let download_url = format!(
@@ -135,9 +140,13 @@ pub fn check_or_install_protonge() {
                         PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                     }
                 }
-                let _ = fs::remove_file(&tarball_path);
+                if let Err(e) = fs::remove_file(&tarball_path) {
+                    log::warn!("failed to remove tarball {}: {e}", tarball_path.display());
+                }
             } else {
-                let _ = fs::remove_file(&tarball_path);
+                if let Err(e) = fs::remove_file(&tarball_path) {
+                    log::warn!("failed to remove tarball {}: {e}", tarball_path.display());
+                }
                 PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
             }
         })

@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use crate::config::normalize_game_id_from_executable;
@@ -101,10 +103,11 @@ fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str)
     let display_name = display_name(game, group);
     let comment_name = sanitize_desktop_value(&display_name);
     let startup_wm_class = startup_wm_class(game);
+    let leyen_id = shlex::try_quote(&game.leyen_id)
+        .unwrap_or(Cow::Borrowed(&game.leyen_id));
 
     format!(
-        "[Desktop Entry]\nVersion=1.0\nType=Application\nName={display_name}\nComment=Launch {comment_name} with Leyen\nExec=leyen run {leyen_id}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\nStartupWMClass={startup_wm_class}\n",
-        leyen_id = game.leyen_id
+        "[Desktop Entry]\nVersion=1.0\nType=Application\nName={display_name}\nComment=Launch {comment_name} with Leyen\nExec=leyen run {leyen_id}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\nStartupWMClass={startup_wm_class}\n"
     )
 }
 
@@ -155,8 +158,9 @@ fn ensure_applications_dir() -> Result<PathBuf, String> {
 }
 
 fn applications_dir_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".local/share/applications")
+    directories::BaseDirs::new()
+        .map(|base| base.data_dir().join("applications"))
+        .unwrap_or_else(|| PathBuf::from(".local/share/applications"))
 }
 
 fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
@@ -165,20 +169,29 @@ fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
     };
 
     let exec_line = format!("Exec=leyen run {}", leyen_id.trim());
-    entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
-        })
-        .filter(|path| {
-            fs::read_to_string(path)
-                .ok()
-                .is_some_and(|content| content.lines().any(|line| line.trim() == exec_line))
-        })
-        .collect()
+    let mut result = Vec::new();
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
+        {
+            if let Ok(file) = fs::File::open(&path) {
+                let reader = BufReader::new(file);
+                for line in reader.lines() {
+                    if let Ok(content) = line {
+                        if content.trim() == exec_line {
+                            result.push(path);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
 }
 
 fn sanitize_desktop_value(value: &str) -> String {

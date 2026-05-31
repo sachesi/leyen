@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use image::imageops::FilterType;
 use pelite::PeFile;
 use pelite::resources::FindError;
+use log;
 
 const MANAGED_ICON_SIZE: u32 = 256;
 const ICO_HEADER_LEN: usize = 6;
@@ -129,9 +130,10 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
         fs::read(exe_path)
             .map_err(|err| format!("Failed to read '{}': {}", exe_path.display(), err))?
     } else {
-        // For huge files, only read the first 16MB which usually contains all headers and resources
+        log::warn!("File '{}' is larger than 64MB and will be truncated to 64MB for icon extraction", exe_path.display());
+        // For huge files, only read the first 64MB which usually contains all headers and resources
         use std::io::Read;
-        let mut buffer = vec![0u8; 16 * 1024 * 1024];
+        let mut buffer = vec![0u8; 64 * 1024 * 1024];
         let n = file.read(&mut buffer)
             .map_err(|err| format!("Failed to read header of '{}': {}", exe_path.display(), err))?;
         buffer.truncate(n);

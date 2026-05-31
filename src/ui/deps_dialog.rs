@@ -475,6 +475,7 @@ pub async fn open_dependencies_page(
                     };
 
                     let on_finish = move |success: bool, note_or_error: Option<String>| {
+                        if !spinner3.is_realized() { return; }
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
@@ -581,6 +582,7 @@ pub async fn open_dependencies_page(
                     };
 
                     let on_finish = move |success: bool, note_or_error: Option<String>| {
+                        if !spinner3.is_realized() { return; }
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
@@ -744,6 +746,7 @@ pub async fn open_dependencies_page(
 
                                 let on_finish =
                                     move |success: bool, note_or_error: Option<String>| {
+                                        if !spinner4.is_realized() { return; }
                                         spinner4.stop();
                                         spinner4.set_visible(false);
                                         progress_label4.set_visible(false);

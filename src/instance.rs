@@ -48,6 +48,7 @@ impl InstanceLock {
 
 impl Drop for InstanceLock {
     fn drop(&mut self) {
+        unsafe { libc::flock(self._file.as_raw_fd(), libc::LOCK_UN) };
         let _ = std::fs::remove_file(get_lock_path());
     }
 }

@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+const ICON_CACHE_CAP: usize = 256;
+
 /// Cached processed icon, keyed by absolute path. Avoids re-decoding and
 /// re-resizing the same image on every library rebuild. Textures are GPU-shared
 /// across all `Picture` widgets that reference them, so this is cheap to clone.
@@ -44,8 +46,13 @@ fn cached_texture(path: &Path, stamp: (u64, u64)) -> Option<gtk4::gdk::MemoryTex
 
 fn store_texture(path: &Path, stamp: (u64, u64), texture: &gtk4::gdk::MemoryTexture) {
     ICON_CACHE.with(|cache| {
-        cache.borrow_mut().insert(
-            path.to_path_buf(),
+        let mut cache = cache.borrow_mut();
+        let path_buf = path.to_path_buf();
+        if cache.len() >= ICON_CACHE_CAP && !cache.contains_key(&path_buf) {
+            cache.clear();
+        }
+        cache.insert(
+            path_buf,
             CachedIcon {
                 mtime_epoch_seconds: stamp.0,
                 len: stamp.1,

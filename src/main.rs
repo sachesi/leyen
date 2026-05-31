@@ -52,5 +52,9 @@ async fn main() -> glib::ExitCode {
     launch::start_running_sessions_monitor();
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(ui::build_ui);
-    app.run()
+    let exit_code = app.run();
+
+    logging::shutdown();
+
+    exit_code
 }

@@ -3,7 +3,8 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
+use std::thread::JoinHandle;
 
 use chrono::Local;
 use crossbeam_channel::{Sender, unbounded};
@@ -24,7 +25,8 @@ pub static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
 pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
 pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
 
-static LOG_SENDER: OnceLock<Sender<LogEntry>> = OnceLock::new();
+static LOG_SENDER: Mutex<Option<Sender<LogEntry>>> = Mutex::new(None);
+static LOG_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static UI_LOG_ENTRIES: OnceLock<RwLock<VecDeque<LogEntry>>> = OnceLock::new();
 static TOTAL_LOG_LINES_PRODUCED: AtomicUsize = AtomicUsize::new(0);
 const MAX_UI_LOGS: usize = 1000; // Reduced to 1000 for better GTK performance
@@ -74,8 +76,10 @@ impl log::Log for LeyenLogger {
             game_id,
         };
 
-        if let Some(tx) = LOG_SENDER.get() {
-            let _ = tx.send(entry);
+        if let Ok(sender) = LOG_SENDER.lock() {
+            if let Some(tx) = sender.as_ref() {
+                let _ = tx.send(entry);
+            }
         }
     }
 
@@ -95,9 +99,11 @@ pub fn init() -> Result<(), log::SetLoggerError> {
     }
 
     let (tx, rx) = unbounded::<LogEntry>();
-    let _ = LOG_SENDER.set(tx);
+    if let Ok(mut sender) = LOG_SENDER.lock() {
+        *sender = Some(tx);
+    }
 
-    std::thread::spawn(move || {
+    let handle = std::thread::spawn(move || {
         let path = log_path();
         let mut file = OpenOptions::new()
             .create(true)
@@ -148,6 +154,10 @@ pub fn init() -> Result<(), log::SetLoggerError> {
         }
     });
 
+    if let Ok(mut thread) = LOG_THREAD.lock() {
+        *thread = Some(handle);
+    }
+
     log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
 }
 
@@ -185,4 +195,16 @@ pub fn clear_log_buffer() {
         old_path.set_extension("jsonl.old");
         let _ = fs::remove_file(old_path);
     });
+}
+
+pub fn shutdown() {
+    if let Ok(mut sender) = LOG_SENDER.lock() {
+        *sender = None;
+    }
+
+    if let Ok(mut thread) = LOG_THREAD.lock() {
+        if let Some(handle) = thread.take() {
+            let _ = handle.join();
+        }
+    }
 }

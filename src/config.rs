@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::thread::sleep;
 use std::time::Duration;
+use uuid::Uuid;
 
 use crate::models::{
     Game, GameGroup, GamesConfig, GlobalSettings, GroupLaunchDefaults, LibraryItem,
@@ -149,7 +150,7 @@ where
     let result = f(&mut items);
 
     if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
-        let temp_path = path.with_extension(format!("toml.tmp.{}", std::process::id()));
+        let temp_path = path.with_extension(format!("toml.tmp.{}.{}", std::process::id(), Uuid::new_v4()));
         if fs::write(&temp_path, data).is_ok() {
             let _ = fs::rename(&temp_path, path);
         } else {
@@ -231,7 +232,10 @@ pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> Globa
         settings
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|e| {
+        log::error!("load_settings task failed: {e}");
+        GlobalSettings::default()
+    });
 
     if auto_install_proton && settings.available_proton_versions.len() <= 1 {
         crate::runtime::check_or_install_protonge();
@@ -255,7 +259,7 @@ pub async fn save_settings(settings: GlobalSettings) {
             }
         };
         if let Ok(data) = toml::to_string_pretty(&settings) {
-            let temp_path = path.with_extension(format!("toml.tmp.{}", std::process::id()));
+            let temp_path = path.with_extension(format!("toml.tmp.{}.{}", std::process::id(), Uuid::new_v4()));
             if fs::write(&temp_path, data).is_ok() {
                 let _ = fs::rename(&temp_path, path);
             } else {

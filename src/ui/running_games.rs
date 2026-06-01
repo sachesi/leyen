@@ -10,7 +10,7 @@ use adw::prelude::*;
 use gtk4::glib;
 
 use crate::config::load_games;
-use crate::icons::game_icon_file;
+use crate::icons::game_icon_path;
 use crate::launch::running_games_snapshot;
 
 use super::log_window::show_log_window;
@@ -51,9 +51,9 @@ async fn rebuild_running_games(
     let mut titles = HashMap::new();
     let mut icon_paths = HashMap::new();
     for game in load_games().await {
-        if let Some(path) = game_icon_file(&game.id) {
-            icon_paths.insert(game.id.clone(), path);
-        }
+        // Candidate path only — `build_library_icon` checks existence off the main
+        // thread, so the rebuild no longer stats every icon on every 1s tick.
+        icon_paths.insert(game.id.clone(), game_icon_path(&game.id));
         titles.insert(game.id, game.title);
     }
 

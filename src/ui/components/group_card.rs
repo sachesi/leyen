@@ -6,7 +6,7 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::icons::group_icon_file;
+use crate::icons::group_icon_path;
 use crate::models::GameGroup;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
@@ -42,7 +42,7 @@ pub fn build_group_card(
         .build();
 
     let icon = build_library_icon(
-        group_icon_file(&group.id),
+        Some(group_icon_path(&group.id)),
         "folder",
         gtk4::Align::Start,
     );

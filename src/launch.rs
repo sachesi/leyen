@@ -342,11 +342,15 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();
 static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
+/// Lock-free mirror of "is any game running", kept in sync with the snapshot
+/// cache by the monitor. Lets the GTK main thread (per-second timer, window
+/// close handler) answer without taking the `RwLock`.
+static ANY_GAME_RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
     RUNNING_SESSIONS_CACHE.get_or_init(|| RwLock::new(Vec::new()))
@@ -360,10 +364,12 @@ pub fn start_running_sessions_monitor() {
                 Ok(sessions) => {
                     let snapshots = running_sessions_to_snapshots(&sessions);
                     let version = running_sessions_version(&sessions);
+                    let any_running = !snapshots.is_empty();
 
                     if let Ok(mut cache) = get_running_sessions_cache().write() {
                         *cache = snapshots;
                     }
+                    ANY_GAME_RUNNING.store(any_running, Ordering::Relaxed);
                     // Release pairs with the Acquire load in running_games_version
                     // so a reader seeing the new version also sees the new snapshot.
                     RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Release);
@@ -379,6 +385,7 @@ pub fn start_running_sessions_monitor() {
                         if let Ok(mut cache) = get_running_sessions_cache().write() {
                             cache.clear();
                         }
+                        ANY_GAME_RUNNING.store(false, Ordering::Relaxed);
                         RUNNING_SESSIONS_VERSION_CACHE.fetch_add(1, Ordering::Release);
                     }
                 }
@@ -407,10 +414,7 @@ pub fn is_game_running(game_id: &str) -> bool {
 }
 
 pub fn is_any_game_running() -> bool {
-    get_running_sessions_cache()
-        .read()
-        .map(|c| !c.is_empty())
-        .unwrap_or(false)
+    ANY_GAME_RUNNING.load(Ordering::Relaxed)
 }
 
 pub async fn running_games_version() -> u64 {

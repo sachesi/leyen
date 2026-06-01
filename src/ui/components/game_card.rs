@@ -5,7 +5,7 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::icons::game_icon_file;
+use crate::icons::game_icon_path;
 use crate::models::Game;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
@@ -45,7 +45,7 @@ pub fn build_game_card(
         .build();
 
     let icon = build_library_icon(
-        game_icon_file(&game.id),
+        Some(game_icon_path(&game.id)),
         "application-x-executable-symbolic",
         gtk4::Align::Start,
     );

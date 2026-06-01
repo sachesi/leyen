@@ -48,7 +48,7 @@
             rustc = rustToolchain;
           }).buildRustPackage {
             pname = "leyen";
-            version = "0.3.6";
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
             src = ./.;
 
             cargoLock = {

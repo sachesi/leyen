@@ -44,6 +44,19 @@ fn cached_texture(path: &Path, stamp: (u64, u64)) -> Option<gtk4::gdk::MemoryTex
     })
 }
 
+/// Returns the cached `(stamp, texture)` for `path`, ignoring staleness. Used to
+/// paint a known icon instantly while a background `stat` confirms it is current.
+fn cached_entry(path: &Path) -> Option<((u64, u64), gtk4::gdk::MemoryTexture)> {
+    ICON_CACHE.with(|cache| {
+        cache.borrow().get(path).map(|entry| {
+            (
+                (entry.mtime_epoch_seconds, entry.len),
+                entry.texture.clone(),
+            )
+        })
+    })
+}
+
 fn store_texture(path: &Path, stamp: (u64, u64), texture: &gtk4::gdk::MemoryTexture) {
     ICON_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -98,44 +111,67 @@ pub fn build_library_icon(
     wrapper.append(&fallback_widget);
     overlay.set_child(Some(&wrapper));
 
-    if let Some(path) = icon_path {
-        let stamp = icon_file_stamp(&path);
+    let Some(path) = icon_path else {
+        return overlay.upcast();
+    };
 
-        // Cache hit — swap in the texture immediately, no decode, no thread hop.
-        if let Some(stamp) = stamp
-            && let Some(texture) = cached_texture(&path, stamp)
-        {
-            let picture = picture_from_texture(&texture);
-            if let Some(old) = wrapper.first_child() {
-                wrapper.remove(&old);
-            }
-            wrapper.append(&picture);
-            return overlay.upcast();
+    // Paint the last-decoded texture for this path immediately, without touching
+    // the filesystem. Icons rarely change between rebuilds, so this is correct in
+    // the common case; the background stat below corrects the rare stale one. This
+    // keeps the GTK main thread free of the per-card `stat` that previously ran
+    // once per card on every library rebuild (search, launch/stop, group nav).
+    let shown_stamp = cached_entry(&path).map(|(stamp, texture)| {
+        replace_with_texture(&wrapper, &texture);
+        stamp
+    });
+
+    let wrapper_clone = wrapper.clone();
+    gtk4::glib::spawn_future_local(async move {
+        let stamp_path = path.clone();
+        let Some(stamp) = tokio::task::spawn_blocking(move || icon_file_stamp(&stamp_path))
+            .await
+            .ok()
+            .flatten()
+        else {
+            // No icon file (or unreadable) — keep the fallback / cached texture.
+            return;
+        };
+
+        // Already displaying the current version — nothing to do.
+        if shown_stamp == Some(stamp) {
+            return;
         }
 
-        let wrapper_clone = wrapper.clone();
-        gtk4::glib::spawn_future_local(async move {
-            let path_for_decode = path.clone();
-            let result = tokio::task::spawn_blocking(move || process_icon_file(&path_for_decode))
-                .await
-                .ok()
-                .flatten();
+        // Cache hit for the current stamp — swap in without decoding.
+        if let Some(texture) = cached_texture(&path, stamp) {
+            replace_with_texture(&wrapper_clone, &texture);
+            return;
+        }
 
-            if let Some((width, height, rgba)) = result {
-                let texture = make_texture(width, height, &rgba);
-                if let Some(stamp) = stamp {
-                    store_texture(&path, stamp, &texture);
-                }
-                let picture = picture_from_texture(&texture);
-                if let Some(old) = wrapper_clone.first_child() {
-                    wrapper_clone.remove(&old);
-                }
-                wrapper_clone.append(&picture);
-            }
-        });
-    }
+        // Cache miss — decode and resize off the main thread, then swap in.
+        let decode_path = path.clone();
+        let result = tokio::task::spawn_blocking(move || process_icon_file(&decode_path))
+            .await
+            .ok()
+            .flatten();
+
+        if let Some((width, height, rgba)) = result {
+            let texture = make_texture(width, height, &rgba);
+            store_texture(&path, stamp, &texture);
+            replace_with_texture(&wrapper_clone, &texture);
+        }
+    });
 
     overlay.upcast()
+}
+
+/// Replaces the wrapper's current child with a `Picture` painting `texture`.
+fn replace_with_texture(wrapper: &gtk4::Box, texture: &gtk4::gdk::MemoryTexture) {
+    let picture = picture_from_texture(texture);
+    if let Some(old) = wrapper.first_child() {
+        wrapper.remove(&old);
+    }
+    wrapper.append(&picture);
 }
 
 fn process_icon_file(path: &Path) -> Option<(i32, i32, Vec<u8>)> {

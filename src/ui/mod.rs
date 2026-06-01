@@ -372,6 +372,34 @@ pub fn build_ui(app: &adw::Application) {
     window.add_action(&add_group_action);
 
     let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
+
+    // Event-driven refresh: launch/stop/own-exit publish a wake the instant
+    // running state changes, so the library reflects it in well under the 1s
+    // timer tick. The timer below remains for elapsed-time labels and as a
+    // safety fallback; both share `running_state_version` so a refresh handled
+    // here is not repeated there.
+    {
+        let event_rx = crate::launch::subscribe_session_events();
+        let ui_event = ui.clone();
+        let overlay_event = toast_overlay.clone();
+        let window_event = window.clone();
+        let version_event = running_state_version.clone();
+        glib::spawn_future_local(async move {
+            while event_rx.recv().await.is_ok() {
+                // Drain a burst (e.g. stop of several games) into one refresh.
+                while event_rx.try_recv().is_ok() {}
+                if !window_event.is_visible() {
+                    continue;
+                }
+                let current_version = crate::launch::running_games_version().await;
+                if current_version != version_event.get() {
+                    version_event.set(current_version);
+                    refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                }
+            }
+        });
+    }
+
     let ui_refresh = ui.clone();
     let overlay_refresh = toast_overlay.clone();
     let window_refresh = window.clone();

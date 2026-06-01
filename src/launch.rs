@@ -44,6 +44,15 @@ struct RunningGameSession {
     started_at_epoch_seconds: u64,
     match_prefix_path: Option<String>,
     match_game_id: Option<String>,
+    /// Lowercased basename of the game executable (e.g. `client.exe`). Primary
+    /// identity for finding this game's processes by `/proc/PID/cmdline`, since
+    /// environ is unreadable for Wine processes in the idmapped container.
+    #[serde(default)]
+    match_exe: Option<String>,
+    /// Lowercased launch arguments, used to tell apart multiple instances of the
+    /// same executable launched concurrently (e.g. different `user:` accounts).
+    #[serde(default)]
+    match_args: Option<String>,
     termination_requested: bool,
 }
 
@@ -274,14 +283,14 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
     let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
         let scan = get_proc_scan();
         let children_map = &scan.children;
-        let all_envs = &scan.envs;
+        let cmdlines = &scan.cmdlines;
         with_running_registry(|registry| {
             let original_sessions = registry.sessions.clone();
             let mut active_sessions = Vec::new();
             let mut finished_sessions = Vec::new();
 
             for mut session in registry.sessions.drain(..) {
-                if refresh_known_pids(&mut session, children_map, all_envs).is_empty() {
+                if refresh_known_pids(&mut session, children_map, cmdlines).is_empty() {
                     finished_sessions.push(session);
                 } else {
                     active_sessions.push(session);
@@ -302,6 +311,17 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
     }
 
     Ok(active_sessions)
+}
+
+/// Re-scans running sessions and republishes them so the UI reflects the change
+/// at once. Used on the launch/stop/own-exit fast paths to avoid waiting for the
+/// next background monitor tick. Errors are swallowed — the periodic monitor is
+/// the safety net.
+async fn republish_running_sessions() {
+    match synchronize_running_sessions().await {
+        Ok(sessions) => publish_sessions(&sessions),
+        Err(e) => warn!("Immediate session republish failed: {e}"),
+    }
 }
 
 async fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
@@ -352,6 +372,44 @@ static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
 /// close handler) answer without taking the `RwLock`.
 static ANY_GAME_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Wakes the GTK refresh loop the instant running state changes, instead of
+/// waiting for the next 1s poll tick. Bounded + drop-on-full: the receiver only
+/// needs to know "something changed", so coalescing a burst into one wake is
+/// correct. Sender is cloned out; the held receiver keeps the channel open.
+static SESSION_EVENT_CHANNEL: OnceLock<(
+    async_channel::Sender<()>,
+    async_channel::Receiver<()>,
+)> = OnceLock::new();
+
+fn session_event_channel() -> &'static (async_channel::Sender<()>, async_channel::Receiver<()>) {
+    SESSION_EVENT_CHANNEL.get_or_init(|| async_channel::bounded(8))
+}
+
+/// Returns a receiver that fires whenever running-session state is republished.
+pub fn subscribe_session_events() -> async_channel::Receiver<()> {
+    session_event_channel().1.clone()
+}
+
+/// Single path that makes a new session set visible to the UI: refreshes the
+/// snapshot cache, the `any running` mirror and the version atomic, then nudges
+/// the event channel so the GTK loop refreshes immediately. Called by the
+/// background monitor and by the launch/stop/exit fast paths.
+fn publish_sessions(sessions: &[RunningGameSession]) {
+    let snapshots = running_sessions_to_snapshots(sessions);
+    let version = running_sessions_version(sessions);
+    let any_running = !snapshots.is_empty();
+
+    if let Ok(mut cache) = get_running_sessions_cache().write() {
+        *cache = snapshots;
+    }
+    ANY_GAME_RUNNING.store(any_running, Ordering::Relaxed);
+    // Release pairs with the Acquire load in running_games_version so a reader
+    // seeing the new version also sees the new snapshot.
+    RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Release);
+    // Non-blocking: a full channel already has a pending wake, which is enough.
+    let _ = session_event_channel().0.try_send(());
+}
+
 fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
     RUNNING_SESSIONS_CACHE.get_or_init(|| RwLock::new(Vec::new()))
 }
@@ -362,17 +420,7 @@ pub fn start_running_sessions_monitor() {
         loop {
             match synchronize_running_sessions().await {
                 Ok(sessions) => {
-                    let snapshots = running_sessions_to_snapshots(&sessions);
-                    let version = running_sessions_version(&sessions);
-                    let any_running = !snapshots.is_empty();
-
-                    if let Ok(mut cache) = get_running_sessions_cache().write() {
-                        *cache = snapshots;
-                    }
-                    ANY_GAME_RUNNING.store(any_running, Ordering::Relaxed);
-                    // Release pairs with the Acquire load in running_games_version
-                    // so a reader seeing the new version also sees the new snapshot.
-                    RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Release);
+                    publish_sessions(&sessions);
                     consecutive_errors = 0;
                 }
                 Err(e) => {
@@ -382,11 +430,7 @@ pub fn start_running_sessions_monitor() {
                     // show phantom "running" games forever. Clear it so the UI
                     // reflects unknown-but-empty rather than a frozen state.
                     if consecutive_errors == 3 {
-                        if let Ok(mut cache) = get_running_sessions_cache().write() {
-                            cache.clear();
-                        }
-                        ANY_GAME_RUNNING.store(false, Ordering::Relaxed);
-                        RUNNING_SESSIONS_VERSION_CACHE.fetch_add(1, Ordering::Release);
+                        publish_sessions(&[]);
                     }
                 }
             }
@@ -455,48 +499,56 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     };
 
     let game_id_clone = game_id.to_string();
-    
 
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let mut session = session;
         let root = session.pid;
 
         // Fresh scan (bypass the 1s cache) so we catch children spawned right
         // before the stop request.
         let scan = scan_all_procs();
-        let targets = refresh_known_pids(&mut session, &scan.children, &scan.envs);
+        let targets = refresh_known_pids(&mut session, &scan.children, &scan.cmdlines);
 
-        // Nothing alive — the game exited between discovery and now.
+        // Nothing of *this game's own* processes is alive — already stopped.
         if targets.is_empty() {
             return Ok(true);
+        }
+
+        // When another game still shares this container, the process group spans
+        // shared infra (wineserver / pressure-vessel) that the co-tenant needs.
+        // Suppress the group-kill and signal only this game's own PIDs so the
+        // co-tenant keeps running. Sole occupant → full group-kill teardown.
+        let allow_group_kill = !prefix_has_other_live_session(&session, &scan);
+        if !allow_group_kill {
+            info!(
+                target: &format!("game:{}", game_id_clone),
+                "Container shared with another game — stopping only this game's processes"
+            );
         }
 
         let _ = mark_running_session_termination_requested(&game_id_clone);
 
         // Graceful first: SIGTERM lets Wine/Proton flush and the game save state.
-        let signaled = signal_targets(root, &targets, libc::SIGTERM);
+        let signaled = signal_targets(root, &targets, libc::SIGTERM, allow_group_kill);
         info!(
             target: &format!("game:{}", game_id_clone),
-            "Sent SIGTERM to process tree of pid {} ({} targets)", root, targets.len()
+            "Sent SIGTERM to {} target(s) of pid {}", targets.len(), root
         );
 
-        // Wait up to ~3s for a clean exit before escalating.
-        let mut survivors = wait_for_exit(&targets, 15);
+        // Wait up to ~3s for a clean exit before escalating, re-discovering this
+        // game's processes each poll (children / the container launcher may move
+        // or linger).
+        let mut survivors = wait_for_session_exit(&mut session, 15);
 
         if !survivors.is_empty() {
-            // Re-discover the live tree (children may have moved) and SIGKILL it.
-            let scan = scan_all_procs();
-            survivors = refresh_known_pids(&mut session, &scan.children, &scan.envs);
-        }
-
-        if !survivors.is_empty() {
-            let forced = signal_targets(root, &survivors, libc::SIGKILL);
+            let forced = signal_targets(root, &survivors, libc::SIGKILL, allow_group_kill);
             info!(
                 target: &format!("game:{}", game_id_clone),
                 "Escalated to SIGKILL for pid {} ({} survivors)", root, survivors.len()
             );
-            // Wait up to ~2s for SIGKILL to take effect.
-            survivors = wait_for_exit(&survivors, 10);
+            // Wait up to ~5s and confirm the processes are actually gone — the
+            // shared container's main process can take a moment to wind down.
+            survivors = wait_for_session_exit(&mut session, 25);
 
             if !signaled && !forced {
                 return Err(LaunchError::Other(format!(
@@ -510,17 +562,24 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         if !survivors.is_empty() {
             warn!(
                 target: &format!("game:{}", game_id_clone),
-                "{} process(es) survived SIGKILL for pid {} (likely uninterruptible); \
-                 they will be cleared once the kernel reaps them",
+                "{} process(es) of pid {} still alive after stop (likely uninterruptible); \
+                 will clear once the kernel reaps them",
                 survivors.len(), root
             );
         }
 
+        // Returns "we acted on a live session"; the actual post-stop liveness is
+        // reflected truthfully by the republish below, not this flag.
         Ok(true)
     })
     .await
     .map_err(|e| LaunchError::Other(join_err(e)))
-    .and_then(|r| r)
+    .and_then(|r| r);
+
+    // Reflect the stopped state immediately instead of waiting for the monitor.
+    republish_running_sessions().await;
+
+    result
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -614,27 +673,6 @@ fn read_parent_pid(pid: u32) -> Option<u32> {
     fields.next()?.parse().ok()
 }
 
-fn read_process_env(pid: u32) -> Option<HashMap<String, String>> {
-    // Read the whole file — process environments routinely exceed any fixed
-    // buffer; a truncated read drops trailing vars (WINEPREFIX/GAMEID) and
-    // breaks runtime session matching.
-    let data = fs::read(format!("/proc/{pid}/environ")).ok()?;
-    let mut env = HashMap::new();
-
-    for entry in data.split(|&byte| byte == 0) {
-        if entry.is_empty() {
-            continue;
-        }
-
-        let text = String::from_utf8_lossy(entry);
-        if let Some((key, value)) = text.split_once('=') {
-            env.insert(key.to_string(), value.to_string());
-        }
-    }
-
-    Some(env)
-}
-
 fn read_process_comm(pid: u32) -> Option<String> {
     let mut file = File::open(format!("/proc/{pid}/comm")).ok()?;
     let mut buf = [0u8; 64];
@@ -642,10 +680,43 @@ fn read_process_comm(pid: u32) -> Option<String> {
     Some(String::from_utf8_lossy(&buf[..n]).trim().to_string())
 }
 
-/// Combined result of a single /proc scan: parent→children map + game-like envs map.
+/// Reads `/proc/PID/cmdline` (NUL-separated argv) as a single space-joined,
+/// lowercased string. Unlike `/proc/PID/environ`, cmdline is world-readable —
+/// even for Wine processes inside an idmapped pressure-vessel container — so it
+/// is the only reliable way to identify which game a process belongs to here.
+fn read_process_cmdline(pid: u32) -> Option<String> {
+    let mut file = File::open(format!("/proc/{pid}/cmdline")).ok()?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    if buf.is_empty() {
+        return None;
+    }
+    let joined: Vec<u8> = buf
+        .into_iter()
+        .map(|b| if b == 0 { b' ' } else { b })
+        .collect();
+    let text = String::from_utf8_lossy(&joined).to_lowercase();
+    // Collapse whitespace so substring matching against a launch-args signature
+    // is insensitive to argv spacing.
+    Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// Normalized, lowercased signature of a game's launch arguments, used to tell
+/// apart concurrent instances of the same executable. Drops the `%command%`
+/// wrapper prefix (only the trailing real args appear in the game's cmdline).
+fn cmdline_arg_signature(launch_args: &str) -> Option<String> {
+    let tail = match launch_args.split_once("%command%") {
+        Some((_, after)) => after,
+        None => launch_args,
+    };
+    let normalized = tail.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    (!normalized.is_empty()).then_some(normalized)
+}
+
+/// Combined result of a single /proc scan: parent→children map + per-PID cmdline.
 struct ProcScan {
     children: HashMap<u32, Vec<u32>>,
-    envs: HashMap<u32, HashMap<String, String>>,
+    cmdlines: HashMap<u32, String>,
 }
 
 type ProcScanCache = RwLock<(ProcScan, u64)>;
@@ -654,19 +725,19 @@ static PROC_SCAN_CACHE: OnceLock<ProcScanCache> = OnceLock::new();
 
 fn get_proc_scan_cache() -> &'static ProcScanCache {
     PROC_SCAN_CACHE.get_or_init(|| RwLock::new((
-        ProcScan { children: HashMap::new(), envs: HashMap::new() },
+        ProcScan { children: HashMap::new(), cmdlines: HashMap::new() },
         0,
     )))
 }
 
-/// Returns combined children + envs from a single /proc scan, cached with 1s TTL.
+/// Returns combined children + cmdlines from a single /proc scan, cached 1s TTL.
 fn get_proc_scan() -> ProcScan {
     let now = current_epoch_seconds();
     if let Ok(cache) = get_proc_scan_cache().read()
         && now.saturating_sub(cache.1) < 1 {
             return ProcScan {
                 children: cache.0.children.clone(),
-                envs: cache.0.envs.clone(),
+                cmdlines: cache.0.cmdlines.clone(),
             };
         }
     let scan = scan_all_procs();
@@ -674,7 +745,7 @@ fn get_proc_scan() -> ProcScan {
         *cache = (
             ProcScan {
                 children: scan.children.clone(),
-                envs: scan.envs.clone(),
+                cmdlines: scan.cmdlines.clone(),
             },
             now,
         );
@@ -682,13 +753,14 @@ fn get_proc_scan() -> ProcScan {
     scan
 }
 
-/// Single pass over /proc — collects both parent→children index and game-like process envs.
+/// Single pass over /proc — collects the parent→children index and every
+/// process's cmdline for game-identity matching.
 fn scan_all_procs() -> ProcScan {
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    let mut envs: HashMap<u32, HashMap<String, String>> = HashMap::new();
+    let mut cmdlines: HashMap<u32, String> = HashMap::new();
 
     let Ok(entries) = fs::read_dir("/proc") else {
-        return ProcScan { children, envs };
+        return ProcScan { children, cmdlines };
     };
 
     for entry in entries.flatten() {
@@ -705,27 +777,12 @@ fn scan_all_procs() -> ProcScan {
             children.entry(ppid).or_default().push(pid);
         }
 
-        // Build envs map for game-like processes (PID >= 1000)
-        if pid >= 1000
-            && let Some(comm) = read_process_comm(pid)
-            && is_game_process(&comm)
-            && let Some(env) = read_process_env(pid)
-            && (env.contains_key("WINEPREFIX") || env.contains_key("GAMEID"))
-        {
-            envs.insert(pid, env);
+        if let Some(cmdline) = read_process_cmdline(pid) {
+            cmdlines.insert(pid, cmdline);
         }
     }
 
-    ProcScan { children, envs }
-}
-
-fn is_game_process(comm: &str) -> bool {
-    let lower = comm.to_ascii_lowercase();
-    lower.contains("wine")
-        || lower.contains("steam")
-        || lower.contains("proton")
-        || lower.ends_with(".exe")
-        || lower.contains("leyen")
+    ProcScan { children, cmdlines }
 }
 
 fn is_pid_alive(pid: u32) -> bool {
@@ -766,16 +823,26 @@ fn read_proc_pgrp(pid: u32) -> Option<i32> {
     fields.next()?.parse::<i32>().ok()
 }
 
-/// Sends `signal` to the process group led by `root` (only if `root` still leads
-/// it) and to every individually tracked PID. Returns true if at least one
-/// `kill` syscall was accepted.
-fn signal_targets(root: u32, targets: &HashSet<u32>, signal: libc::c_int) -> bool {
+/// Sends `signal` to every individually tracked PID, and — when `allow_group_kill`
+/// is set and `root` still leads its own group — to the whole process group.
+/// Returns true if at least one `kill` syscall was accepted.
+///
+/// `allow_group_kill` is suppressed when another game shares the container: the
+/// group spans shared infra (wineserver / pressure-vessel) that co-tenants need,
+/// so the stop falls back to precise per-PID kills of this game's own processes.
+fn signal_targets(
+    root: u32,
+    targets: &HashSet<u32>,
+    signal: libc::c_int,
+    allow_group_kill: bool,
+) -> bool {
     let mut signaled = false;
 
     // Only group-kill when the root PID is still the leader of its own group.
     // After PID reuse the reused process leads a different group (or none), so
     // this avoids killing an unrelated process tree.
-    if read_proc_pgrp(root) == Some(root as i32)
+    if allow_group_kill
+        && read_proc_pgrp(root) == Some(root as i32)
         && unsafe { libc::kill(-(root as i32), signal) } == 0
     {
         signaled = true;
@@ -790,17 +857,21 @@ fn signal_targets(root: u32, targets: &HashSet<u32>, signal: libc::c_int) -> boo
     signaled
 }
 
-/// Polls the given PIDs and returns the subset still alive after waiting up to
-/// `attempts * 200ms`. Returns early as soon as all have exited.
-fn wait_for_exit(pids: &HashSet<u32>, attempts: u32) -> HashSet<u32> {
-    let mut alive: HashSet<u32> = pids.iter().copied().filter(|p| is_pid_alive(*p)).collect();
+/// Re-discovers a session's live processes by cmdline each poll and returns the
+/// set still alive after up to `attempts * 200ms`. Returns early as soon as the
+/// game is fully gone. Re-scanning (rather than polling a fixed PID set) confirms
+/// the actual game — including the container launcher — has really terminated.
+fn wait_for_session_exit(session: &mut RunningGameSession, attempts: u32) -> HashSet<u32> {
     let mut remaining = attempts;
-    while !alive.is_empty() && remaining > 0 {
+    loop {
+        let scan = scan_all_procs();
+        let alive = refresh_known_pids(session, &scan.children, &scan.cmdlines);
+        if alive.is_empty() || remaining == 0 {
+            return alive;
+        }
         std::thread::sleep(Duration::from_millis(200));
-        alive.retain(|p| is_pid_alive(*p));
         remaining -= 1;
     }
-    alive
 }
 
 fn collect_descendant_pids(
@@ -826,36 +897,39 @@ fn collect_descendant_pids(
         .collect()
 }
 
-fn process_matches_runtime(
-    env: &HashMap<String, String>,
-    match_prefix_path: Option<&str>,
-    match_game_id: Option<&str>,
+/// Decides whether a process `cmdline` belongs to a specific game launch.
+///
+/// The game's executable basename (e.g. `client.exe`) must appear in the
+/// cmdline. When the launch had distinguishing arguments (e.g. `user:des094`),
+/// they must appear too — this separates several concurrent instances of the
+/// same executable sharing one container. cmdline is the only readable identity
+/// signal: environ is permission-denied for Wine processes here.
+fn process_matches_cmdline(
+    cmdline: &str,
+    match_exe: Option<&str>,
+    match_args: Option<&str>,
 ) -> bool {
-    let env_game_id = env.get("GAMEID").map(String::as_str);
-    let env_prefix = env.get("WINEPREFIX").map(String::as_str);
-
-    if let Some(target_game_id) = match_game_id {
-        if let Some(game_id) = env_game_id {
-            return game_id == target_game_id;
-        }
-        if let Some(target_prefix) = match_prefix_path {
-            return env_prefix == Some(target_prefix);
-        }
+    let Some(exe) = match_exe.filter(|e| !e.is_empty()) else {
+        return false;
+    };
+    if !cmdline.contains(exe) {
         return false;
     }
-
-    match_prefix_path.is_some_and(|target_prefix| env_prefix == Some(target_prefix))
+    match match_args.filter(|a| !a.is_empty()) {
+        Some(args) => cmdline.contains(args),
+        None => true,
+    }
 }
 
 fn collect_runtime_matched_pids(
-    match_prefix_path: Option<&str>,
-    match_game_id: Option<&str>,
-    all_envs: &HashMap<u32, HashMap<String, String>>,
+    match_exe: Option<&str>,
+    match_args: Option<&str>,
+    cmdlines: &HashMap<u32, String>,
 ) -> HashSet<u32> {
     let mut matched = HashSet::new();
 
-    for (pid, env) in all_envs {
-        if process_matches_runtime(env, match_prefix_path, match_game_id) {
+    for (pid, cmdline) in cmdlines {
+        if process_matches_cmdline(cmdline, match_exe, match_args) {
             matched.insert(*pid);
         }
     }
@@ -863,10 +937,38 @@ fn collect_runtime_matched_pids(
     matched
 }
 
+/// Process shared by every game in a Wine prefix / pressure-vessel container
+/// (one wineserver per prefix, one container supervisor). Killing one of these
+/// tears down *all* co-tenants, so they are excluded from a session's "own"
+/// process set: they never decide a single game's liveness and are never killed
+/// while another game still shares the container.
+fn is_shared_runtime_infra(comm: &str) -> bool {
+    let lower = comm.to_ascii_lowercase();
+    lower.contains("wineserver")
+        || lower.contains("pressure-vessel")
+        || lower.contains("bwrap")
+        || lower.contains("umu-run")
+        || lower == "umu"
+        || lower.contains("steam-runtime")
+}
+
+fn is_shared_infra_pid(pid: u32) -> bool {
+    read_process_comm(pid).is_some_and(|comm| is_shared_runtime_infra(&comm))
+}
+
+/// Token-authoritative discovery of a session's *own* live processes.
+///
+/// A game is "running" iff at least one process still carries its
+/// `LEYEN_INSTANCE` token (or, for pre-token sessions, its GAMEID) — independent
+/// of how Wine/pressure-vessel reparents it inside a shared container. The
+/// process tree under the recorded roots is unioned in to catch payload helpers
+/// that did not inherit the env, then shared container infra (wineserver,
+/// pressure-vessel, …) is filtered out so a co-tenant keeping the container
+/// alive never makes this session look running after its own game exited.
 fn refresh_known_pids(
     session: &mut RunningGameSession,
     children_map: &HashMap<u32, Vec<u32>>,
-    all_envs: &HashMap<u32, HashMap<String, String>>,
+    cmdlines: &HashMap<u32, String>,
 ) -> HashSet<u32> {
     let mut roots: HashSet<u32> = session.known_pids.iter().copied().collect();
     roots.insert(session.pid);
@@ -874,23 +976,54 @@ fn refresh_known_pids(
     let alive_roots: HashSet<u32> = roots.into_iter().filter(|pid| is_pid_alive(*pid)).collect();
     let mut discovered = collect_descendant_pids(&alive_roots, children_map);
 
-    if alive_roots.is_empty() {
-        let matched = collect_runtime_matched_pids(
-            session.match_prefix_path.as_deref(),
-            session.match_game_id.as_deref(),
-            all_envs,
-        );
-        discovered.extend(matched);
-
-        if !discovered.is_empty() {
-            discovered = collect_descendant_pids(&discovered, children_map);
-        }
+    // Authoritative signal: processes whose cmdline matches this launch. They
+    // survive the launcher exiting and reparenting into a shared container,
+    // which the process tree cannot follow.
+    let matched = collect_runtime_matched_pids(
+        session.match_exe.as_deref(),
+        session.match_args.as_deref(),
+        cmdlines,
+    );
+    if !matched.is_empty() {
+        discovered.extend(collect_descendant_pids(&matched, children_map));
     }
+
+    // Drop shared container infra: it belongs to no single game.
+    discovered.retain(|pid| !is_shared_infra_pid(*pid));
 
     let mut known_pids: Vec<u32> = discovered.iter().copied().collect();
     known_pids.sort_unstable();
     session.known_pids = known_pids;
     discovered
+}
+
+/// True when another registered session shares `target`'s Wine prefix and still
+/// has live processes — i.e. stopping `target` must spare the shared container.
+fn prefix_has_other_live_session(target: &RunningGameSession, scan: &ProcScan) -> bool {
+    let Some(prefix) = target.match_prefix_path.as_deref() else {
+        return false;
+    };
+
+    let others = with_running_registry(|registry| {
+        let collected: Vec<RunningGameSession> = registry
+            .sessions
+            .iter()
+            .filter(|session| {
+                session.game_id != target.game_id
+                    && session.match_prefix_path.as_deref() == Some(prefix)
+            })
+            .cloned()
+            .collect();
+        (collected, false)
+    });
+
+    let Ok(others) = others else {
+        return false;
+    };
+
+    others
+        .into_iter()
+        .any(|mut session| !refresh_known_pids(&mut session, &scan.children, &scan.cmdlines).is_empty())
 }
 
 fn pipe_process_output<R>(reader: R, game_id: String, game_title: String, stream_name: &'static str)
@@ -1207,6 +1340,15 @@ async fn launch_game_managed(
         .await
         .map_err(|e| LaunchError::Other(join_err(e)))??;
     let started_at_epoch_seconds = current_epoch_seconds();
+    // Identity for finding this game's processes via /proc/PID/cmdline (environ
+    // is unreadable for Wine processes in the idmapped container): the executable
+    // basename, plus the distinguishing launch arguments to separate concurrent
+    // instances of the same executable.
+    let match_exe = Path::new(&game.exe_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase())
+        .filter(|name| !name.is_empty());
+    let match_args = cmdline_arg_signature(&game.launch_args);
     let session = RunningGameSession {
         game_id: game.id.clone(),
         pid: child_pid,
@@ -1214,6 +1356,8 @@ async fn launch_game_managed(
         started_at_epoch_seconds,
         match_prefix_path: (!prefix_path.is_empty()).then_some(prefix_path.clone()),
         match_game_id: (!launch_game_id.is_empty()).then_some(launch_game_id.clone()),
+        match_exe,
+        match_args,
         termination_requested: false,
     };
 
@@ -1224,6 +1368,10 @@ async fn launch_game_managed(
             t!("This game is already running"),
         ));
     }
+
+    // Reflect the new "running" state immediately instead of waiting for the
+    // next background monitor tick.
+    republish_running_sessions().await;
 
     if !record_game_launch_start(&game.id, started_at_epoch_seconds).await {
         warn!(target: &format!("game:{}", game.id), "Failed to record game launch start");
@@ -1253,6 +1401,9 @@ async fn launch_game_managed(
                     warn!(target: &format!("game:{}", game_id_log), "'{}' wait error: {}", game_title_log, e);
                 }
             }
+            // Game quit on its own — refresh state now so the card clears promptly
+            // rather than on the next background monitor tick.
+            republish_running_sessions().await;
         });
     }
 

@@ -10,8 +10,8 @@ use gtk4::{gio, glib};
 
 use crate::config::{
     find_game_by_leyen_id, find_group, game_parent_group_id, generate_unique_leyen_id, insert_game,
-    load_library, load_settings, normalize_game_id_from_executable, remove_game, remove_group,
-    replace_game, replace_group, suggest_prefix_path,
+    load_library, load_settings, remove_game, remove_group, replace_game, replace_group,
+    suggest_prefix_path, umu_game_id,
 };
 use crate::desktop::{
     create_game_desktop_entry, desktop_entry_exists, remove_game_desktop_entry,
@@ -308,7 +308,10 @@ pub async fn show_add_library_item_dialog(
         .build();
     leyen_id_row.set_editable(false);
 
-    let game_id_row = adw::EntryRow::builder().title(t!("Game ID")).build();
+    let game_id_row = adw::EntryRow::builder()
+        .title(t!("Game ID"))
+        .text(umu_game_id(&generated_leyen_id))
+        .build();
     game_id_row.set_editable(false);
     let (available_protons, proton_model) = build_proton_choices(&settings);
     let proton_row = adw::ComboRow::builder()
@@ -573,11 +576,6 @@ pub async fn show_add_library_item_dialog(
         }
     });
 
-    let game_id_row_clone = game_id_row.clone();
-    path_row.connect_changed(move |row| {
-        game_id_row_clone.set_text(&normalize_game_id_from_executable(row.text().as_str()));
-    });
-
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
@@ -815,12 +813,12 @@ pub async fn show_add_library_item_dialog(
                     }
                 };
 
-                let normalized_game_id = normalize_game_id_from_executable(&exe);
                 let leyen_id = if find_game_by_leyen_id(&items, &generated_leyen_id).is_some() {
                     generate_unique_leyen_id(&items)
                 } else {
                     generated_leyen_id.clone()
                 };
+                let umu_game_id = umu_game_id(&leyen_id);
                 let game = Game {
                     id: game_id.clone(),
                     title,
@@ -840,7 +838,7 @@ pub async fn show_add_library_item_dialog(
                     hdr: hdr_row_val.is_active(),
                     proton_log: proton_log_row_val.is_active(),
                     leyen_id,
-                    game_id: normalized_game_id,
+                    game_id: umu_game_id,
                     custom_icon,
                     playtime_seconds: 0,
                     last_played_epoch_seconds: 0,
@@ -1453,7 +1451,7 @@ pub async fn show_edit_game_dialog(
 
     let game_id_row = adw::EntryRow::builder()
         .title(t!("Game ID"))
-        .text(normalize_game_id_from_executable(&game.exe_path))
+        .text(umu_game_id(&game.leyen_id))
         .build();
     game_id_row.set_editable(false);
 
@@ -1930,11 +1928,6 @@ pub async fn show_edit_game_dialog(
         }
     });
 
-    let game_id_row_clone = game_id_row.clone();
-    path_row.connect_changed(move |row| {
-        game_id_row_clone.set_text(&normalize_game_id_from_executable(row.text().as_str()));
-    });
-
     let path_row_clone = path_row.clone();
     let parent_clone = parent.clone();
     browse_btn.connect_clicked(move |_| {
@@ -2076,7 +2069,6 @@ pub async fn show_edit_game_dialog(
                     return;
                 }
             };
-            let normalized_game_id = normalize_game_id_from_executable(&exe);
             let custom_icon = game_icon_override_row_val.enables_expansion();
             let icon_notice = match apply_game_icon(
                 game_id.clone(),
@@ -2112,7 +2104,7 @@ pub async fn show_edit_game_dialog(
                 hdr: hdr_row_val.is_active(),
                 proton_log: proton_log_row_val.is_active(),
                 leyen_id: original_game.leyen_id.clone(),
-                game_id: normalized_game_id,
+                game_id: umu_game_id(&original_game.leyen_id),
                 custom_icon,
                 playtime_seconds: original_game.playtime_seconds,
                 last_played_epoch_seconds: original_game.last_played_epoch_seconds,

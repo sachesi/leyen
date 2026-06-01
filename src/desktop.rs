@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use crate::config::normalize_game_id_from_executable;
+use crate::config::effective_game_id;
 use crate::icons::game_icon_file;
 use crate::models::{Game, GameGroup};
 use crate::tools::join_err;
@@ -120,12 +120,10 @@ fn display_name(game: &Game, group: Option<&GameGroup>) -> String {
 }
 
 fn startup_wm_class(game: &Game) -> String {
-    let normalized = normalize_game_id_from_executable(&game.exe_path);
-    if normalized.trim().is_empty() {
-        game.game_id.trim().to_ascii_lowercase()
-    } else {
-        normalized
-    }
+    format!(
+        "steam_app_{}",
+        effective_game_id(game).trim_start_matches("umu-")
+    )
 }
 
 fn desktop_icon(game: &Game) -> String {
@@ -249,8 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn startup_wm_class_uses_lowercased_executable_name() {
-        assert_eq!(startup_wm_class(&sample_game()), "nier.exe");
+    fn startup_wm_class_uses_umu_steam_app_id() {
+        assert_eq!(startup_wm_class(&sample_game()), "steam_app_ly1234");
     }
 
     #[test]
@@ -258,7 +256,7 @@ mod tests {
         let rendered = render_game_desktop_entry(&sample_game(), None, crate::APP_ID);
         assert!(rendered.contains("Exec=leyen run ly-1234"));
         assert!(rendered.contains("Name=Nier Replicant"));
-        assert!(rendered.contains("StartupWMClass=nier.exe"));
+        assert!(rendered.contains("StartupWMClass=steam_app_ly1234"));
     }
 
     #[test]

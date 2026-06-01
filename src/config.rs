@@ -533,18 +533,11 @@ fn is_valid_leyen_id(id: &str) -> bool {
 }
 
 pub fn effective_game_id(game: &Game) -> String {
-    if game.game_id.trim().is_empty() {
-        game.leyen_id.clone()
-    } else {
-        game.game_id.clone()
-    }
+    umu_game_id(&game.leyen_id)
 }
 
-pub fn normalize_game_id_from_executable(exe_path: &str) -> String {
-    Path::new(exe_path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_lowercase().replace(' ', "-"))
-        .unwrap_or_else(|| "unknown-game".to_string())
+pub fn umu_game_id(leyen_id: &str) -> String {
+    format!("umu-{}", leyen_id.replace('-', ""))
 }
 
 pub fn suggest_prefix_path(default_prefix: &str, title: &str) -> String {
@@ -595,5 +588,16 @@ mod tests {
         assert!(is_valid_leyen_id(&generated));
         assert_ne!(generated, "ly-1234");
         assert_ne!(generated, "ly-5678");
+    }
+
+    #[test]
+    fn effective_game_id_is_valid_unique_umu_id() {
+        let game = Game {
+            leyen_id: "ly-1234".to_string(),
+            game_id: "shared.exe".to_string(),
+            ..Game::default()
+        };
+
+        assert_eq!(effective_game_id(&game), "umu-ly1234");
     }
 }

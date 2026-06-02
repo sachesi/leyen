@@ -30,6 +30,22 @@ use std::sync::atomic::Ordering;
 use crate::runtime::umu::{UMU_DOWNLOADING, WINETRICKS_DOWNLOADING};
 
 pub fn build_ui(app: &adw::Application) {
+    // TEMP DEBUG: main-thread stall detector. Fires every 200ms; if the GTK loop
+    // was blocked, the gap between firings exceeds 200ms and we log the exact
+    // blocked duration. The last DBG line before a STALL is the culprit.
+    {
+        let last_beat = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()));
+        glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+            let now = std::time::Instant::now();
+            let gap = now.duration_since(last_beat.get()).as_millis();
+            last_beat.set(now);
+            if gap > 450 {
+                crate::dbg_trace!("STALL main thread blocked ~{}ms", gap);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
     let css = gtk4::CssProvider::new();
     css.load_from_string(&format!(
         "image.edit-icon {{ min-width: 0px; min-height: 0px; margin: 0px; padding: 0px; opacity: 0; }} \
@@ -387,11 +403,13 @@ pub fn build_ui(app: &adw::Application) {
         glib::spawn_future_local(async move {
             while event_rx.recv().await.is_ok() {
                 // Drain a burst (e.g. stop of several games) into one refresh.
-                while event_rx.try_recv().is_ok() {}
+                let mut drained = 0; // TEMP DEBUG
+                while event_rx.try_recv().is_ok() { drained += 1; } // TEMP DEBUG
                 if !window_event.is_visible() {
                     continue;
                 }
                 let current_version = crate::launch::running_games_version().await;
+                crate::dbg_trace!("event-refresh drained={} ver_cur={} ver_seen={}", drained, current_version, version_event.get()); // TEMP DEBUG
                 if current_version != version_event.get() {
                     version_event.set(current_version);
                     refresh_library_view(&ui_event, &overlay_event, &window_event).await;

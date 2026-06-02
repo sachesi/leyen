@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::io;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::thread::sleep;
 use std::time::Duration;
 use uuid::Uuid;
@@ -149,6 +149,10 @@ where
 
     let result = f(&mut items);
 
+    // Keep the in-memory cache in lock-step with the on-disk library so the next
+    // `load_library` (every UI refresh) sees this change without a disk read.
+    update_library_cache(&items);
+
     if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
         let temp_path = path.with_extension(format!("toml.tmp.{}.{}", std::process::id(), Uuid::new_v4()));
         if fs::write(&temp_path, data).is_ok() {
@@ -160,9 +164,28 @@ where
     Some(result)
 }
 
+/// In-memory mirror of the library, kept in sync by every in-process write
+/// (`with_library_exclusive`). Lets `load_library` answer without touching the
+/// disk or the blocking pool — it is called on every UI refresh, so a disk read
+/// there stalled the GTK refresh whenever the blocking pool was under pressure.
+static LIBRARY_CACHE: OnceLock<RwLock<Option<Vec<LibraryItem>>>> = OnceLock::new();
+
+fn library_cache() -> &'static RwLock<Option<Vec<LibraryItem>>> {
+    LIBRARY_CACHE.get_or_init(|| RwLock::new(None))
+}
+
+fn update_library_cache(items: &[LibraryItem]) {
+    if let Ok(mut cache) = library_cache().write() {
+        *cache = Some(items.to_vec());
+    }
+}
+
 pub async fn load_library() -> Result<Vec<LibraryItem>, String> {
+    if let Some(items) = library_cache().read().ok().and_then(|guard| guard.clone()) {
+        return Ok(items);
+    }
     let path = get_config_path();
-    tokio::task::spawn_blocking(move || {
+    let items = tokio::task::spawn_blocking(move || {
         if !path.exists() {
             return Ok(Vec::new());
         }
@@ -175,7 +198,9 @@ pub async fn load_library() -> Result<Vec<LibraryItem>, String> {
             .map_err(|e| format!("Failed to parse games config: {}", e))
     })
     .await
-    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))?;
+    update_library_cache(&items);
+    Ok(items)
 }
 
 pub async fn save_library(items: Vec<LibraryItem>) {

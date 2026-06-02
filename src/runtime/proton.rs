@@ -191,5 +191,6 @@ pub fn detect_proton_versions() -> GlobalSettings {
         log_errors: true,
         log_warnings: false,
         log_operations: false,
+        use_shared_container: true,
     }
 }

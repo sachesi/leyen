@@ -32,6 +32,10 @@ pub struct GroupLaunchDefaults {
     pub proton: String,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GameGroup {
@@ -64,6 +68,12 @@ pub struct GlobalSettings {
     pub log_errors: bool,
     pub log_warnings: bool,
     pub log_operations: bool,
+    /// When a game launches while another sharing its Wine prefix is already
+    /// running, run it inside the existing pressure-vessel container
+    /// (`UMU_CONTAINER_NSENTER`). Disable to launch it in its own container on the
+    /// same prefix instead. Defaults to enabled to preserve prior behavior.
+    #[serde(default = "default_true")]
+    pub use_shared_container: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]

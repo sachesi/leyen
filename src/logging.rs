@@ -25,6 +25,39 @@ pub static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
 pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
 pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
 
+// TEMP DEBUG: when set, every log line is also echoed to stderr so it shows in a
+// terminal run. Enabled by `LEYEN_DEBUG=1` (or any `RUST_LOG`). Remove with the
+// rest of the temporary freeze instrumentation.
+pub static DEBUG_STDERR: AtomicBool = AtomicBool::new(false);
+
+/// TEMP DEBUG: emit a lifecycle trace line at INFO with the current thread id.
+/// Visible once debug logging is enabled. `crate::dbg_trace!("msg {}", x)`.
+#[macro_export]
+macro_rules! dbg_trace {
+    ($($arg:tt)*) => {{
+        log::info!(
+            target: "dbg",
+            "[DBG {} {:?}] {}",
+            chrono::Local::now().format("%H:%M:%S%.3f"),
+            std::thread::current().id(),
+            format_args!($($arg)*)
+        );
+    }};
+}
+
+/// TEMP DEBUG: force-enable operations + warnings logging and stderr echo when
+/// `LEYEN_DEBUG` or `RUST_LOG` is present in the environment. Call AFTER
+/// `apply_log_settings` so it overrides the persisted settings.
+pub fn maybe_enable_debug_logging() {
+    if std::env::var_os("LEYEN_DEBUG").is_some() || std::env::var_os("RUST_LOG").is_some() {
+        LOG_OPERATIONS.store(true, Ordering::Relaxed);
+        LOG_WARNINGS.store(true, Ordering::Relaxed);
+        LOG_ERRORS.store(true, Ordering::Relaxed);
+        DEBUG_STDERR.store(true, Ordering::Relaxed);
+        log::info!(target: "dbg", "[DBG] debug logging enabled (LEYEN_DEBUG/RUST_LOG)");
+    }
+}
+
 static LOG_SENDER: Mutex<Option<Sender<LogEntry>>> = Mutex::new(None);
 static LOG_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static UI_LOG_ENTRIES: OnceLock<RwLock<VecDeque<LogEntry>>> = OnceLock::new();
@@ -69,6 +102,11 @@ impl log::Log for LeyenLogger {
             Some(id) => format!("[{level_str}] [{module}] [game:{id}] {message}"),
             None => format!("[{level_str}] [{module}] {message}"),
         };
+
+        // TEMP DEBUG: mirror to stderr for terminal runs.
+        if DEBUG_STDERR.load(Ordering::Relaxed) {
+            eprintln!("{line}");
+        }
 
         let entry = LogEntry {
             timestamp: Local::now().to_rfc3339(),

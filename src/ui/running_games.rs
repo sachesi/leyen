@@ -167,14 +167,7 @@ async fn rebuild_running_games(
             let game_id = game_id_for_stop.clone();
             let overlay = overlay_for_stop.clone();
             glib::spawn_future_local(async move {
-                match crate::launch::stop_game(&game_id).await {
-                    Ok(true) => {}
-                    Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
-                    Err(err) => {
-                        overlay
-                            .add_toast(adw::Toast::new(&t!("Failed to stop game: {}").replacen("{}", &err.to_string(), 1)));
-                    }
-                }
+                crate::ui::library::stop_game_guarded(&game_id, &overlay).await;
             });
         });
 

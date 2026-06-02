@@ -378,6 +378,16 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     });
 
     runtime_repair_row.add_row(&reset_row);
+
+    let shared_container_row = adw::SwitchRow::builder()
+        .title(t!("Use shared container"))
+        .subtitle(t!(
+            "When a game launches while another sharing its Wine prefix is already running, run it inside the running container. Disable to launch it in its own container on the same prefix instead."
+        ))
+        .active(settings.use_shared_container)
+        .build();
+
+    maintenance_group.add(&shared_container_row);
     maintenance_group.add(&runtime_repair_row);
 
     page.add(&paths_group);
@@ -427,6 +437,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
             log_errors: log_errors_row.is_active(),
             log_warnings: log_warnings_row.is_active(),
             log_operations: log_operations_row.is_active(),
+            use_shared_container: shared_container_row.is_active(),
         };
         glib::spawn_future_local(async move {
             crate::logging::apply_log_settings(&updated_settings);

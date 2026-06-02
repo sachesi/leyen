@@ -1368,14 +1368,18 @@ async fn launch_game_managed(
         .await
         .unwrap_or_default();
     crate::dbg_trace!("lm try_lock_prefix game={}…", game.id); // TEMP DEBUG
+    let allow_shared_container = settings.use_shared_container;
     match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
-        PrefixLockState::Busy => {
+        PrefixLockState::Busy if allow_shared_container => {
             env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
             notices.push(
                 t!("Prefix is already in use. Launching with shared-container fallback."),
             );
         }
+        // Shared container disabled for this group: launch in its own container
+        // on the same prefix instead of joining the running one (no NSENTER).
+        PrefixLockState::Busy => {}
         PrefixLockState::Unavailable => {}
     }
     crate::dbg_trace!("lm prefix_locked game={}", game.id); // TEMP DEBUG

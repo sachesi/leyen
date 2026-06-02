@@ -35,12 +35,19 @@ pub fn build_ui(app: &adw::Application) {
     // blocked duration. The last DBG line before a STALL is the culprit.
     {
         let last_beat = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()));
+        let last_log = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()));
         glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
             let now = std::time::Instant::now();
             let gap = now.duration_since(last_beat.get()).as_millis();
             last_beat.set(now);
             if gap > 450 {
                 crate::dbg_trace!("STALL main thread blocked ~{}ms", gap);
+            }
+            // Always-on liveness tick so a freeze shows as a visible gap: when
+            // these stop, the main loop is dead — last line before the gap = cause.
+            if now.duration_since(last_log.get()).as_millis() >= 1000 {
+                last_log.set(now);
+                crate::dbg_trace!("heartbeat");
             }
             glib::ControlFlow::Continue
         });

@@ -13,8 +13,6 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
-use uuid::Uuid;
-
 use crate::models::GlobalSettings;
 use crate::paths::{get_config_dir, get_settings_path};
 use crate::runtime::detect_proton_versions;
@@ -98,12 +96,12 @@ pub fn save_settings(settings: &GlobalSettings) {
         }
     };
     let path = get_settings_path();
-    if let Ok(data) = toml::to_string_pretty(settings) {
-        let temp_path = path.with_extension(format!("toml.tmp.{}.{}", std::process::id(), Uuid::new_v4()));
-        if fs::write(&temp_path, data).is_ok() {
-            let _ = fs::rename(&temp_path, &path);
-        } else {
-            let _ = fs::remove_file(&temp_path);
+    match toml::to_string_pretty(settings) {
+        Ok(data) => {
+            if let Err(e) = crate::paths::atomic_write(&path, &data) {
+                log::error!("Failed to persist settings: {e}");
+            }
         }
+        Err(e) => log::error!("Failed to serialize settings: {e}"),
     }
 }

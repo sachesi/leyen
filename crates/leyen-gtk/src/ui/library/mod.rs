@@ -47,24 +47,29 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
 
     let running = game_is_running(&running_game_map().await, &game.id);
     if running {
-        if daemon::stop_game(&game.leyen_id).await {
-            overlay.add_toast(adw::Toast::new(
+        match daemon::stop_game(&game.leyen_id).await {
+            Ok(true) => overlay.add_toast(adw::Toast::new(
                 &t!("Stopping {}...").replacen("{}", &game.title, 1),
-            ));
-        } else {
-            overlay.add_toast(adw::Toast::new(&t!("Game is no longer running")));
+            )),
+            Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
+            Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
+                "{}: {}",
+                t!("Failed to stop {}").replacen("{}", &game.title, 1),
+                reason
+            ))),
         }
     } else {
         // Await the launch while holding the in-flight guard so rapid re-clicks
         // can't issue duplicate concurrent launches.
-        if daemon::launch_game(&game.leyen_id).await {
-            overlay.add_toast(adw::Toast::new(
+        match daemon::launch_game(&game.leyen_id).await {
+            Ok(()) => overlay.add_toast(adw::Toast::new(
                 &t!("Launching {}...").replacen("{}", &game.title, 1),
-            ));
-        } else {
-            overlay.add_toast(adw::Toast::new(
-                &t!("Failed to launch {}").replacen("{}", &game.title, 1),
-            ));
+            )),
+            Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
+                "{}: {}",
+                t!("Failed to launch {}").replacen("{}", &game.title, 1),
+                reason
+            ))),
         }
     }
 }
@@ -80,8 +85,10 @@ pub async fn stop_game_guarded(leyen_id: &str, overlay: &adw::ToastOverlay) {
     }
     let _guard = PrimaryActionGuard(leyen_id.to_string());
 
-    if !daemon::stop_game(leyen_id).await {
-        overlay.add_toast(adw::Toast::new(&t!("Game is no longer running")));
+    match daemon::stop_game(leyen_id).await {
+        Ok(true) => {}
+        Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
+        Err(reason) => overlay.add_toast(adw::Toast::new(&reason)),
     }
 }
 
@@ -176,6 +183,10 @@ async fn run_library_refresh(
                 return;
             }
         };
+
+        if !window_clone.is_visible() {
+            return;
+        }
 
         let is_searching = !search_text.is_empty();
 

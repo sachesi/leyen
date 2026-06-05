@@ -859,7 +859,11 @@ pub async fn show_add_library_item_dialog(
                 }
             }
 
-            crate::daemon::save_library(items).await;
+            if let Err(reason) = crate::daemon::save_library(items).await {
+                overlay_clone.add_toast(adw::Toast::new(&reason));
+                refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                return;
+            }
             if kind == AddLibraryItemKind::Game && inside_group {
                 ui_clone.stack.set_visible_child_name("group");
                 ui_clone.back_btn.set_visible(true);
@@ -1326,7 +1330,11 @@ pub async fn show_edit_group_dialog(
                     proton,
                 },
             ) {
-                crate::daemon::save_library(items.clone()).await;
+                if let Err(reason) = crate::daemon::save_library(items.clone()).await {
+                    overlay_clone.add_toast(adw::Toast::new(&reason));
+                    refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                    return;
+                }
                 let updated_group = find_group(&items, &group_id).cloned();
                 let desktop_notice = if let Some(group) = updated_group {
                     update_group_desktop_entries_if_present(group)
@@ -2089,7 +2097,11 @@ pub async fn show_edit_game_dialog(
             };
 
             if replace_game(&mut items, &edited_game) {
-                crate::daemon::save_library(items).await;
+                if let Err(reason) = crate::daemon::save_library(items).await {
+                    overlay_clone.add_toast(adw::Toast::new(&reason));
+                    refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                    return;
+                }
                 let desktop_notice = update_game_desktop_entry_if_present(
                     edited_game.clone(),
                     current_parent_group.clone(),
@@ -2210,7 +2222,11 @@ pub async fn show_delete_confirmation(
                 };
 
                 if let Some(title) = deleted {
-                    crate::daemon::save_library(items).await;
+                    if let Err(reason) = crate::daemon::save_library(items).await {
+                        overlay_clone.add_toast(adw::Toast::new(&reason));
+                        refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
+                        return;
+                    }
                     refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
                     let message = if let Some(delete_notice) = delete_notice {
                         t!("'{}' deleted successfully. {}").replacen("{}", &title, 1).replacen("{}", &delete_notice, 1)

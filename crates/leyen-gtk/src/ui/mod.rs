@@ -240,12 +240,18 @@ pub fn build_ui(app: &adw::Application) {
         let events = daemon::subscribe_events();
         glib::spawn_future_local(async move {
             while let Ok(evt) = events.recv().await {
-                if let DaemonEvent::RuntimeStatus {
-                    umu_ready,
-                    winetricks_ready,
-                } = evt
-                {
-                    update_download_banner(&banner, umu_ready, winetricks_ready);
+                match evt {
+                    DaemonEvent::RuntimeStatus {
+                        umu_ready,
+                        winetricks_ready,
+                    } => update_download_banner(&banner, umu_ready, winetricks_ready),
+                    // Fresh daemon instance: its cached readiness is gone;
+                    // re-pull so the banner reflects the new state.
+                    DaemonEvent::DaemonRestarted => {
+                        let status = daemon::get_runtime_status().await;
+                        update_download_banner(&banner, status.umu_ready, status.winetricks_ready);
+                    }
+                    _ => {}
                 }
             }
         });
@@ -368,11 +374,13 @@ pub fn build_ui(app: &adw::Application) {
 
     // Signal-driven refresh: SessionsChanged / LibraryChanged refresh the library
     // the instant state changes — no polling, no version bookkeeping.
+    let stale_while_hidden = Rc::new(Cell::new(false));
     {
         let events = daemon::subscribe_events();
         let ui_event = ui.clone();
         let overlay_event = toast_overlay.clone();
         let window_event = window.clone();
+        let stale_hidden = stale_while_hidden.clone();
         glib::spawn_future_local(async move {
             while let Ok(evt) = events.recv().await {
                 match evt {
@@ -382,17 +390,48 @@ pub fn build_ui(app: &adw::Application) {
                         if !window_event.is_visible() {
                             if sessions.is_empty() {
                                 window_event.close();
+                            } else {
+                                // Running set changed while hidden — refresh
+                                // when the window is shown again.
+                                stale_hidden.set(true);
                             }
                             continue;
                         }
                         refresh_library_view(&ui_event, &overlay_event, &window_event).await;
                     }
-                    DaemonEvent::LibraryChanged if window_event.is_visible() => {
-                        refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                    DaemonEvent::LibraryChanged | DaemonEvent::DaemonRestarted => {
+                        // Hidden: don't drop the event — remember it and refresh
+                        // when the window is shown again.
+                        if window_event.is_visible() {
+                            refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                        } else {
+                            stale_hidden.set(true);
+                        }
+                    }
+                    DaemonEvent::Error(message) => {
+                        overlay_event.add_toast(adw::Toast::new(&message));
                     }
                     _ => {}
                 }
             }
+        });
+    }
+
+    // Refresh on re-show if library changes arrived while hidden.
+    {
+        let ui_map = ui.clone();
+        let overlay_map = toast_overlay.clone();
+        let stale_hidden = stale_while_hidden.clone();
+        window.connect_map(move |win| {
+            if !stale_hidden.replace(false) {
+                return;
+            }
+            let ui = ui_map.clone();
+            let overlay = overlay_map.clone();
+            let window = win.clone();
+            glib::spawn_future_local(async move {
+                refresh_library_view(&ui, &overlay, &window).await;
+            });
         });
     }
 

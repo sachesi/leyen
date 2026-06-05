@@ -1,8 +1,8 @@
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::config::get_data_dir;
-use crate::models::GlobalSettings;
+use leyen_model::models::GlobalSettings;
+use leyen_model::paths::get_data_dir;
 
 static PROTONGE_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -26,7 +26,7 @@ pub fn check_or_install_protonge() {
 
     let proton_dir = get_data_dir().join("proton");
 
-    gtk4::glib::spawn_future_local(async move {
+    tokio::spawn(async move {
         let _ = tokio::task::spawn_blocking(move || {
             let _ = fs::create_dir_all(&proton_dir);
             let proton_dir_str = proton_dir.to_string_lossy();

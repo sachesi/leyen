@@ -1,6 +1,5 @@
-use crate::config::get_data_dir;
 use directories::ProjectDirs;
-use gtk4::glib;
+use leyen_model::paths::get_data_dir;
 use log::{info, warn};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -288,7 +287,7 @@ pub async fn check_or_install_umu() {
         "[dbg] umu-launcher not found, starting background download to {}",
         umu_core_dir
     );
-    glib::spawn_future_local(async move {
+    tokio::spawn(async move {
         let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir))
             .await
             .unwrap();
@@ -330,7 +329,7 @@ pub async fn check_or_install_winetricks() {
     WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
 
     info!("[dbg] winetricks not found, starting background download");
-    glib::spawn_future_local(async move {
+    tokio::spawn(async move {
         let result = tokio::task::spawn_blocking(download_winetricks)
             .await
             .unwrap();

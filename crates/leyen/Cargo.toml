@@ -1,0 +1,19 @@
+[package]
+name = "leyen"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "leyen"
+path = "src/main.rs"
+
+[dependencies]
+leyen-model.workspace = true
+leyen-ipc.workspace = true
+zbus.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+clap.workspace = true
+anyhow.workspace = true

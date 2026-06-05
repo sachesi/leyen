@@ -1,0 +1,27 @@
+[package]
+name = "leyen-gtk"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "leyen-gtk"
+path = "src/main.rs"
+
+[dependencies]
+leyen-model.workspace = true
+leyen-ipc.workspace = true
+gtk4.workspace = true
+libadwaita.workspace = true
+zbus.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+async-channel.workspace = true
+log.workspace = true
+directories.workspace = true
+shlex.workspace = true
+image.workspace = true
+pelite.workspace = true
+toml.workspace = true
+uuid.workspace = true

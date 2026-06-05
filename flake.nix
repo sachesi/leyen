@@ -73,6 +73,12 @@
                 lang=$(basename "$(dirname "$(dirname "$mo")")")
                 install -Dm644 "$mo" "$out/share/locale/$lang/LC_MESSAGES/leyen.mo"
               done
+
+              # D-Bus activation for the daemon: clients auto-start leyend on the
+              # first method call. Patch the Exec to the wrapped store binary.
+              install -Dm644 packaging/usr/share/dbus-1/services/com.github.sachesi.leyen.Daemon.service -t $out/share/dbus-1/services
+              substituteInPlace $out/share/dbus-1/services/com.github.sachesi.leyen.Daemon.service \
+                --replace '@LEYEND@' "$out/bin/leyend"
             '';
 
             # Use gappsWrapperArgs for a more "pure" Nix integration
@@ -94,7 +100,7 @@
               homepage = "https://github.com/sachesi/leyen";
               license = licenses.gpl3Plus;
               maintainers = [ "sachesi" ];
-              mainProgram = "leyen";
+              mainProgram = "leyen-gtk";
             };
           };
 

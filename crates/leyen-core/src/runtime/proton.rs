@@ -1,0 +1,155 @@
+use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use leyen_model::paths::get_data_dir;
+
+static PROTONGE_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Resolves a Proton value stored in config.
+/// Returns `None` when the value represents the "Default" / unset state.
+pub fn resolve_proton_path(proton: &str) -> Option<String> {
+    if proton.is_empty() || proton == "Default" {
+        return None;
+    }
+
+    Some(proton.to_string())
+}
+
+/// If no Proton installation is available, downloads the latest ProtonGE
+/// release from GitHub into the leyen data directory in a background
+/// thread.  Only one download attempt is made per application lifetime.
+pub fn check_or_install_protonge() {
+    if PROTONGE_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+
+    let proton_dir = get_data_dir().join("proton");
+
+    tokio::spawn(async move {
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = fs::create_dir_all(&proton_dir);
+            let proton_dir_str = proton_dir.to_string_lossy();
+
+            // Resolve the latest release tag via the GitHub redirect
+            let tag_output = std::process::Command::new("curl")
+                .args([
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--silent",
+                    "--show-error",
+                    "--location",
+                    "--fail",
+                    "--connect-timeout",
+                    "15",
+                    "--max-time",
+                    "300",
+                    "-o",
+                    "/dev/null",
+                    "-w",
+                    "%{url_effective}",
+                    "https://github.com/GloriousEggroll/proton-ge-custom/releases/latest",
+                ])
+                .output();
+
+            let tag = match tag_output {
+                Ok(o) if o.status.success() => {
+                    let url = String::from_utf8_lossy(&o.stdout);
+                    url.trim()
+                        .trim_end_matches('/')
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                }
+                _ => {
+                    PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                    return;
+                }
+            };
+
+            if tag.is_empty() || !tag.starts_with("GE-Proton") {
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            if !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            let tarball = format!("{}.tar.gz", tag);
+            let tarball_path = proton_dir.join(&tarball);
+            let download_url = format!(
+                "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/{}/{}",
+                tag, tarball
+            );
+
+            let ok = std::process::Command::new("curl")
+                .args([
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--location",
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--connect-timeout",
+                    "15",
+                    "--max-time",
+                    "300",
+                    "--retry",
+                    "3",
+                    "--retry-delay",
+                    "1",
+                    "-o",
+                    &tarball_path.to_string_lossy(),
+                    &download_url,
+                ])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if ok {
+                let status = std::process::Command::new("tar")
+                    .args([
+                        "-xzf",
+                        &tarball_path.to_string_lossy(),
+                        "-C",
+                        &proton_dir_str,
+                    ])
+                    .status();
+
+                // Only the just-extracted version directory may be removed on
+                // failure — never the shared parent, which holds other installed
+                // Proton versions.
+                let extracted_dir = proton_dir.join(&tag);
+                match status {
+                    Ok(s) if s.success() => {
+                        log::info!("Successfully extracted ProtonGE");
+                    }
+                    Ok(s) => {
+                        log::error!("Failed to extract ProtonGE: tar exited with status {}", s);
+                        let _ = fs::remove_dir_all(&extracted_dir);
+                        PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to extract ProtonGE: failed to spawn tar: {}", e);
+                        let _ = fs::remove_dir_all(&extracted_dir);
+                        PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                    }
+                }
+                if let Err(e) = fs::remove_file(&tarball_path) {
+                    log::warn!("failed to remove tarball {}: {e}", tarball_path.display());
+                }
+            } else {
+                if let Err(e) = fs::remove_file(&tarball_path) {
+                    log::warn!("failed to remove tarball {}: {e}", tarball_path.display());
+                }
+                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+            }
+        })
+        .await;
+    });
+}
+

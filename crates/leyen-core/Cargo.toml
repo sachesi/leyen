@@ -1,0 +1,28 @@
+[package]
+name = "leyen-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+leyen-model.workspace = true
+directories.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+futures.workspace = true
+crossbeam-channel.workspace = true
+libc.workspace = true
+shlex.workspace = true
+thiserror.workspace = true
+log.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+hex.workspace = true
+md-5.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

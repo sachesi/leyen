@@ -52,7 +52,7 @@ pub enum LibraryItem {
     Group(GameGroup),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalSettings {
     pub default_prefix_path: String,
@@ -74,6 +74,29 @@ pub struct GlobalSettings {
     /// same prefix instead. Defaults to enabled to preserve prior behavior.
     #[serde(default = "default_true")]
     pub use_shared_container: bool,
+}
+
+/// Logging defaults to fully enabled: the Logs window is a primary debugging
+/// surface, and a launcher that swallows its own errors is undebuggable.
+impl Default for GlobalSettings {
+    fn default() -> Self {
+        Self {
+            default_prefix_path: String::new(),
+            default_proton: String::new(),
+            global_mangohud: false,
+            global_gamemode: false,
+            global_wayland: false,
+            global_wow64: false,
+            global_ntsync: false,
+            global_hdr: false,
+            global_proton_log: false,
+            available_proton_versions: Vec::new(),
+            log_errors: true,
+            log_warnings: true,
+            log_operations: true,
+            use_shared_container: true,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]

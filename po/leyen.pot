@@ -8,1039 +8,1063 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: src/ui/game_dialogs.rs:2248
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2234
 msgid "'{}' deleted successfully"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2246
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2232
 msgid "'{}' deleted successfully. {}"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:503
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:491
 msgid "'{}' installed successfully."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:501
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:489
 msgid "'{}' installed successfully. {}"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:611
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:600
 msgid "'{}' reinstalled successfully."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:608
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:597
 msgid "'{}' reinstalled successfully. {}"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:783
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:769
 msgid "'{}' removed successfully."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:780
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:766
 msgid "'{}' removed successfully. {}"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:118
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:117
 msgid "1 component installed"
 msgstr ""
 
-#: src/launch.rs:1244
+#: crates/leyen-core/src/launch.rs:1419
 msgid "A systemd user session is required to launch games."
 msgstr ""
 
-#: src/ui/mod.rs:107
+#: crates/leyen-gtk/src/ui/mod.rs:82
 msgid "About Leyen"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:261
-#: src/ui/mod.rs:86
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:257
+#: crates/leyen-gtk/src/ui/mod.rs:61
 msgid "Add"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:250
-#: src/ui/mod.rs:90
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:246
+#: crates/leyen-gtk/src/ui/mod.rs:65
 msgid "Add Game"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:249
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:245
 msgid "Add Game to Group"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:251
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:247
 msgid "Add Group"
 msgstr ""
 
-#: src/ui/mod.rs:181
+#: crates/leyen-gtk/src/ui/mod.rs:156
 msgid "Add a game or create a group to organize your library."
 msgstr ""
 
-#: src/ui/mod.rs:187
+#: crates/leyen-gtk/src/ui/mod.rs:162
 msgid "Add a game while inside the group to populate it."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1595
-#: src/ui/game_dialogs.rs:1845
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1586
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1831
 msgid "Add to menu"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1854
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1840
 msgid "Added to menu"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:375
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:371
 msgid "Adding Into Group"
 msgstr ""
 
-#: src/ui/log_window.rs:132
+#: crates/leyen-gtk/src/ui/log_window.rs:87
 msgid "All Logs"
 msgstr ""
 
-#: src/deps/engine.rs:529
-#: src/deps/engine.rs:773
+#: crates/leyen-core/src/deps/engine.rs:567
+#: crates/leyen-core/src/deps/engine.rs:779
 msgid "Another dependency operation is already running for this prefix."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2185
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2173
 msgid "Are you sure you want to delete {}?\n\nThis action cannot be undone."
 msgstr ""
 
-#: src/ui/mod.rs:77
+#: crates/leyen-gtk/src/ui/mod.rs:52
 msgid "Back to Library"
 msgstr ""
 
-#: src/prefix_tools.rs:134
+#: crates/leyen-gtk/src/prefix_tools.rs:114
 msgid "Blocked: Cannot run programs in prefix while games are running."
 msgstr ""
 
-#: src/prefix_tools.rs:69
+#: crates/leyen-gtk/src/prefix_tools.rs:68
 msgid "Blocked: Cannot run regedit while games are running."
 msgstr ""
 
-#: src/prefix_tools.rs:24
+#: crates/leyen-gtk/src/prefix_tools.rs:40
 msgid "Blocked: Cannot run winecfg while games are running."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:335
-#: src/ui/game_dialogs.rs:1508
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:331
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1504
 msgid "Browse for custom icon"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:275
-#: src/ui/game_dialogs.rs:1415
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:271
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1411
 msgid "Browse for executable"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:412
-#: src/ui/game_dialogs.rs:960
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:408
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:954
 msgid "Browse for group icon"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:289
-#: src/ui/game_dialogs.rs:399
-#: src/ui/game_dialogs.rs:930
-#: src/ui/game_dialogs.rs:1424
-#: src/ui/settings.rs:47
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:285
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:395
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:924
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1420
+#: crates/leyen-gtk/src/ui/settings.rs:46
 msgid "Browse for prefix folder"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:372
-#: src/ui/deps_dialog.rs:663
-#: src/ui/game_dialogs.rs:259
-#: src/ui/game_dialogs.rs:909
-#: src/ui/game_dialogs.rs:1397
-#: src/ui/game_dialogs.rs:2188
-#: src/ui/settings.rs:337
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:360
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:653
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:255
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:903
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1393
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2176
+#: crates/leyen-gtk/src/ui/settings.rs:336
 msgid "Cancel"
 msgstr ""
 
-#: src/deps/engine.rs:131
-#: src/deps/engine.rs:642
+#: crates/leyen-core/src/deps/engine.rs:130
+#: crates/leyen-core/src/deps/engine.rs:267
+#: crates/leyen-core/src/deps/engine.rs:323
+#: crates/leyen-core/src/deps/engine.rs:657
 msgid "Cancelled."
 msgstr ""
 
-#: src/deps/engine.rs:795
+#: crates/leyen-core/src/deps/engine.rs:794
 msgid "Cannot remove '{}': still required by {}."
 msgstr ""
 
-#: src/ui/settings.rs:325
+#: crates/leyen-gtk/src/ui/settings.rs:324
 msgid "Cannot reset runtime while games are running. Close all games first."
 msgstr ""
 
-#: src/deps/engine.rs:541
+#: crates/leyen-core/src/deps/engine.rs:579
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr ""
 
-#: src/ui/log_window.rs:168
+#: crates/leyen-gtk/src/ui/log_window.rs:123
 msgid "Clear logs"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:341
-#: src/ui/game_dialogs.rs:418
-#: src/ui/game_dialogs.rs:966
-#: src/ui/game_dialogs.rs:1514
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:337
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:414
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:960
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1510
 msgid "Custom Icon"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:296
-#: src/ui/game_dialogs.rs:426
-#: src/ui/game_dialogs.rs:974
-#: src/ui/game_dialogs.rs:1438
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:292
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:422
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:968
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1434
 msgid "Custom Prefix"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:322
-#: src/ui/game_dialogs.rs:1485
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:318
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1481
 msgid "Custom Proton"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1661
-#: src/ui/game_dialogs.rs:1696
-#: src/ui/game_dialogs.rs:1730
-#: src/ui/game_dialogs.rs:1767
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1652
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1687
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1721
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1758
 msgid "Custom game prefix path is required"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1055
-#: src/ui/game_dialogs.rs:1076
-#: src/ui/game_dialogs.rs:1096
-#: src/ui/game_dialogs.rs:1122
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1049
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1070
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1090
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1116
 msgid "Custom group prefix path is required"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:100
-#: src/ui/game_dialogs.rs:130
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:100
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:128
 msgid "Custom icon file is required"
 msgstr ""
 
-#: src/ui/settings.rs:37
+#: crates/leyen-gtk/src/ui/settings.rs:36
 msgid "Default Paths"
 msgstr ""
 
-#: src/ui/settings.rs:41
+#: crates/leyen-gtk/src/ui/settings.rs:40
 msgid "Default Prefix Path"
 msgstr ""
 
-#: src/ui/settings.rs:90
+#: crates/leyen-gtk/src/ui/settings.rs:89
 msgid "Default Proton"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2188
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2176
 msgid "Delete"
 msgstr ""
 
-#: src/ui/components/game_card.rs:129
+#: crates/leyen-gtk/src/ui/components/game_card.rs:129
 msgid "Delete Game"
 msgstr ""
 
-#: src/ui/components/group_card.rs:133
+#: crates/leyen-gtk/src/ui/components/group_card.rs:133
 msgid "Delete Group"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2183
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2171
 msgid "Delete Item?"
 msgstr ""
 
-#: src/ui/settings.rs:305
+#: crates/leyen-gtk/src/ui/settings.rs:304
 msgid "Deletes steamrt3 directory. It will be re-downloaded on next dependency install."
 msgstr ""
 
-#: src/deps/engine.rs:563
+#: crates/leyen-core/src/deps/engine.rs:593
 msgid "Dependency is already installed."
 msgstr ""
 
-#: src/deps/engine.rs:786
+#: crates/leyen-core/src/deps/engine.rs:790
 msgid "Dependency is no longer tracked."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:220
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:214
 msgid "Dependency manager is blocked while games are running. Close all games first."
 msgstr ""
 
-#: src/ui/mod.rs:268
+#: crates/leyen-gtk/src/ui/mod.rs:549
 msgid "Downloading umu-launcher & winetricks… Please wait before starting games."
 msgstr ""
 
-#: src/ui/mod.rs:250
-#: src/ui/mod.rs:270
+#: crates/leyen-gtk/src/ui/mod.rs:225
+#: crates/leyen-gtk/src/ui/mod.rs:551
 msgid "Downloading umu-launcher… Please wait before starting games."
 msgstr ""
 
-#: src/deps/engine.rs:967
-#: src/ui/mod.rs:272
+#: crates/leyen-core/src/deps/engine.rs:945
+#: crates/leyen-gtk/src/ui/mod.rs:553
 msgid "Downloading winetricks…"
 msgstr ""
 
-#: src/ui/components/game_card.rs:125
-#: src/ui/game_dialogs.rs:1393
+#: crates/leyen-gtk/src/ui/components/game_card.rs:125
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1389
 msgid "Edit Game"
 msgstr ""
 
-#: src/ui/components/group_card.rs:129
-#: src/ui/game_dialogs.rs:905
+#: crates/leyen-gtk/src/ui/components/group_card.rs:129
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:899
 msgid "Edit Group"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:443
-#: src/ui/game_dialogs.rs:1568
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:439
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1564
 msgid "Environment"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2140
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2128
 msgid "Error: Game not found"
 msgstr ""
 
-#: src/ui/settings.rs:271
+#: crates/leyen-gtk/src/ui/settings.rs:270
 msgid "Errors"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:272
-#: src/ui/game_dialogs.rs:1410
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:268
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1406
 msgid "Executable"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:795
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:787
 msgid "Executable path is required"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:855
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:845
 msgid "Failed to add game to the selected group"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1856
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1842
 msgid "Failed to create menu entry: {}"
 msgstr ""
 
-#: src/deps/engine.rs:984
+#: crates/leyen-core/src/deps/engine.rs:962
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr ""
 
-#: src/launch.rs:1478
+#: crates/leyen-core/src/launch.rs:1735
 msgid "Failed to get child PID"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2234
+#: crates/leyen-gtk/src/ui/library/mod.rs:70
+msgid "Failed to launch {}"
+msgstr ""
+
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2216
 msgid "Failed to remove a menu entry: {}"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1848
-#: src/ui/game_dialogs.rs:2220
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1834
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2206
 msgid "Failed to remove menu entry: {}"
 msgstr ""
 
-#: src/ui/settings.rs:370
+#: crates/leyen-gtk/src/ui/settings.rs:369
 msgid "Failed to reset umu runtime: {}"
 msgstr ""
 
-#: src/ui/library/mod.rs:59
-#: src/ui/library/mod.rs:96
-msgid "Failed to stop game: {}"
+#: crates/leyen-gtk/src/ui/library/mod.rs:57
+msgid "Failed to stop {}"
 msgstr ""
 
-#: src/ui/log_window.rs:164
+#: crates/leyen-gtk/src/ui/log_window.rs:119
 msgid "Filter logs by game"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1544
-#: src/ui/mod.rs:81
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1540
+#: crates/leyen-gtk/src/ui/mod.rs:56
 msgid "Game"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:312
-#: src/ui/game_dialogs.rs:1453
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:308
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1449
 msgid "Game ID"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:382
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:378
 msgid "Game Settings"
 msgstr ""
 
-#: src/ui/library/mod.rs:57
-#: src/ui/library/mod.rs:93
+#: crates/leyen-core/src/launch.rs:1448
+msgid "Game executable was not found"
+msgstr ""
+
+#: crates/leyen-gtk/src/ui/library/mod.rs:54
+#: crates/leyen-gtk/src/ui/library/mod.rs:90
 msgid "Game is no longer running"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2133
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2121
 msgid "Game updated successfully"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2135
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2123
 msgid "Game updated successfully. {}"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:361
-#: src/ui/game_dialogs.rs:1535
-#: src/ui/settings.rs:226
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:357
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1531
+#: crates/leyen-gtk/src/ui/settings.rs:225
 msgid "GameMode"
 msgstr ""
 
-#: src/ui/running_games.rs:249
+#: crates/leyen-gtk/src/ui/running_games.rs:252
 msgid "Games you launch through Leyen will appear here while they are active."
 msgstr ""
 
-#: src/ui/mod.rs:504
-#: src/ui/mod.rs:509
+#: crates/leyen-gtk/src/ui/mod.rs:492
+#: crates/leyen-gtk/src/ui/mod.rs:497
 msgid "General"
 msgstr ""
 
-#: src/ui/settings.rs:216
+#: crates/leyen-gtk/src/ui/settings.rs:215
 msgid "Global Environment"
 msgstr ""
 
-#: src/ui/settings.rs:21
-#: src/ui/settings.rs:31
-#: src/ui/settings.rs:412
+#: crates/leyen-gtk/src/ui/settings.rs:20
+#: crates/leyen-gtk/src/ui/settings.rs:30
+#: crates/leyen-gtk/src/ui/settings.rs:411
 msgid "Global Settings"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:983
-#: src/ui/game_dialogs.rs:1550
-#: src/ui/library/group_view.rs:37
-#: src/ui/mod.rs:82
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:977
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1546
+#: crates/leyen-gtk/src/ui/library/group_view.rs:37
+#: crates/leyen-gtk/src/ui/mod.rs:57
 msgid "Group"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:435
-#: src/ui/game_dialogs.rs:986
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:431
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:980
 msgid "Group Defaults"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1023
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1017
 msgid "Group tools unavailable"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1355
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1351
 msgid "Group updated successfully"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1353
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1349
 msgid "Group updated successfully. {}"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:372
-#: src/ui/game_dialogs.rs:1548
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:368
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1544
 msgid "Grouping"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:366
-#: src/ui/game_dialogs.rs:1540
-#: src/ui/settings.rs:247
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:362
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1536
+#: crates/leyen-gtk/src/ui/settings.rs:246
 msgid "HDR"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:332
-#: src/ui/game_dialogs.rs:409
-#: src/ui/game_dialogs.rs:955
-#: src/ui/game_dialogs.rs:1503
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:328
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:405
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:949
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1499
 msgid "Icon File"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:349
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:337
 msgid "Install"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:510
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:498
 msgid "Installation failed."
 msgstr ""
 
-#: src/deps/engine.rs:742
+#: crates/leyen-core/src/deps/engine.rs:753
 msgid "Installed prerequisites: {}."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:369
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:365
 msgid "Item"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:881
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:875
 msgid "Item added successfully"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:879
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:873
 msgid "Item added successfully. {}"
 msgstr ""
 
-#: src/ui/mod.rs:106
+#: crates/leyen-gtk/src/ui/mod.rs:81
 msgid "Keyboard Shortcuts"
 msgstr ""
 
-#: src/ui/utils/mod.rs:89
+#: crates/leyen-gtk/src/ui/utils/mod.rs:89
 msgid "Last played: never"
 msgstr ""
 
-#: src/ui/utils/mod.rs:108
+#: crates/leyen-gtk/src/ui/utils/mod.rs:108
 msgid "Last played: {}"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:355
-#: src/ui/game_dialogs.rs:1529
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:351
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1525
 msgid "Launch Arguments"
 msgstr ""
 
-#: src/i18n.rs:62
-#: src/ui/components/game_card.rs:146
+#: crates/leyen-gtk/src/ui/components/game_card.rs:146
+#: crates/leyen-model/src/i18n.rs:62
 msgid "Launch Game"
 msgstr ""
 
-#: src/prefix_tools.rs:194
+#: crates/leyen-gtk/src/prefix_tools.rs:156
 msgid "Launched in prefix"
 msgstr ""
 
-#: src/launch.rs:1559
+#: crates/leyen-core/src/launch.rs:1613
+#: crates/leyen-core/src/launch.rs:1818
+#: crates/leyen-gtk/src/ui/library/mod.rs:66
 msgid "Launching {}..."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:987
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:981
 msgid "Leave prefix empty or Proton on Default to inherit global settings."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:436
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:432
 msgid "Leave prefix empty or Proton on Default to keep using global defaults."
 msgstr ""
 
-#: src/ui/library/mod.rs:249
-#: src/ui/library/mod.rs:267
+#: crates/leyen-gtk/src/ui/library/mod.rs:236
+#: crates/leyen-gtk/src/ui/library/mod.rs:254
 msgid "Leyen"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:306
-#: src/ui/game_dialogs.rs:1447
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:302
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1443
 msgid "Leyen ID"
 msgstr ""
 
-#: src/ui/log_window.rs:120
+#: crates/leyen-gtk/src/ui/log_window.rs:75
 msgid "Leyen – Logs"
 msgstr ""
 
-#: src/ui/running_games.rs:220
+#: crates/leyen-gtk/src/ui/running_games.rs:223
 msgid "Leyen – Running Games"
 msgstr ""
 
-#: src/ui/settings.rs:266
+#: crates/leyen-gtk/src/ui/settings.rs:265
 msgid "Logging"
 msgstr ""
 
-#: src/ui/mod.rs:103
+#: crates/leyen-gtk/src/ui/mod.rs:78
 msgid "Logs"
 msgstr ""
 
-#: src/ui/mod.rs:112
+#: crates/leyen-gtk/src/ui/mod.rs:87
 msgid "Main Menu"
 msgstr ""
 
-#: src/ui/settings.rs:294
+#: crates/leyen-gtk/src/ui/settings.rs:293
 msgid "Maintenance"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:251
-#: src/ui/deps_dialog.rs:845
-#: src/ui/game_dialogs.rs:1011
-#: src/ui/game_dialogs.rs:1611
-#: src/ui/settings.rs:119
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:239
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:833
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1005
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1602
+#: crates/leyen-gtk/src/ui/settings.rs:118
 msgid "Manage Dependencies"
 msgstr ""
 
-#: src/ui/settings.rs:107
+#: crates/leyen-gtk/src/ui/settings.rs:106
 msgid "Manage the default prefix inherited by games and groups."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1027
-#: src/ui/game_dialogs.rs:1627
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1021
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1618
 msgid "Managed by global preferences"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1623
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1614
 msgid "Managed by group prefix"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:359
-#: src/ui/game_dialogs.rs:1533
-#: src/ui/settings.rs:220
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:355
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1529
+#: crates/leyen-gtk/src/ui/settings.rs:219
 msgid "MangoHud"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:365
-#: src/ui/game_dialogs.rs:1539
-#: src/ui/settings.rs:242
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:361
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1535
+#: crates/leyen-gtk/src/ui/settings.rs:241
 msgid "NTSync"
 msgstr ""
 
-#: src/ui/log_window.rs:213
+#: crates/leyen-gtk/src/ui/log_window.rs:163
 msgid "New logs will appear here automatically, or choose another filter."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:117
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:116
 msgid "No components installed"
 msgstr ""
 
-#: src/ui/mod.rs:180
+#: crates/leyen-gtk/src/ui/mod.rs:155
 msgid "No games added yet"
 msgstr ""
 
-#: src/ui/log_window.rs:212
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:109
+msgid "No icon could be extracted from the executable; using the default symbol."
+msgstr ""
+
+#: crates/leyen-gtk/src/ui/log_window.rs:162
 msgid "No log lines to show"
 msgstr ""
 
-#: src/ui/running_games.rs:248
+#: crates/leyen-gtk/src/ui/running_games.rs:251
 msgid "No running games"
 msgstr ""
 
-#: src/ui/components/group_card.rs:138
+#: crates/leyen-gtk/src/ui/components/group_card.rs:138
 msgid "Open Group"
 msgstr ""
 
-#: src/ui/settings.rs:283
+#: crates/leyen-gtk/src/ui/settings.rs:282
 msgid "Operations"
 msgstr ""
 
-#: src/ui/running_games.rs:110
+#: crates/leyen-gtk/src/ui/running_games.rs:111
 msgid "PID {} | tracking {}"
 msgstr ""
 
-#: src/ui/utils/mod.rs:63
+#: crates/leyen-gtk/src/ui/utils/mod.rs:63
 msgid "Playtime: {}h {}m"
 msgstr ""
 
-#: src/ui/utils/mod.rs:67
+#: crates/leyen-gtk/src/ui/utils/mod.rs:67
 msgid "Playtime: {}m"
 msgstr ""
 
-#: src/ui/utils/mod.rs:69
+#: crates/leyen-gtk/src/ui/utils/mod.rs:69
 msgid "Playtime: {}s"
 msgstr ""
 
-#: src/ui/mod.rs:105
+#: crates/leyen-gtk/src/ui/mod.rs:80
 msgid "Preferences"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:284
-#: src/ui/game_dialogs.rs:396
-#: src/ui/game_dialogs.rs:922
-#: src/ui/game_dialogs.rs:1421
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:280
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:392
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:916
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1417
 msgid "Prefix"
 msgstr ""
 
-#: src/launch.rs:1377
+#: crates/leyen-core/src/launch.rs:1564
 msgid "Prefix is already in use. Launching with shared-container fallback."
 msgstr ""
 
-#: src/prefix_tools.rs:47
-#: src/prefix_tools.rs:92
+#: crates/leyen-gtk/src/prefix_tools.rs:50
+#: crates/leyen-gtk/src/prefix_tools.rs:78
 msgid "Prefix path is required"
 msgstr ""
 
-#: src/prefix_tools.rs:143
+#: crates/leyen-gtk/src/prefix_tools.rs:124
 msgid "Prefix path is required first"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:318
-#: src/ui/game_dialogs.rs:406
-#: src/ui/game_dialogs.rs:938
-#: src/ui/game_dialogs.rs:1460
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:314
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:402
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:932
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1456
 msgid "Proton"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:367
-#: src/ui/game_dialogs.rs:1541
-#: src/ui/settings.rs:252
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:363
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1537
+#: crates/leyen-gtk/src/ui/settings.rs:251
 msgid "Proton Log"
 msgstr ""
 
-#: src/ui/mod.rs:496
+#: crates/leyen-gtk/src/ui/mod.rs:484
 msgid "Quit Leyen"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1007
-#: src/ui/game_dialogs.rs:1607
-#: src/ui/settings.rs:115
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1001
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1598
+#: crates/leyen-gtk/src/ui/settings.rs:114
 msgid "Registry Editor"
 msgstr ""
 
-#: src/prefix_tools.rs:101
+#: crates/leyen-gtk/src/prefix_tools.rs:84
 msgid "Registry Editor launched"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:357
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:345
 msgid "Reinstall"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:619
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:608
 msgid "Reinstall failed."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:364
-#: src/ui/deps_dialog.rs:663
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:352
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:653
 msgid "Remove"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:662
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:652
 msgid "Remove '{}'?"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:791
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:777
 msgid "Remove failed."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1593
-#: src/ui/game_dialogs.rs:1853
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1584
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1839
 msgid "Remove from menu"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:147
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:146
 msgid "Remove this managed dependency"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1846
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1832
 msgid "Removed from menu"
 msgstr ""
 
-#: src/deps/engine.rs:914
+#: crates/leyen-core/src/deps/engine.rs:900
 msgid "Removed from tracking."
 msgstr ""
 
-#: src/ui/settings.rs:298
+#: crates/leyen-core/src/deps/engine.rs:897
+msgid "Removed from tracking. Existing prefix files changed during installation were not reverted."
+msgstr ""
+
+#: crates/leyen-gtk/src/ui/settings.rs:297
 msgid "Repair Runtime"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:151
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:150
 msgid "Required by: {}"
 msgstr ""
 
-#: src/ui/settings.rs:310
-#: src/ui/settings.rs:337
+#: crates/leyen-gtk/src/ui/settings.rs:309
+#: crates/leyen-gtk/src/ui/settings.rs:336
 msgid "Reset"
 msgstr ""
 
-#: src/ui/settings.rs:299
+#: crates/leyen-gtk/src/ui/settings.rs:298
 msgid "Reset internal umu-launcher components if dependency installation fails."
 msgstr ""
 
-#: src/ui/settings.rs:303
+#: crates/leyen-gtk/src/ui/settings.rs:302
 msgid "Reset umu Runtime"
 msgstr ""
 
-#: src/ui/settings.rs:331
+#: crates/leyen-gtk/src/ui/settings.rs:330
 msgid "Reset umu Runtime?"
 msgstr ""
 
-#: src/ui/settings.rs:123
+#: crates/leyen-gtk/src/ui/settings.rs:122
 msgid "Run in default prefix"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1014
-#: src/ui/game_dialogs.rs:1614
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1008
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1605
 msgid "Run in prefix"
 msgstr ""
 
-#: src/ui/mod.rs:102
+#: crates/leyen-gtk/src/ui/mod.rs:77
 msgid "Running Games"
 msgstr ""
 
-#: src/ui/components/game_card.rs:81
-#: src/ui/components/group_card.rs:92
-#: src/ui/library/mod.rs:113
-#: src/ui/library/mod.rs:120
-#: src/ui/library/mod.rs:134
-#: src/ui/running_games.rs:125
-#: src/ui/running_games.rs:203
+#: crates/leyen-gtk/src/ui/components/game_card.rs:81
+#: crates/leyen-gtk/src/ui/components/group_card.rs:92
+#: crates/leyen-gtk/src/ui/library/mod.rs:106
+#: crates/leyen-gtk/src/ui/library/mod.rs:113
+#: crates/leyen-gtk/src/ui/library/mod.rs:127
+#: crates/leyen-gtk/src/ui/running_games.rs:126
+#: crates/leyen-gtk/src/ui/running_games.rs:204
 msgid "Running for {}"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:911
-#: src/ui/game_dialogs.rs:1399
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:905
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1395
 msgid "Save"
 msgstr ""
 
-#: src/ui/mod.rs:116
+#: crates/leyen-gtk/src/ui/mod.rs:91
 msgid "Search"
 msgstr ""
 
-#: src/ui/mod.rs:500
+#: crates/leyen-gtk/src/ui/mod.rs:488
 msgid "Search Games"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:258
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:246
 msgid "Search dependencies…"
 msgstr ""
 
-#: src/ui/mod.rs:121
+#: crates/leyen-gtk/src/ui/mod.rs:96
 msgid "Search games..."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:589
-#: src/ui/game_dialogs.rs:1941
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:585
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1927
 msgid "Select Executable"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:651
-#: src/ui/game_dialogs.rs:1254
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:647
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1248
 msgid "Select Group Icon"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:637
-#: src/ui/game_dialogs.rs:1973
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:633
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1959
 msgid "Select Icon"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:606
-#: src/ui/game_dialogs.rs:622
-#: src/ui/game_dialogs.rs:1239
-#: src/ui/game_dialogs.rs:1958
-#: src/ui/settings.rs:58
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:602
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:618
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1233
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1944
+#: crates/leyen-gtk/src/ui/settings.rs:57
 msgid "Select Prefix Folder"
 msgstr ""
 
-#: src/prefix_tools.rs:171
+#: crates/leyen-gtk/src/prefix_tools.rs:135
 msgid "Select Program"
 msgstr ""
 
-#: src/ui/settings.rs:267
+#: crates/leyen-gtk/src/ui/settings.rs:266
 msgid "Select which messages are printed to the terminal."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:743
-#: src/ui/game_dialogs.rs:789
-#: src/ui/game_dialogs.rs:1305
-#: src/ui/game_dialogs.rs:2060
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:737
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:781
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1297
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2044
 msgid "Selected Proton path does not exist"
 msgstr ""
 
-#: src/launch.rs:1285
+#: crates/leyen-core/src/launch.rs:1475
 msgid "Selected Proton version was not found"
 msgstr ""
 
-#: src/prefix_tools.rs:181
+#: crates/leyen-gtk/src/prefix_tools.rs:145
 msgid "Selected file has no local path"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:419
-#: src/ui/game_dialogs.rs:967
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:415
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:961
 msgid "Set an optional custom icon for this group."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1556
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1552
 msgid "Settings"
 msgstr ""
 
-#: src/ui/settings.rs:272
+#: crates/leyen-gtk/src/ui/settings.rs:271
 msgid "Show error messages from leyen and launched processes"
 msgstr ""
 
-#: src/ui/settings.rs:284
+#: crates/leyen-gtk/src/ui/settings.rs:283
 msgid "Show info about background operations"
 msgstr ""
 
-#: src/ui/settings.rs:278
+#: crates/leyen-gtk/src/ui/settings.rs:277
 msgid "Show warning messages (e.g. game not found)"
 msgstr ""
 
-#: src/ui/components/game_card.rs:144
-#: src/ui/running_games.rs:150
+#: crates/leyen-core/src/deps/engine.rs:894
+msgid "Some existing prefix files were changed during installation and were not reverted."
+msgstr ""
+
+#: crates/leyen-gtk/src/ui/components/game_card.rs:144
+#: crates/leyen-gtk/src/ui/running_games.rs:151
 msgid "Stop Game"
 msgstr ""
 
-#: src/ui/library/mod.rs:55
+#: crates/leyen-gtk/src/ui/library/mod.rs:52
 msgid "Stopping {}..."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:75
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:75
 msgid "Supported images"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1146
-#: src/ui/game_dialogs.rs:1161
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1140
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1155
 msgid "These games use their own prefixes: {}."
 msgstr ""
 
-#: src/ui/deps_dialog.rs:701
-msgid "This dependency could not be located."
+#: crates/leyen-gtk/src/ui/settings.rs:332
+msgid "This deletes the Steam Linux Runtime (steamrt3) directory. \
+                     umu-launcher will re-download a clean copy the next time a dependency is installed.\n\n\
+                     Use this to fix \"pressure-vessel-wrap\" errors during dependency installations."
 msgstr ""
 
-#: src/launch.rs:1259
-#: src/launch.rs:1512
+#: crates/leyen-core/src/launch.rs:1431
+#: crates/leyen-core/src/launch.rs:1766
 msgid "This game is already running"
 msgstr ""
 
-#: src/ui/mod.rs:186
+#: crates/leyen-gtk/src/ui/mod.rs:161
 msgid "This group is empty"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:695
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:685
 msgid "This removes the dependency from Leyen's tracking."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:271
-#: src/ui/game_dialogs.rs:918
-#: src/ui/game_dialogs.rs:1406
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:267
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:912
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1402
 msgid "Title"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2012
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1998
 msgid "Title and executable path are required"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:718
-#: src/ui/game_dialogs.rs:1275
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:714
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1269
 msgid "Title is required"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:993
-#: src/ui/game_dialogs.rs:1578
-#: src/ui/settings.rs:106
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:987
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1574
+#: crates/leyen-gtk/src/ui/settings.rs:105
 msgid "Tools"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1028
-#: src/ui/game_dialogs.rs:1628
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1022
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1619
 msgid "Use Global Settings to manage dependencies or run a program in the default prefix."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:342
-#: src/ui/game_dialogs.rs:1515
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:338
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1511
 msgid "Use a custom icon instead of extracting one from the executable."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:427
-#: src/ui/game_dialogs.rs:975
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:423
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:969
 msgid "Use a group-specific prefix instead of the global default."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:323
-#: src/ui/game_dialogs.rs:1486
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:319
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1482
 msgid "Use a per-game Proton version instead of the inherited default."
 msgstr ""
 
-#: src/ui/game_dialogs.rs:297
-#: src/ui/game_dialogs.rs:1439
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:293
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1435
 msgid "Use a per-game prefix instead of the inherited group and global defaults."
 msgstr ""
 
-#: src/ui/settings.rs:383
+#: crates/leyen-gtk/src/ui/settings.rs:382
 msgid "Use shared container"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1799
-#: src/ui/game_dialogs.rs:1818
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1790
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1809
 msgid "Use {} settings to manage dependencies or run a program in that prefix."
 msgstr ""
 
-#: src/ui/running_games.rs:145
+#: crates/leyen-gtk/src/ui/running_games.rs:146
 msgid "View Game Logs"
 msgstr ""
 
-#: src/ui/settings.rs:277
+#: crates/leyen-gtk/src/ui/settings.rs:276
 msgid "Warnings"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:363
-#: src/ui/game_dialogs.rs:1537
-#: src/ui/settings.rs:232
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:359
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1533
+#: crates/leyen-gtk/src/ui/settings.rs:231
 msgid "Wayland"
 msgstr ""
 
-#: src/prefix_tools.rs:165
-#: src/ui/game_dialogs.rs:584
-#: src/ui/game_dialogs.rs:1936
+#: crates/leyen-gtk/src/ui/settings.rs:383
+msgid "When a game launches while another sharing its Wine prefix is already running, run it inside the running container. Disable to launch it in its own container on the same prefix instead."
+msgstr ""
+
+#: crates/leyen-gtk/src/prefix_tools.rs:129
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:580
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1922
 msgid "Windows programs"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:1003
-#: src/ui/game_dialogs.rs:1603
-#: src/ui/settings.rs:111
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:997
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1594
+#: crates/leyen-gtk/src/ui/settings.rs:110
 msgid "Wine Configuration"
 msgstr ""
 
-#: src/prefix_tools.rs:56
+#: crates/leyen-gtk/src/prefix_tools.rs:56
 msgid "Wine Configuration launched"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:364
-#: src/ui/game_dialogs.rs:1538
-#: src/ui/settings.rs:237
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:360
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:1534
+#: crates/leyen-gtk/src/ui/settings.rs:236
 msgid "WoW64"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2164
-#: src/ui/game_dialogs.rs:2176
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2152
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2164
 msgid "game '{}'"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2166
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2154
 msgid "group '{}'"
 msgstr ""
 
-#: src/ui/game_dialogs.rs:2180
+#: crates/leyen-gtk/src/ui/game_dialogs.rs:2168
 msgid "item"
 msgstr ""
 
-#: src/ui/settings.rs:366
+#: crates/leyen-gtk/src/ui/settings.rs:365
 msgid "umu runtime directory not found — nothing to reset."
 msgstr ""
 
-#: src/ui/settings.rs:361
+#: crates/leyen-gtk/src/ui/settings.rs:360
 msgid "umu runtime reset. Re-run any dependency install to download a fresh copy."
 msgstr ""
 
-#: src/deps/engine.rs:944
-#: src/launch.rs:1233
-#: src/prefix_tools.rs:39
-#: src/prefix_tools.rs:84
-#: src/prefix_tools.rs:159
+#: crates/leyen-core/src/deps/engine.rs:925
+#: crates/leyen-core/src/launch.rs:1408
+#: crates/leyen-gtk/src/prefix_tools.rs:25
 msgid "umu-launcher is not installed. Please check your internet connection and restart."
 msgstr ""
 
-#: src/deps/engine.rs:930
-#: src/launch.rs:1220
-#: src/prefix_tools.rs:30
-#: src/prefix_tools.rs:75
-#: src/prefix_tools.rs:149
+#: crates/leyen-core/src/deps/engine.rs:914
+#: crates/leyen-core/src/launch.rs:1395
 msgid "umu-launcher is still downloading, please wait…"
 msgstr ""
 
-#: src/deps/engine.rs:954
+#: crates/leyen-core/src/deps/engine.rs:934
 msgid "winetricks is still downloading, please wait…"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:119
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:118
 msgid "{} components installed"
 msgstr ""
 
-#: src/i18n.rs:70
+#: crates/leyen-model/src/i18n.rs:70
 msgid "{} file"
 msgid_plural "{} files"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/components/group_card.rs:73
+#: crates/leyen-gtk/src/ui/components/group_card.rs:73
 msgid "{} game"
 msgid_plural "{} games"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/running_games.rs:108
+#: crates/leyen-gtk/src/ui/running_games.rs:109
 msgid "{} process"
 msgid_plural "{} processes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/ui/components/group_card.rs:83
+#: crates/leyen-gtk/src/ui/components/group_card.rs:83
 msgid "{} running"
 msgstr ""
 
-#: src/ui/utils/mod.rs:105
+#: crates/leyen-gtk/src/ui/utils/mod.rs:105
 msgid "{}d ago"
 msgstr ""
 
-#: src/ui/utils/mod.rs:103
+#: crates/leyen-gtk/src/ui/utils/mod.rs:103
 msgid "{}h ago"
 msgstr ""
 
-#: src/ui/utils/mod.rs:101
+#: crates/leyen-gtk/src/ui/utils/mod.rs:101
 msgid "{}m ago"
 msgstr ""
 
-#: src/ui/utils/mod.rs:99
+#: crates/leyen-gtk/src/ui/utils/mod.rs:99
 msgid "{}s ago"
 msgstr ""
 
-#: src/ui/deps_dialog.rs:398
+#: crates/leyen-gtk/src/ui/deps_dialog.rs:387
 msgid "✓ Installed"
 msgstr ""

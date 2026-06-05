@@ -11,11 +11,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "src"
+SRC = ROOT / "crates"
 
 STR = r'"((?:[^"\\]|\\.)*)"'
-RE_T = re.compile(r'\bt!\(\s*' + STR + r'\s*\)')
-RE_TN = re.compile(r'\btn!\(\s*' + STR + r'\s*,\s*' + STR + r'\s*,')
+# DOTALL-friendly whitespace so rustfmt-wrapped calls — t!(\n "...") — match.
+RE_T = re.compile(r'\bt!\(\s*' + STR + r'\s*\)', re.DOTALL)
+RE_TN = re.compile(r'\btn!\(\s*' + STR + r'\s*,\s*' + STR + r'\s*,', re.DOTALL)
 
 
 def main() -> int:
@@ -30,12 +31,18 @@ def main() -> int:
             e["plural"] = plural
 
     for path in sorted(SRC.rglob("*.rs")):
+        if "target" in path.parts:
+            continue
         rel = path.relative_to(ROOT).as_posix()
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for m in RE_T.finditer(line):
-                add(m.group(1), f"{rel}:{lineno}")
-            for m in RE_TN.finditer(line):
-                add(m.group(1), f"{rel}:{lineno}", m.group(2))
+        # Match against the whole file so calls wrapped across lines by rustfmt
+        # are found; derive the line number from the match offset.
+        text = path.read_text(encoding="utf-8")
+        for m in RE_T.finditer(text):
+            lineno = text.count("\n", 0, m.start()) + 1
+            add(m.group(1), f"{rel}:{lineno}")
+        for m in RE_TN.finditer(text):
+            lineno = text.count("\n", 0, m.start()) + 1
+            add(m.group(1), f"{rel}:{lineno}", m.group(2))
 
     out = [
         'msgid ""',

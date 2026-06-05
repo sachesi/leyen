@@ -6,7 +6,7 @@
 # `install` reuses existing target/release binaries when present (e.g. built
 # in a container), so the install host needs no build dependencies.
 
-prefix := env_var_or_default("PREFIX", "/usr")
+prefix := env("PREFIX", "/usr")
 bindir := prefix / "bin"
 sharedir := prefix / "share"
 app_id := "com.github.sachesi.leyen"
@@ -68,7 +68,7 @@ install:
     {{ sudo }} install -Dm755 target/release/leyend "{{ bindir }}/leyend"
     {{ sudo }} install -Dm755 target/release/leyen-gtk "{{ bindir }}/leyen-gtk"
     {{ sudo }} install -Dm644 packaging/usr/share/applications/{{ app_id }}.desktop -t "{{ sharedir }}/applications"
-    {{ sudo }} install -Dm644 packaging/usr/share/icons/hicolor/256x256/apps/{{ app_id }}.svg -t "{{ sharedir }}/icons/hicolor/256x256/apps"
+    {{ sudo }} install -Dm644 packaging/usr/share/icons/hicolor/scalable/apps/{{ app_id }}.svg -t "{{ sharedir }}/icons/hicolor/scalable/apps"
     {{ sudo }} install -Dm644 packaging/usr/share/icons/hicolor/symbolic/apps/{{ app_id }}-symbolic.svg -t "{{ sharedir }}/icons/hicolor/symbolic/apps"
     {{ sudo }} install -Dm644 packaging/usr/share/dbus-1/services/{{ app_id }}.Daemon.service -t "{{ sharedir }}/dbus-1/services"
     {{ sudo }} sed -i "s|@LEYEND@|{{ bindir }}/leyend|" "{{ sharedir }}/dbus-1/services/{{ app_id }}.Daemon.service"
@@ -80,9 +80,32 @@ install:
         {{ sudo }} install -Dm644 "$mo" "{{ sharedir }}/locale/$lang/LC_MESSAGES/leyen.mo"
     done
     # Stop a running daemon so the next D-Bus call activates the new binary.
-    pkill -x leyend 2>/dev/null || true
+    # Before killing, check if any games are running to avoid orphaning sessions.
+    if command -v busctl >/dev/null 2>&1; then
+        daemon_bus_name="com.github.sachesi.leyen.Daemon"
+        if busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner s "$daemon_bus_name" 2>/dev/null | grep -q "true"; then
+            # Daemon is running on D-Bus; query its running games.
+            games_output=$(busctl --user call "$daemon_bus_name" /com/github/sachesi/leyen com.github.sachesi.leyen.Manager GetRunningGames 2>/dev/null || echo "a(ssttt) 0")
+            # Exact empty-array reply only: a suffix match would false-positive on
+            # a running game whose last field (pid count) happens to be 0.
+            if [ "$games_output" = "a(ssttt) 0" ]; then
+                # No games running; safe to kill the daemon.
+                pkill -x leyend 2>/dev/null || true
+            else
+                # Games are running; warn user and skip the kill.
+                echo "warning: active game sessions detected. Daemon will not be killed to avoid losing final playtime updates." >&2
+                echo "Re-run 'just install' after games are closed, or kill/restart manually." >&2
+            fi
+        else
+            # Daemon name has no owner; nothing to kill anyway, but pkill for safety.
+            pkill -x leyend 2>/dev/null || true
+        fi
+    else
+        # busctl not available; fall back to unconditional kill.
+        pkill -x leyend 2>/dev/null || true
+    fi
     {{ sudo }} update-desktop-database "{{ sharedir }}/applications" 2>/dev/null || true
-    {{ sudo }} gtk-update-icon-cache -qt "{{ sharedir }}/icons/hicolor" 2>/dev/null || true
+    {{ sudo }} gtk-update-icon-cache -qtf "{{ sharedir }}/icons/hicolor" 2>/dev/null || true
     echo "Installed to {{ prefix }}."
 
 # Remove everything `just install` placed
@@ -92,6 +115,9 @@ uninstall:
     pkill -x leyend 2>/dev/null || true
     {{ sudo }} rm -f "{{ bindir }}/leyen" "{{ bindir }}/leyend" "{{ bindir }}/leyen-gtk"
     {{ sudo }} rm -f "{{ sharedir }}/applications/{{ app_id }}.desktop"
+    {{ sudo }} rm -f "{{ sharedir }}/icons/hicolor/scalable/apps/{{ app_id }}.svg"
+    # Legacy location used by older installs; remove so stale icon-cache
+    # entries cannot point at a missing file.
     {{ sudo }} rm -f "{{ sharedir }}/icons/hicolor/256x256/apps/{{ app_id }}.svg"
     {{ sudo }} rm -f "{{ sharedir }}/icons/hicolor/symbolic/apps/{{ app_id }}-symbolic.svg"
     {{ sudo }} rm -f "{{ sharedir }}/dbus-1/services/{{ app_id }}.Daemon.service"
@@ -100,5 +126,5 @@ uninstall:
     {{ sudo }} rm -f "{{ sharedir }}/zsh/site-functions/_leyen"
     {{ sudo }} rm -f "{{ sharedir }}"/locale/*/LC_MESSAGES/leyen.mo
     {{ sudo }} update-desktop-database "{{ sharedir }}/applications" 2>/dev/null || true
-    {{ sudo }} gtk-update-icon-cache -qt "{{ sharedir }}/icons/hicolor" 2>/dev/null || true
+    {{ sudo }} gtk-update-icon-cache -qtf "{{ sharedir }}/icons/hicolor" 2>/dev/null || true
     echo "Uninstalled from {{ prefix }}. Per-user config/data in ~/.config/leyen and ~/.local/share/leyen are kept."

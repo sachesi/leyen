@@ -1,0 +1,74 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+<interface name="com.github.sachesi.leyen.Manager">
+    <method name="LaunchGame">
+      <arg name="leyen_id" type="s" direction="in"/>
+      <arg type="b" direction="out"/>
+    </method>
+    <method name="StopGame">
+      <arg name="leyen_id" type="s" direction="in"/>
+      <arg type="b" direction="out"/>
+    </method>
+    <method name="GetRunningGames">
+      <arg type="a(ssttt)" direction="out"/>
+    </method>
+    <method name="GetRuntimeStatus">
+      <arg type="(bb)" direction="out"/>
+    </method>
+    <method name="GetLogs">
+      <arg name="since_offset" type="t" direction="in"/>
+      <arg type="t" direction="out"/>
+      <arg type="a(sss)" direction="out"/>
+    </method>
+    <method name="SaveLibrary">
+      <arg name="toml_bytes" type="ay" direction="in"/>
+      <arg type="b" direction="out"/>
+    </method>
+    <method name="InstallDep">
+      <arg name="prefix" type="s" direction="in"/>
+      <arg name="dep_id" type="s" direction="in"/>
+      <arg name="proton_path" type="s" direction="in"/>
+      <arg type="s" direction="out"/>
+    </method>
+    <method name="UninstallDep">
+      <arg name="prefix" type="s" direction="in"/>
+      <arg name="dep_id" type="s" direction="in"/>
+      <arg name="proton_path" type="s" direction="in"/>
+      <arg type="s" direction="out"/>
+    </method>
+    <method name="CancelDep">
+      <arg name="job_id" type="s" direction="in"/>
+      <arg type="b" direction="out"/>
+    </method>
+    <method name="GetDepStatus">
+      <arg name="prefix" type="s" direction="in"/>
+      <arg type="(as)" direction="out"/>
+    </method>
+    <signal name="SessionsChanged">
+      <arg name="sessions" type="a(ssttt)"/>
+    </signal>
+    <signal name="LogsAppended">
+      <arg name="total_offset" type="t"/>
+    </signal>
+    <signal name="DepProgress">
+      <arg name="job_id" type="s"/>
+      <arg name="prefix" type="s"/>
+      <arg name="dep_id" type="s"/>
+      <arg name="phase" type="s"/>
+      <arg name="fraction" type="d"/>
+      <arg name="msg" type="s"/>
+    </signal>
+    <signal name="DepFinished">
+      <arg name="job_id" type="s"/>
+      <arg name="success" type="b"/>
+      <arg name="message" type="s"/>
+    </signal>
+    <signal name="RuntimeStatus">
+      <arg name="umu_ready" type="b"/>
+      <arg name="winetricks_ready" type="b"/>
+    </signal>
+    <signal name="LibraryChanged">
+    </signal>
+  </interface>
+</node>

@@ -6,3 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+leyen-model.workspace = true
+serde.workspace = true
+zbus.workspace = true
+zvariant.workspace = true

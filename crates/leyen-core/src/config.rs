@@ -14,8 +14,6 @@ use std::sync::{OnceLock, RwLock};
 use std::thread::sleep;
 use std::time::Duration;
 
-use uuid::Uuid;
-
 use leyen_model::library::{find_game_mut, flatten_games};
 use leyen_model::models::{GamesConfig, LibraryItem};
 use leyen_model::paths::get_config_path;
@@ -113,22 +111,24 @@ where
 
     let result = f(&mut items);
 
-    // Keep the in-memory cache in lock-step with the on-disk library so the next
-    // `load_library` sees this change without a disk read.
-    update_library_cache(&items);
-
-    if let Ok(data) = toml::to_string_pretty(&GamesConfig { items }) {
-        let temp_path = path.with_extension(format!(
-            "toml.tmp.{}.{}",
-            std::process::id(),
-            Uuid::new_v4()
-        ));
-        if fs::write(&temp_path, data).is_ok() {
-            let _ = fs::rename(&temp_path, path);
-        } else {
-            let _ = fs::remove_file(&temp_path);
+    let data = match toml::to_string_pretty(&GamesConfig {
+        items: items.clone(),
+    }) {
+        Ok(data) => data,
+        Err(e) => {
+            log::error!("Failed to serialize games config: {e}");
+            return None;
         }
+    };
+    if let Err(e) = leyen_model::paths::atomic_write(&path, &data) {
+        log::error!("Failed to persist games config: {e}");
+        return None;
     }
+
+    // Keep the in-memory cache in lock-step with the on-disk library so the next
+    // `load_library` sees this change without a disk read. Only after a
+    // successful persist — a failed write must not leave cache and disk diverged.
+    update_library_cache(&items);
     Some(result)
 }
 
@@ -170,14 +170,16 @@ pub async fn save_library(items: Vec<LibraryItem>) {
 /// per-game fields (playtime + last-run), matched by `game.id`. This is the
 /// `SaveLibrary` path: a client builds the new library from a possibly-stale
 /// read, but the daemon's playtime accounting must never be clobbered.
-pub async fn save_library_merged(incoming: Vec<LibraryItem>) {
+/// Returns whether the library was actually persisted.
+pub async fn save_library_merged(incoming: Vec<LibraryItem>) -> bool {
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|current| {
             *current = merge_authoritative_fields(incoming, current);
-        });
+        })
+        .is_some()
     })
     .await
-    .ok();
+    .unwrap_or(false)
 }
 
 /// Overlays the daemon-authoritative per-game fields (playtime + last-run) from

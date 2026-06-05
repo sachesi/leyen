@@ -78,18 +78,22 @@ impl log::Log for LeyenLogger {
 
         let level_str = match record.level() {
             Level::Error => "ERROR",
-            Level::Warn => "WARN ",
-            Level::Info => "INFO ",
+            Level::Warn => "WARN",
+            Level::Info => "INFO",
             Level::Debug => "DEBUG",
             Level::Trace => "TRACE",
         };
 
         let message = record.args().to_string();
-        let module = record.module_path().unwrap_or("unknown");
 
-        let line = match &game_id {
-            Some(id) => format!("[{level_str}] [{module}] [game:{id}] {message}"),
-            None => format!("[{level_str}] [{module}] {message}"),
+        // Human-first lines: module paths are developer noise in a user-facing
+        // log. Game-targeted INFO lines (piped game output, launch lifecycle)
+        // already carry their own [Title:stream] context and need no tag at all;
+        // everything else keeps a compact level tag.
+        let line = if game_id.is_some() && record.level() == Level::Info {
+            message
+        } else {
+            format!("[{level_str}] {message}")
         };
 
         let entry = LogEntry {
@@ -133,6 +137,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
             .open(&path)
             .ok();
         let mut lines_since_check = 0;
+        let mut lines_since_sync = 0;
 
         while let Ok(entry) = rx.recv() {
             // Update memory buffer for the log pull API in the background thread
@@ -179,7 +184,19 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                 && let Ok(json) = serde_json::to_string(&entry)
             {
                 let _ = writeln!(f, "{}", json);
+                // Batched durability: fsync every 50 lines under load, and on
+                // queue quiescence so a crash right after a burst loses nothing.
+                // Per-line sync would be too slow for chatty game output.
+                lines_since_sync += 1;
+                if lines_since_sync >= 50 || rx.is_empty() {
+                    let _ = f.sync_all();
+                    lines_since_sync = 0;
+                }
             }
+        }
+        // Channel closed (shutdown): make the tail durable before exiting.
+        if let Some(ref mut f) = file {
+            let _ = f.sync_all();
         }
     });
 
@@ -243,13 +260,13 @@ pub fn clear_log_buffer() {
     }
     TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::Relaxed);
 
+    // Synchronous: two unlinks are cheap, and a detached thread could be killed
+    // by daemon exit before the files are actually removed.
     let path = log_path();
-    std::thread::spawn(move || {
-        let _ = fs::remove_file(&path);
-        let mut old_path = path.clone();
-        old_path.set_extension("jsonl.old");
-        let _ = fs::remove_file(old_path);
-    });
+    let _ = fs::remove_file(&path);
+    let mut old_path = path.clone();
+    old_path.set_extension("jsonl.old");
+    let _ = fs::remove_file(old_path);
 }
 
 pub fn shutdown() {

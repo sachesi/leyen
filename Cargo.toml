@@ -53,6 +53,7 @@ log = "0.4.29"
 fastrand = "2.4.1"
 sha2 = "0.10.8"
 hex = "0.4.3"
+md-5 = "0.10"
 chrono = "0.4"
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 

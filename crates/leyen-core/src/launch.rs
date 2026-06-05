@@ -435,6 +435,88 @@ pub fn set_sessions_listener(listener: impl Fn(Vec<RunningGameSnapshot>) + Send 
     let _ = SESSIONS_LISTENER.set(Box::new(listener));
 }
 
+/// Async probe answering "does this well-known bus name have an owner on the
+/// session bus?". Installed by the daemon (which owns a zbus connection) so the
+/// engine can wait for a shared pressure-vessel container without an IPC dep.
+type BusNameProbe =
+    Box<dyn Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync>;
+static BUS_NAME_PROBE: OnceLock<BusNameProbe> = OnceLock::new();
+
+/// Installs the session-bus name probe. No-op if called more than once.
+pub fn set_bus_name_probe(
+    probe: impl Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync + 'static,
+) {
+    let _ = BUS_NAME_PROBE.set(Box::new(probe));
+}
+
+/// The command-launcher bus name umu's pressure-vessel container registers for
+/// a given wineprefix: `com.steampowered.App` + md5(WINEPREFIX).
+fn shared_container_bus_name(prefix_path: &str) -> String {
+    use md5::{Digest, Md5};
+    format!(
+        "com.steampowered.App{}",
+        hex::encode(Md5::digest(prefix_path.as_bytes()))
+    )
+}
+
+/// True when any registered session matches this wineprefix.
+async fn prefix_has_live_session(prefix_path: &str) -> bool {
+    let prefix = prefix_path.to_string();
+    tokio::task::spawn_blocking(move || {
+        with_running_registry(|registry| {
+            let live = registry
+                .sessions
+                .iter()
+                .any(|s| s.match_prefix_path.as_deref() == Some(prefix.as_str()));
+            (live, false)
+        })
+        .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// How long a same-prefix follower waits for the leader's container to come up.
+/// Cold starts include runtime updates and locale generation, so be generous.
+const SHARED_CONTAINER_WAIT_SECS: u64 = 90;
+
+/// Waits until the shared container for `prefix_path` is joinable. `true` →
+/// launch with `UMU_CONTAINER_NSENTER=1` (umu re-enters instantly, no retry
+/// race); `false` → the leader died or the wait timed out, launch in an own
+/// container instead. Without an installed probe this keeps the old immediate
+/// NSENTER behavior.
+async fn wait_for_shared_container(prefix_path: &str, game_id: &str) -> bool {
+    let Some(probe) = BUS_NAME_PROBE.get() else {
+        return true;
+    };
+    let name = shared_container_bus_name(prefix_path);
+    let deadline = std::time::Instant::now() + Duration::from_secs(SHARED_CONTAINER_WAIT_SECS);
+    let mut last_leader_check = std::time::Instant::now();
+    loop {
+        if probe(name.clone()).await {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            warn!(
+                target: &format!("game:{game_id}"),
+                "Timed out waiting for the shared container on '{prefix_path}'; launching in an own container"
+            );
+            return false;
+        }
+        if last_leader_check.elapsed() >= Duration::from_secs(5) {
+            last_leader_check = std::time::Instant::now();
+            if !prefix_has_live_session(prefix_path).await {
+                info!(
+                    target: &format!("game:{game_id}"),
+                    "No game left on prefix '{prefix_path}'; launching in an own container"
+                );
+                return false;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 /// Single path that makes a new session set visible: refreshes the snapshot
 /// cache, the `any running` mirror and the version atomic, then notifies the
 /// listener. Called by the monitor and by the launch/stop/exit fast paths.
@@ -817,21 +899,25 @@ fn systemctl_show_property(unit: &str, property: &str) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-/// Cached result of the systemd user-manager probe: 0 = unknown, 1 = available,
-/// 2 = unavailable. Probing on every launch is itself a `systemctl` call that can
-/// stall, so it is resolved once.
+/// Cached result of the systemd user-manager probe: 0 = unknown, 1 = available.
+/// Probing on every launch is itself a `systemctl` call that can stall, so a
+/// success is resolved once. A failure is NOT cached: the probe can fail
+/// transiently (e.g. a busy user manager at cold start hitting the 3s timeout),
+/// and caching it would refuse every launch until the daemon restarts.
 static SYSTEMD_AVAILABLE: AtomicU8 = AtomicU8::new(0);
 
 /// True when a usable systemd user manager is reachable — required for the
 /// transient-scope launch backend. Cached after the first successful probe.
 fn systemd_user_available() -> bool {
-    match SYSTEMD_AVAILABLE.load(Ordering::Relaxed) {
-        1 => return true,
-        2 => return false,
-        _ => {}
+    if SYSTEMD_AVAILABLE.load(Ordering::Relaxed) == 1 {
+        return true;
     }
     let available = systemctl(&["show", "--property=Version", "--value"]);
-    SYSTEMD_AVAILABLE.store(if available { 1 } else { 2 }, Ordering::Relaxed);
+    if available {
+        SYSTEMD_AVAILABLE.store(1, Ordering::Relaxed);
+    } else {
+        warn!("systemd user manager probe failed; will retry on the next launch");
+    }
     available
 }
 
@@ -1193,6 +1279,24 @@ async fn launch_game_managed(
         ));
     }
 
+    // Fail fast on a missing executable: without this, umu/wine only surface it
+    // minutes of log noise later as a cryptic exit status.
+    if game.exe_path.starts_with('/') {
+        let exe = game.exe_path.clone();
+        let exists = tokio::task::spawn_blocking(move || Path::new(&exe).exists())
+            .await
+            .unwrap_or(true);
+        if !exists {
+            error!(
+                target: &format!("game:{}", game.id),
+                "Executable for '{}' does not exist: {}", game.title, game.exe_path
+            );
+            return Err(LaunchError::Other(
+                t!("Game executable was not found"),
+            ));
+        }
+    }
+
     let mut env_vars: Vec<(String, String)> = Vec::new();
     if !prefix_path.is_empty() {
         env_vars.push(("WINEPREFIX".to_string(), prefix_path.clone()));
@@ -1301,20 +1405,86 @@ async fn launch_game_managed(
         .await
         .unwrap_or_default();
     let allow_shared_container = settings.use_shared_container;
-    match try_lock_prefix(&prefix_path).await {
-        PrefixLockState::Available => {}
+    let join_shared_container = match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Busy if allow_shared_container => {
-            env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
             notices.push(
                 t!("Prefix is already in use. Launching with shared-container fallback."),
             );
+            true
         }
         // Shared container disabled for this group: launch in its own container
         // on the same prefix instead of joining the running one (no NSENTER).
-        PrefixLockState::Busy => {}
-        PrefixLockState::Unavailable => {}
+        PrefixLockState::Available | PrefixLockState::Busy | PrefixLockState::Unavailable => false,
+    };
+
+    if join_shared_container {
+        // The leader's pressure-vessel container can take tens of seconds to
+        // register its command-launcher bus name; entering before that makes
+        // umu exhaust its retries and fall back to a second container on the
+        // same prefix. Don't hold the caller (a D-Bus reply) hostage either:
+        // accept the launch now and finish it in the background once the
+        // container is joinable. Failures land in the game's log.
+        let game_bg = game.clone();
+        let prefix = prefix_path.clone();
+        let proton = proton_path.clone();
+        tokio::spawn(async move {
+            let game = game_bg;
+            let mut env_vars = env_vars;
+            if wait_for_shared_container(&prefix, &game.id).await {
+                env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
+            }
+            if let Err(e) = finish_launch(
+                game.clone(),
+                env_vars,
+                cmd_args,
+                working_dir,
+                prefix,
+                proton,
+                capture_output,
+                reap_child_locally,
+                Vec::new(),
+            )
+            .await
+            {
+                error!(
+                    target: &format!("game:{}", game.id),
+                    "Launch of '{}' failed: {e}", game.title
+                );
+            }
+        });
+        notices.push(t!("Launching {}...").replacen("{}", &game.title, 1));
+        return Ok(LaunchReport { notices });
     }
 
+    finish_launch(
+        game.clone(),
+        env_vars,
+        cmd_args,
+        working_dir,
+        prefix_path,
+        proton_path,
+        capture_output,
+        reap_child_locally,
+        notices,
+    )
+    .await
+}
+
+/// The spawn tail of a launch: systemd-run scope spawn, session registration,
+/// output piping and child reaping. Shared by the direct path and the deferred
+/// shared-container path.
+#[allow(clippy::too_many_arguments)]
+async fn finish_launch(
+    game: Game,
+    env_vars: Vec<(String, String)>,
+    cmd_args: Vec<String>,
+    working_dir: Option<PathBuf>,
+    prefix_path: String,
+    proton_path: String,
+    capture_output: bool,
+    reap_child_locally: bool,
+    mut notices: Vec<String>,
+) -> Result<LaunchReport, LaunchError> {
     let launch_summary = format!(
         "Launching '{}' | exe: {} | cwd: {} | prefix: {} | proton: {}",
         game.title,
@@ -1479,4 +1649,19 @@ async fn launch_game_managed(
     );
     notices.push(t!("Launching {}...").replacen("{}", &game.title, 1));
     Ok(LaunchReport { notices })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shared_container_bus_name;
+
+    #[test]
+    fn shared_container_bus_name_matches_umu_derivation() {
+        // Observed live: umu's container for this WINEPREFIX registered
+        // com.steampowered.App9ab17f3e489d0c144ccb2e8685166f0f.
+        assert_eq!(
+            shared_container_bus_name("/mnt/data-0/.wine/prefixes/pwclassic"),
+            "com.steampowered.App9ab17f3e489d0c144ccb2e8685166f0f"
+        );
+    }
 }

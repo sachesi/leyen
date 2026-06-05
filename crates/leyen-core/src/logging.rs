@@ -55,6 +55,12 @@ struct LeyenLogger;
 
 impl log::Log for LeyenLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
+        // Game-targeted lines (piped game output, launch lifecycle, launch
+        // failures) are the product of the Logs window, not diagnostics —
+        // always capture them regardless of the log settings.
+        if metadata.target().starts_with("game:") {
+            return true;
+        }
         match metadata.level() {
             Level::Error => LOG_ERRORS.load(Ordering::Relaxed),
             Level::Warn => LOG_WARNINGS.load(Ordering::Relaxed),

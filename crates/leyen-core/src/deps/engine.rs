@@ -262,6 +262,11 @@ pub async fn execute_dep_step(
                 .await
                 .unwrap_or(true);
             if !exists {
+                // Check cancel before starting download
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(t!("Cancelled."));
+                }
+
                 info!("[dep] Downloading {} from {}", file_name, url);
                 let cache_dir_clone = cache_dir.to_string();
                 tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
@@ -269,35 +274,63 @@ pub async fn execute_dep_step(
                     .map_err(join_err)
                     .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
 
-                let output = AsyncCommand::new("curl")
-                    .args([
-                        "--proto",
-                        "=https",
-                        "--tlsv1.2",
-                        "--silent",
-                        "--show-error",
-                        "--fail",
-                        "--location",
-                        "--connect-timeout",
-                        "15",
-                        "--max-time",
-                        "300",
-                        "--retry",
-                        "3",
-                        "--retry-delay",
-                        "1",
-                        "-o",
-                        dest.to_string_lossy().as_ref(),
-                        url,
-                    ])
-                    .output()
-                    .await
-                    .map_err(|err| format!("curl unavailable: {err}"))?;
+                let mut cmd = AsyncCommand::new("curl");
+                cmd.args([
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--silent",
+                    "--show-error",
+                    "--fail",
+                    "--location",
+                    "--connect-timeout",
+                    "15",
+                    "--max-time",
+                    "300",
+                    "--retry",
+                    "3",
+                    "--retry-delay",
+                    "1",
+                    "-o",
+                    dest.to_string_lossy().as_ref(),
+                    url,
+                ]);
+
+                let cancel_clone = cancel.clone();
+                let file_name_clone = file_name.to_string();
+
+                let output = {
+                    let child = cmd
+                        .spawn()
+                        .map_err(|err| format!("Failed to spawn curl: {err}"))?;
+                    let pid = child.id();
+                    let wait_fut = child.wait_with_output();
+                    tokio::pin!(wait_fut);
+
+                    loop {
+                        tokio::select! {
+                            out = &mut wait_fut => {
+                                break out.map_err(|e| format!("Failed to run curl: {e}"))?;
+                            }
+                            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                                if cancel_clone.load(Ordering::Relaxed) {
+                                    if let Some(pid) = pid {
+                                        unsafe {
+                                            libc::kill(pid as i32, libc::SIGKILL);
+                                        }
+                                    }
+                                    let _ = (&mut wait_fut).await;
+                                    return Err(t!("Cancelled."));
+                                }
+                            }
+                        }
+                    }
+                };
 
                 if !output.status.success() {
                     let _ = fs::remove_file(&dest);
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("Download failed for {}: {}", file_name, stderr.trim()));
+                    return Err(format!("Download failed for {}: {}", file_name_clone, stderr.trim()));
                 }
                 info!("[dep] Downloaded {}", file_name);
             } else {
@@ -325,7 +358,15 @@ pub async fn execute_dep_step(
                     }
                     let actual_sha = hex::encode(hasher.finalize());
                     if actual_sha != expected_sha {
-                        let _ = fs::remove_file(&dest_clone);
+                        match fs::remove_file(&dest_clone) {
+                            Ok(()) => {},
+                            Err(remove_err) => {
+                                return Err(format!(
+                                    "Checksum mismatch for {}: expected {}, got {}; failed to remove corrupted file: {}",
+                                    file_name, expected_sha, actual_sha, remove_err
+                                ));
+                            }
+                        }
                         return Err(format!(
                             "Checksum mismatch for {}: expected {}, got {}",
                             file_name, expected_sha, actual_sha
@@ -1238,17 +1279,37 @@ fn remove_dll_overrides(
     cmd.args(["regedit.exe", "/S"]);
     cmd.arg(reg_path.as_os_str());
 
-    let output = cmd
-        .output()
-        .map_err(|err| format!("Failed to run regedit: {err}"))?;
-    let _ = fs::remove_file(&reg_path);
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
+    let mut child = cmd
+        .spawn()
+        .map_err(|err| format!("Failed to spawn regedit: {err}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to remove DLL overrides: {}", stderr.trim()));
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let _ = fs::remove_file(&reg_path);
+                if !status.success() {
+                    return Err(format!("Failed to remove DLL overrides: regedit exited with status {}", status));
+                }
+                return Ok(());
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    warn!("[dep] regedit timed out after {} seconds", COMMAND_TIMEOUT_SECS);
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = fs::remove_file(&reg_path);
+                    return Err(format!("remove_dll_overrides timed out after {} seconds", COMMAND_TIMEOUT_SECS));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(err) => {
+                let _ = fs::remove_file(&reg_path);
+                return Err(format!("Failed to wait for regedit: {err}"));
+            }
+        }
     }
-
-    Ok(())
 }
 
 fn unregister_dlls(prefix_path: &str, proton_path: &str, dlls: &[String]) -> Result<(), String> {
@@ -1257,12 +1318,33 @@ fn unregister_dlls(prefix_path: &str, proton_path: &str, dlls: &[String]) -> Res
         configure_umu_command(&mut cmd, prefix_path, proton_path);
         cmd.args(["regsvr32.exe", "/u", "/s", dll]);
 
-        let output = cmd
-            .output()
-            .map_err(|err| format!("Failed to run regsvr32 for '{}': {}", dll, err))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to unregister '{}': {}", dll, stderr.trim()));
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
+        let mut child = cmd
+            .spawn()
+            .map_err(|err| format!("Failed to spawn regsvr32 for '{}': {}", dll, err))?;
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        return Err(format!("Failed to unregister '{}': regsvr32 exited with status {}", dll, status));
+                    }
+                    break;
+                }
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        warn!("[dep] regsvr32 for '{}' timed out after {} seconds", dll, COMMAND_TIMEOUT_SECS);
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(format!("regsvr32 for '{}' timed out after {} seconds", dll, COMMAND_TIMEOUT_SECS));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(err) => {
+                    return Err(format!("Failed to wait for regsvr32 for '{}': {}", dll, err));
+                }
+            }
         }
     }
 

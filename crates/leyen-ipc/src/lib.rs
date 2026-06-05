@@ -8,6 +8,22 @@
 use serde::{Deserialize, Serialize};
 use zvariant::Type;
 
+/// Errors the daemon returns from method calls, carried as D-Bus errors
+/// (`com.github.sachesi.leyen.Error.*`) so every client sees the reason instead
+/// of a defaulted value. `StaleLibraryVersion` is matched by name on the client
+/// side to drive the reload-and-retry flow.
+#[derive(Debug, zbus::DBusError)]
+#[zbus(prefix = "com.github.sachesi.leyen.Error")]
+pub enum Error {
+    #[zbus(error)]
+    ZBus(zbus::Error),
+    /// Generic operation failure; the string is the human-readable cause.
+    Failed(String),
+    /// `SaveLibrary` was built against an outdated library version; reload and
+    /// retry.
+    StaleLibraryVersion(String),
+}
+
 /// The daemon's well-known bus name. Distinct from the GUI's GApplication id
 /// (`com.github.sachesi.leyen`), which registers its own session-bus name for
 /// single-instance — they must not collide.
@@ -60,8 +76,9 @@ pub struct DepStatus {
     default_path = "/com/github/sachesi/leyen"
 )]
 pub trait Leyen {
-    /// Launch a game by its `ly-XXXX` id. Returns whether a launch was started.
-    fn launch_game(&self, leyen_id: &str) -> zbus::Result<bool>;
+    /// Launch a game by its `ly-XXXX` id. Errors carry the failure reason
+    /// (unknown id, missing executable, launch failure).
+    fn launch_game(&self, leyen_id: &str) -> zbus::Result<()>;
 
     /// Stop a running game by its `ly-XXXX` id. Returns whether it was running.
     fn stop_game(&self, leyen_id: &str) -> zbus::Result<bool>;
@@ -80,8 +97,20 @@ pub trait Leyen {
     fn clear_logs(&self) -> zbus::Result<()>;
 
     /// Persist a TOML-encoded library (the only library writer). The daemon
-    /// preserves its authoritative playtime/last-run fields. Returns success.
-    fn save_library(&self, toml_bytes: Vec<u8>) -> zbus::Result<bool>;
+    /// preserves its authoritative playtime/last-run fields. `base_version`
+    /// must equal the current library version (see [`get_library_version`]) or
+    /// the call fails with `StaleLibraryVersion` — a client editing a stale
+    /// read must reload and retry instead of silently clobbering concurrent
+    /// edits. Returns the new version.
+    fn save_library(&self, toml_bytes: Vec<u8>, base_version: u64) -> zbus::Result<u64>;
+
+    /// Current library version: bumped on every successful `SaveLibrary`.
+    /// Session-scoped (resets when the daemon restarts).
+    fn get_library_version(&self) -> zbus::Result<u64>;
+
+    /// Re-read `settings.toml` and apply daemon-side settings (log gating).
+    /// Clients call this after persisting settings.
+    fn reload_settings(&self) -> zbus::Result<()>;
 
     /// Begin installing `dep_id` into `prefix` (using `proton_path`). Returns a
     /// job id; progress arrives via `DepProgress`, completion via `DepFinished`.
@@ -124,7 +153,8 @@ pub trait Leyen {
     #[zbus(signal)]
     fn runtime_status(&self, umu_ready: bool, winetricks_ready: bool) -> zbus::Result<()>;
 
-    /// The library was persisted; clients should re-read `games.toml`.
+    /// The library was persisted at `version`; clients should re-read
+    /// `games.toml` and adopt the version as their `SaveLibrary` base.
     #[zbus(signal)]
-    fn library_changed(&self) -> zbus::Result<()>;
+    fn library_changed(&self, version: u64) -> zbus::Result<()>;
 }

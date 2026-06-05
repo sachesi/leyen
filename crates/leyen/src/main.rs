@@ -67,6 +67,15 @@ async fn proxy() -> Result<LeyenProxy<'static>> {
         .context("Failed to reach the Leyen daemon")
 }
 
+/// The daemon's error message from a failed method call, without the D-Bus
+/// error-name noise.
+fn dbus_error_message(err: &zbus::Error) -> String {
+    match err {
+        zbus::Error::MethodError(_, Some(msg), _) => msg.clone(),
+        other => other.to_string(),
+    }
+}
+
 fn load_library() -> Result<Vec<LibraryItem>> {
     read_library_from_disk().map_err(anyhow::Error::msg)
 }
@@ -189,14 +198,13 @@ async fn run_game(leyen_id: &str) -> Result<()> {
     };
     let (title, group_title) = (game.title.clone(), group.map(|g| g.title.clone()));
 
-    let started = proxy()
+    proxy()
         .await?
         .launch_game(leyen_id)
         .await
-        .context("Failed to launch game")?;
-    if !started {
-        anyhow::bail!("Failed to launch '{}' ({}).", title, leyen_id);
-    }
+        .map_err(|e| {
+            anyhow::anyhow!("Failed to launch '{}' ({}): {}", title, leyen_id, dbus_error_message(&e))
+        })?;
 
     match group_title {
         Some(group) => eprintln!("Managed launch active for '{title}' ({leyen_id}) in group '{group}'."),
@@ -218,7 +226,9 @@ async fn kill_game(leyen_id: &str) -> Result<()> {
         .await?
         .stop_game(leyen_id)
         .await
-        .context("Failed to stop game")?;
+        .map_err(|e| {
+            anyhow::anyhow!("Failed to stop '{}' ({}): {}", title, leyen_id, dbus_error_message(&e))
+        })?;
     if was_running {
         eprintln!("Stopping '{title}' ({leyen_id})...");
         Ok(())
@@ -243,15 +253,34 @@ async fn stream_logs(follow: bool) -> Result<()> {
     while appended.next().await.is_some() {
         offset = print_logs_since(&proxy, offset).await?;
     }
-    Ok(())
+    // The signal stream only ends when our own bus connection is gone (it
+    // survives daemon restarts) — report it instead of pretending completion.
+    eprintln!("Log stream ended: lost the session bus connection.");
+    std::process::exit(2);
 }
 
 async fn print_logs_since(proxy: &LeyenProxy<'_>, offset: u64) -> Result<u64> {
     let (next, entries) = proxy.get_logs(offset).await.context("Failed to fetch logs")?;
+    // An offset running backwards means the daemon restarted (its counter is
+    // session-scoped) — re-pull from the start so its early lines are shown.
+    if next < offset {
+        let (next, entries) = proxy.get_logs(0).await.context("Failed to fetch logs")?;
+        for entry in entries {
+            print_log_entry(&entry);
+        }
+        return Ok(next);
+    }
     for entry in entries {
-        println!("[{}] {}", entry.timestamp, entry.line);
+        print_log_entry(&entry);
     }
     Ok(next)
+}
+
+fn print_log_entry(entry: &leyen_ipc::LogEntry) {
+    // RFC3339 local timestamp → wall-clock "HH:MM:SS"; the date is noise when
+    // following a live log.
+    let time = entry.timestamp.get(11..19).unwrap_or(&entry.timestamp);
+    println!("[{time}] {}", entry.line);
 }
 
 fn index_games(items: &[LibraryItem]) -> HashMap<String, &Game> {

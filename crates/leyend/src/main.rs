@@ -130,6 +130,11 @@ impl Manager {
         (next, mapped)
     }
 
+    async fn clear_logs(&self) {
+        self.touch();
+        leyen_core::logging::clear_log_buffer();
+    }
+
     async fn save_library(
         &self,
         toml_bytes: Vec<u8>,

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{
-    add_game_playtime, load_library, load_settings_with_auto_install, record_game_launch_result,
+    add_game_playtime, load_library, record_game_launch_result,
     record_game_launch_start,
 };
 use crate::runtime::proton::resolve_proton_path;
@@ -1181,7 +1181,7 @@ async fn launch_game_managed(
         ));
     }
 
-    let settings = load_settings_with_auto_install(false).await;
+    let settings = leyen_model::settings::load_settings();
     let library = load_library().await.map_err(LaunchError::Other)?;
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);

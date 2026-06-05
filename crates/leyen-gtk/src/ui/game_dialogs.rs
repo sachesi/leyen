@@ -1,4 +1,4 @@
-use crate::t;
+use leyen_model::t;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -8,10 +8,10 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::{gio, glib};
 
-use crate::config::{
+use crate::daemon::{gio_blocking, load_library, load_settings};
+use leyen_model::library::{
     find_game_by_leyen_id, find_group, game_parent_group_id, generate_unique_leyen_id, insert_game,
-    load_library, load_settings, remove_game, remove_group, replace_game, replace_group,
-    suggest_prefix_path, umu_game_id,
+    remove_game, remove_group, replace_game, replace_group, suggest_prefix_path, umu_game_id,
 };
 use crate::desktop::{
     create_game_desktop_entry, desktop_entry_exists, remove_game_desktop_entry,
@@ -21,10 +21,10 @@ use crate::icons::{
     clear_game_icon, clear_group_icon, extract_game_icon, game_icon_file, group_icon_file,
     save_custom_game_icon, save_custom_group_icon,
 };
-use crate::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
+use leyen_model::models::{Game, GameGroup, GroupLaunchDefaults, LibraryItem};
 use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
-use crate::runtime::proton::resolve_proton_path;
-use crate::tools::{gamemode_available, join_err, mangohud_available};
+use leyen_model::runtime::resolve_proton_path;
+use leyen_model::tools::{gamemode_available, mangohud_available};
 
 use super::deps_dialog::open_dependencies_page;
 use super::{
@@ -39,7 +39,7 @@ pub enum AddLibraryItemKind {
 }
 
 fn build_proton_choices(
-    settings: &crate::models::GlobalSettings,
+    settings: &leyen_model::models::GlobalSettings,
 ) -> (Vec<String>, gtk4::StringList) {
     let names: Vec<String> = settings
         .available_proton_versions
@@ -93,7 +93,7 @@ async fn apply_game_icon(
     custom_icon_enabled: bool,
     icon_file: String,
 ) -> Result<Option<String>, String> {
-    tokio::task::spawn_blocking(move || {
+    gio_blocking(move || {
         if custom_icon_enabled {
             let icon_file = icon_file.trim();
             if icon_file.is_empty() {
@@ -114,8 +114,6 @@ async fn apply_game_icon(
         }
     })
     .await
-    .map_err(join_err)
-    .and_then(|r| r)
 }
 
 async fn apply_group_icon(
@@ -123,7 +121,7 @@ async fn apply_group_icon(
     custom_icon_enabled: bool,
     icon_file: String,
 ) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
+    gio_blocking(move || {
         if custom_icon_enabled {
             let icon_file = icon_file.trim();
             if icon_file.is_empty() {
@@ -136,8 +134,6 @@ async fn apply_group_icon(
         }
     })
     .await
-    .map_err(join_err)
-    .and_then(|r| r)
 }
 
 fn group_custom_prefix_games(group: &GameGroup) -> Vec<String> {
@@ -222,7 +218,7 @@ pub async fn show_add_library_item_dialog(
     kind: AddLibraryItemKind,
 ) {
     let settings = load_settings().await;
-    let library = match crate::config::load_library().await {
+    let library = match crate::daemon::load_library().await {
         Ok(lib) => lib,
         Err(err) => {
             // We should probably show an error toast here, but for now we unwrap
@@ -719,7 +715,7 @@ pub async fn show_add_library_item_dialog(
                 return;
             }
 
-            let mut items = match crate::config::load_library().await {
+            let mut items = match crate::daemon::load_library().await {
                 Ok(items) => items,
                 Err(err) => {
                     overlay_clone.add_toast(adw::Toast::new(&err));
@@ -736,9 +732,7 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
-                        .await
-                        .unwrap_or(true)
+                    if !std::path::Path::new(&p).exists()
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -782,9 +776,7 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
-                        .await
-                        .unwrap_or(true)
+                    if !std::path::Path::new(&p).exists()
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -848,9 +840,7 @@ pub async fn show_add_library_item_dialog(
                 let desktop_game = game.clone();
                 if !insert_game(&mut items, current_group_id.as_deref(), game) {
                     let gid = game_id.clone();
-                    tokio::task::spawn_blocking(move || clear_game_icon(&gid))
-                        .await
-                        .ok();
+                    clear_game_icon(&gid);
                     overlay_clone
                         .add_toast(adw::Toast::new(&t!("Failed to add game to the selected group")));
                     return;
@@ -869,7 +859,7 @@ pub async fn show_add_library_item_dialog(
                 }
             }
 
-            crate::config::save_library(items).await;
+            crate::daemon::save_library(items).await;
             if kind == AddLibraryItemKind::Game && inside_group {
                 ui_clone.stack.set_visible_child_name("group");
                 ui_clone.back_btn.set_visible(true);
@@ -1298,16 +1288,14 @@ pub async fn show_edit_group_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
-                    .await
-                    .unwrap_or(true)
+                if !std::path::Path::new(&p).exists()
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
                 }
             }
 
-            let mut items = match crate::config::load_library().await {
+            let mut items = match crate::daemon::load_library().await {
                 Ok(items) => items,
                 Err(err) => {
                     overlay_clone.add_toast(adw::Toast::new(&err));
@@ -1338,7 +1326,7 @@ pub async fn show_edit_group_dialog(
                     proton,
                 },
             ) {
-                crate::config::save_library(items.clone()).await;
+                crate::daemon::save_library(items.clone()).await;
                 let updated_group = find_group(&items, &group_id).cloned();
                 let desktop_notice = if let Some(group) = updated_group {
                     update_group_desktop_entries_if_present(group)
@@ -1582,12 +1570,7 @@ pub async fn show_edit_game_dialog(
         .build();
 
     let lid = game.leyen_id.clone();
-    let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&lid))
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("desktop_entry_exists task failed: {}", join_err(e));
-            false
-        });
+    let exists = desktop_entry_exists(&lid);
     let menu_btn = gtk4::Button::builder()
         .label(if exists {
             t!("Remove from menu")
@@ -1833,12 +1816,7 @@ pub async fn show_edit_game_dialog(
         let group = group_for_menu.clone();
         glib::spawn_future_local(async move {
             let leyen_id = game.leyen_id.clone();
-            let exists = tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id))
-                .await
-                .unwrap_or_else(|e| {
-                    log::warn!("desktop_entry_exists task failed: {}", join_err(e));
-                    false
-                });
+            let exists = desktop_entry_exists(&leyen_id);
             if exists {
                 match remove_game_desktop_entry(game.leyen_id.clone()).await {
                     Ok(_) => {
@@ -2053,16 +2031,14 @@ pub async fn show_edit_game_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !tokio::task::spawn_blocking(move || std::path::Path::new(&p).exists())
-                    .await
-                    .unwrap_or(true)
+                if !std::path::Path::new(&p).exists()
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
                 }
             }
 
-            let mut items = match crate::config::load_library().await {
+            let mut items = match crate::daemon::load_library().await {
                 Ok(items) => items,
                 Err(err) => {
                     overlay_clone.add_toast(adw::Toast::new(&err));
@@ -2113,7 +2089,7 @@ pub async fn show_edit_game_dialog(
             };
 
             if replace_game(&mut items, &edited_game) {
-                crate::config::save_library(items).await;
+                crate::daemon::save_library(items).await;
                 let desktop_notice = update_game_desktop_entry_if_present(
                     edited_game.clone(),
                     current_parent_group.clone(),
@@ -2151,7 +2127,7 @@ pub async fn show_delete_confirmation(
     overlay: &adw::ToastOverlay,
     item_id: &str,
 ) {
-    let items = match crate::config::load_library().await {
+    let items = match crate::daemon::load_library().await {
         Ok(items) => items,
         Err(err) => {
             overlay.add_toast(adw::Toast::new(&err));
@@ -2202,7 +2178,7 @@ pub async fn show_delete_confirmation(
             let item_id = item_id.clone();
 
             glib::spawn_future_local(async move {
-                let mut items = match crate::config::load_library().await {
+                let mut items = match crate::daemon::load_library().await {
                 Ok(items) => items,
                 Err(err) => {
                     overlay_clone.add_toast(adw::Toast::new(&err));
@@ -2213,23 +2189,17 @@ pub async fn show_delete_confirmation(
                 let mut delete_notice = None;
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();
-                    tokio::task::spawn_blocking(move || clear_game_icon(&gid))
-                        .await
-                        .ok();
+                    clear_game_icon(&gid);
                     if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                         delete_notice = Some(t!("Failed to remove menu entry: {}").replacen("{}", &err.to_string(), 1));
                     }
                     Some(game.title)
                 } else if let Some(group) = remove_group(&mut items, &item_id) {
                     let gid = group.id.clone();
-                    tokio::task::spawn_blocking(move || clear_group_icon(&gid))
-                        .await
-                        .ok();
+                    clear_group_icon(&gid);
                     for game in &group.games {
                         let gid = game.id.clone();
-                        tokio::task::spawn_blocking(move || clear_game_icon(&gid))
-                            .await
-                            .ok();
+                        clear_game_icon(&gid);
                         if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                             delete_notice = Some(t!("Failed to remove a menu entry: {}").replacen("{}", &err.to_string(), 1));
                         }
@@ -2240,7 +2210,7 @@ pub async fn show_delete_confirmation(
                 };
 
                 if let Some(title) = deleted {
-                    crate::config::save_library(items).await;
+                    crate::daemon::save_library(items).await;
                     refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
                     let message = if let Some(delete_notice) = delete_notice {
                         t!("'{}' deleted successfully. {}").replacen("{}", &title, 1).replacen("{}", &delete_notice, 1)

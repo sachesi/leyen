@@ -1,4 +1,4 @@
-use crate::t;
+use leyen_model::t;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::game_icon_path;
-use crate::models::Game;
+use leyen_model::models::Game;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
 use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_game_dialog};

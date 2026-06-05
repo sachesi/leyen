@@ -1,5 +1,5 @@
-use crate::t;
-use crate::tn;
+use leyen_model::t;
+use leyen_model::tn;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::group_icon_path;
-use crate::models::GameGroup;
+use leyen_model::models::GameGroup;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
 use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_group_dialog};

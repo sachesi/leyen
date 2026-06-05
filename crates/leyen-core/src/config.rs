@@ -17,15 +17,11 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use leyen_model::library::{find_game_mut, flatten_games};
-use leyen_model::models::{GamesConfig, GlobalSettings, LibraryItem};
-use leyen_model::paths::{get_config_path, get_settings_path};
+use leyen_model::models::{GamesConfig, LibraryItem};
+use leyen_model::paths::get_config_path;
 
 fn config_lock_path() -> std::path::PathBuf {
     leyen_model::paths::get_config_dir().join(".games.lock")
-}
-
-fn settings_lock_path() -> std::path::PathBuf {
-    leyen_model::paths::get_config_dir().join(".settings.lock")
 }
 
 /// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
@@ -229,73 +225,12 @@ pub async fn load_games() -> Vec<leyen_model::models::Game> {
     flatten_games(&load_library().await.unwrap_or_default())
 }
 
-pub async fn load_settings_with_auto_install(auto_install_proton: bool) -> GlobalSettings {
-    let path = get_settings_path();
-    let settings = tokio::task::spawn_blocking(move || {
-        let mut settings: GlobalSettings = if let Ok(data) = fs::read_to_string(&path) {
-            toml::from_str(&data).unwrap_or_default()
-        } else {
-            GlobalSettings::default()
-        };
-
-        let fresh = crate::runtime::detect_proton_versions();
-        let merged: std::collections::HashSet<String> = settings
-            .available_proton_versions
-            .iter()
-            .chain(&fresh.available_proton_versions)
-            .cloned()
-            .collect();
-        let mut merged_vec: Vec<String> = merged.into_iter().filter(|v| v != "Default").collect();
-        merged_vec.sort();
-        merged_vec.insert(0, "Default".to_string());
-        settings.available_proton_versions = merged_vec;
-        if settings.default_prefix_path.is_empty() {
-            settings.default_prefix_path = fresh.default_prefix_path;
-        }
-        settings
-    })
-    .await
-    .unwrap_or_else(|e| {
-        log::error!("load_settings task failed: {e}");
-        GlobalSettings::default()
-    });
-
-    if auto_install_proton && settings.available_proton_versions.len() <= 1 {
-        crate::runtime::check_or_install_protonge();
-    }
-    save_settings(settings.clone()).await;
-    settings
-}
-
-pub async fn load_settings() -> GlobalSettings {
-    load_settings_with_auto_install(false).await
-}
-
-pub async fn save_settings(settings: GlobalSettings) {
-    let path = get_settings_path();
-    tokio::task::spawn_blocking(move || {
-        let _guard = match FlockGuard::lock(&settings_lock_path(), Duration::from_secs(5)) {
-            Ok(g) => g,
-            Err(e) => {
-                log::error!("Failed to acquire settings lock: {}", e);
-                return;
-            }
-        };
-        if let Ok(data) = toml::to_string_pretty(&settings) {
-            let temp_path = path.with_extension(format!(
-                "toml.tmp.{}.{}",
-                std::process::id(),
-                Uuid::new_v4()
-            ));
-            if fs::write(&temp_path, data).is_ok() {
-                let _ = fs::rename(&temp_path, path);
-            } else {
-                let _ = fs::remove_file(&temp_path);
-            }
-        }
-    })
-    .await
-    .ok();
+/// Read-only settings load (delegates to `leyen-model`, no write-back). Settings
+/// are client-owned; the daemon must never persist them (would race the client).
+pub async fn load_settings() -> leyen_model::models::GlobalSettings {
+    tokio::task::spawn_blocking(leyen_model::settings::load_settings)
+        .await
+        .unwrap_or_default()
 }
 
 pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {

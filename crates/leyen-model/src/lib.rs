@@ -10,6 +10,9 @@ pub mod icons;
 pub mod library;
 pub mod models;
 pub mod paths;
+pub mod runtime;
+pub mod settings;
+pub mod tools;
 
 /// Application / D-Bus well-known name root and icon/app id.
 pub const APP_ID: &str = "com.github.sachesi.leyen";

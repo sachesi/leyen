@@ -1,5 +1,5 @@
-use crate::t;
-use crate::tn;
+use leyen_model::t;
+use leyen_model::tn;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -9,9 +9,9 @@ use libadwaita as adw;
 use adw::prelude::*;
 use gtk4::glib;
 
-use crate::config::load_games;
-use crate::icons::game_icon_path;
-use crate::launch::running_games_snapshot;
+use crate::daemon::{self, DaemonEvent, running_games_snapshot};
+use leyen_model::icons::game_icon_path;
+use leyen_model::library::flatten_games;
 
 use super::log_window::show_log_window;
 use super::utils::format_duration_brief;
@@ -50,7 +50,8 @@ async fn rebuild_running_games(
 
     let mut titles = HashMap::new();
     let mut icon_paths = HashMap::new();
-    for game in load_games().await {
+    let games = flatten_games(&daemon::load_library().await.unwrap_or_default());
+    for game in games {
         // Candidate path only — `build_library_icon` checks existence off the main
         // thread, so the rebuild no longer stats every icon on every 1s tick.
         icon_paths.insert(game.id.clone(), game_icon_path(&game.id));
@@ -162,12 +163,12 @@ async fn rebuild_running_games(
         });
 
         let overlay_for_stop = overlay.clone();
-        let game_id_for_stop = snapshot.game_id.clone();
+        let leyen_id_for_stop = snapshot.leyen_id.clone();
         stop_btn.connect_clicked(move |_| {
-            let game_id = game_id_for_stop.clone();
+            let leyen_id = leyen_id_for_stop.clone();
             let overlay = overlay_for_stop.clone();
             glib::spawn_future_local(async move {
-                crate::ui::library::stop_game_guarded(&game_id, &overlay).await;
+                crate::ui::library::stop_game_guarded(&leyen_id, &overlay).await;
             });
         });
 
@@ -280,43 +281,46 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     });
     window.present();
 
-    let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
-    let list_box_ref = list_box.clone();
-    let content_stack_ref = content_stack.clone();
-    let overlay_ref = overlay.clone();
-    let parent_ref = parent.clone();
+    // Rebuild the list whenever running-state changes — signal-driven, no polling.
+    {
+        let events = daemon::subscribe_events();
+        let list_box_ref = list_box.clone();
+        let content_stack_ref = content_stack.clone();
+        let overlay_ref = overlay.clone();
+        let parent_ref = parent.clone();
+        let running_duration_labels_ref = running_duration_labels.clone();
+        let rebuild_busy_ref = rebuild_busy.clone();
+        let window_ref = window.clone();
+        glib::spawn_future_local(async move {
+            while let Ok(evt) = events.recv().await {
+                if !window_ref.is_visible() {
+                    break;
+                }
+                if matches!(evt, DaemonEvent::SessionsChanged(_)) {
+                    rebuild_running_games(
+                        &list_box_ref,
+                        &content_stack_ref,
+                        &overlay_ref,
+                        &parent_ref,
+                        &running_duration_labels_ref,
+                        &rebuild_busy_ref,
+                    )
+                    .await;
+                }
+            }
+        });
+    }
+
+    // Cosmetic 1s tick to advance the elapsed-time labels while the window is open.
     let running_duration_labels_ref = running_duration_labels.clone();
     let window_ref = window.clone();
-
     glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
-
-        let list_box_ref = list_box_ref.clone();
-        let content_stack_ref = content_stack_ref.clone();
-        let overlay_ref = overlay_ref.clone();
-        let parent_ref = parent_ref.clone();
-        let running_duration_labels_ref = running_duration_labels_ref.clone();
-        let running_state_version = running_state_version.clone();
-        let rebuild_busy_ref = rebuild_busy.clone();
-
+        let labels = running_duration_labels_ref.clone();
         glib::spawn_future_local(async move {
-            let current_version = crate::launch::running_games_version().await;
-            if current_version != running_state_version.get() {
-                running_state_version.set(current_version);
-                rebuild_running_games(
-                    &list_box_ref,
-                    &content_stack_ref,
-                    &overlay_ref,
-                    &parent_ref,
-                    &running_duration_labels_ref,
-                    &rebuild_busy_ref,
-                )
-                .await;
-            } else if current_version != 0 {
-                update_running_duration_labels(&running_duration_labels_ref).await;
-            }
+            update_running_duration_labels(&labels).await;
         });
         glib::ControlFlow::Continue
     });

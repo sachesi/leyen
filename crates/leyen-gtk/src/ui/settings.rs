@@ -1,4 +1,4 @@
-use crate::t;
+use leyen_model::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -9,13 +9,12 @@ use std::path::PathBuf;
 use super::deps_dialog::open_dependencies_page;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
-use crate::runtime::proton::resolve_proton_path;
-use crate::runtime::umu::get_umu_runtime_dir;
-use crate::tools::{gamemode_available, mangohud_available};
+use leyen_model::runtime::{get_umu_runtime_dir, resolve_proton_path};
+use leyen_model::tools::{gamemode_available, mangohud_available};
 use gtk4::glib;
 
 pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
-    let settings = crate::config::load_settings().await;
+    let settings = crate::daemon::load_settings().await;
 
     let dialog = adw::Dialog::builder()
         .title(t!("Global Settings"))
@@ -319,7 +318,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         let overlay_for_reset = overlay_for_reset.clone();
         let dialog_for_reset = dialog_for_reset.clone();
         glib::spawn_future_local(async move {
-            let snapshots = crate::launch::running_games_snapshot().await;
+            let snapshots = crate::daemon::running_games_snapshot().await;
             if !snapshots.is_empty() {
                 overlay_for_reset.add_toast(adw::Toast::new(
                     &t!("Cannot reset runtime while games are running. Close all games first."),
@@ -419,7 +418,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     // Save settings when the dialog is closed
     dialog.connect_closed(move |_| {
-        let updated_settings = crate::models::GlobalSettings {
+        let updated_settings = leyen_model::models::GlobalSettings {
             default_prefix_path: prefix_row.text().to_string(),
             default_proton: if (proton_row.selected() as usize) < available_versions.len() {
                 available_versions[proton_row.selected() as usize].clone()
@@ -440,8 +439,9 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
             use_shared_container: shared_container_row.is_active(),
         };
         glib::spawn_future_local(async move {
-            crate::logging::apply_log_settings(&updated_settings);
-            crate::config::save_settings(updated_settings).await;
+            // Settings are client-owned; the daemon re-reads them (incl. log
+            // levels) on its next load.
+            crate::daemon::save_settings(updated_settings).await;
         });
     });
 

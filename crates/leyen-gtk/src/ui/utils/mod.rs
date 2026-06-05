@@ -1,6 +1,6 @@
-use crate::launch::RunningGameSnapshot;
-use crate::models::{Game, GameGroup, LibraryItem};
-use crate::t;
+use leyen_ipc::RunningGameSnapshot;
+use leyen_model::models::{Game, GameGroup, LibraryItem};
+use leyen_model::t;
 use gtk4::prelude::*;
 use std::cmp::Ordering;
 
@@ -10,7 +10,7 @@ pub const LIST_PAGE_PRIMARY: &str = "primary";
 pub const LIST_PAGE_SECONDARY: &str = "secondary";
 
 pub async fn running_game_map() -> RunningGameMap {
-    crate::launch::running_games_snapshot()
+    crate::daemon::running_games_snapshot()
         .await
         .into_iter()
         .map(|snapshot| (snapshot.game_id.clone(), snapshot))

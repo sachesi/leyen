@@ -12,6 +12,7 @@ directories.workspace = true
 uuid.workspace = true
 fastrand.workspace = true
 gettext-rs.workspace = true
+libc.workspace = true
 log.workspace = true
 
 [dev-dependencies]

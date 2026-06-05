@@ -3,10 +3,10 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use crate::config::effective_game_id;
-use crate::icons::game_icon_file;
-use crate::models::{Game, GameGroup};
-use crate::tools::join_err;
+use crate::daemon::gio_blocking;
+use leyen_model::icons::game_icon_file;
+use leyen_model::library::effective_game_id;
+use leyen_model::models::{Game, GameGroup};
 
 pub fn desktop_entry_exists(leyen_id: &str) -> bool {
     !desktop_entry_paths_for_leyen_id(leyen_id).is_empty()
@@ -16,7 +16,7 @@ pub async fn create_game_desktop_entry(
     game: Game,
     group: Option<GameGroup>,
 ) -> Result<PathBuf, String> {
-    tokio::task::spawn_blocking(move || {
+    gio_blocking(move || {
         let path = desired_desktop_entry_path(&game, group.as_ref());
         ensure_applications_dir()?;
         for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
@@ -45,8 +45,6 @@ pub async fn create_game_desktop_entry(
         Ok(path)
     })
     .await
-    .map_err(join_err)
-    .and_then(|r| r)
 }
 
 pub async fn update_game_desktop_entry_if_present(
@@ -54,13 +52,7 @@ pub async fn update_game_desktop_entry_if_present(
     group: Option<GameGroup>,
 ) -> Result<bool, String> {
     let leyen_id = game.leyen_id.clone();
-    if !tokio::task::spawn_blocking(move || desktop_entry_exists(&leyen_id))
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("desktop_entry_exists task failed: {e}");
-            false
-        })
-    {
+    if !gio_blocking(move || desktop_entry_exists(&leyen_id)).await {
         return Ok(false);
     }
 
@@ -79,7 +71,7 @@ pub async fn update_group_desktop_entries_if_present(group: GameGroup) -> Result
 }
 
 pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || {
+    gio_blocking(move || {
         let paths = desktop_entry_paths_for_leyen_id(&leyen_id);
         let had_desktop_file = !paths.is_empty();
 
@@ -95,8 +87,6 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
         Ok(had_desktop_file)
     })
     .await
-    .map_err(join_err)
-    .and_then(|r| r)
 }
 
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {
@@ -129,7 +119,7 @@ fn startup_wm_class(game: &Game) -> String {
 fn desktop_icon(game: &Game) -> String {
     game_icon_file(&game.id)
         .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| crate::APP_ID.to_string())
+        .unwrap_or_else(|| leyen_model::APP_ID.to_string())
 }
 
 fn desired_desktop_entry_path(game: &Game, group: Option<&GameGroup>) -> PathBuf {
@@ -219,7 +209,7 @@ mod tests {
     use super::{
         desktop_entry_file_name, desktop_icon, render_game_desktop_entry, startup_wm_class,
     };
-    use crate::models::{Game, GameGroup, GroupLaunchDefaults};
+    use leyen_model::models::{Game, GameGroup, GroupLaunchDefaults};
 
     fn sample_game() -> Game {
         Game {
@@ -253,7 +243,7 @@ mod tests {
 
     #[test]
     fn desktop_entry_uses_cli_run_command() {
-        let rendered = render_game_desktop_entry(&sample_game(), None, crate::APP_ID);
+        let rendered = render_game_desktop_entry(&sample_game(), None, leyen_model::APP_ID);
         assert!(rendered.contains("Exec=leyen run ly-1234"));
         assert!(rendered.contains("Name=Nier Replicant"));
         assert!(rendered.contains("StartupWMClass=steam_app_ly1234"));
@@ -269,7 +259,7 @@ mod tests {
                 defaults: GroupLaunchDefaults::default(),
                 games: Vec::new(),
             }),
-            crate::APP_ID,
+            leyen_model::APP_ID,
         );
         assert!(rendered.contains("Name=Favorites: Nier Replicant"));
     }
@@ -296,6 +286,6 @@ mod tests {
 
     #[test]
     fn desktop_icon_falls_back_to_app_id_without_game_icon() {
-        assert_eq!(desktop_icon(&sample_game()), crate::APP_ID);
+        assert_eq!(desktop_icon(&sample_game()), leyen_model::APP_ID);
     }
 }

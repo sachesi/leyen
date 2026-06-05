@@ -1,7 +1,6 @@
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use leyen_model::models::GlobalSettings;
 use leyen_model::paths::get_data_dir;
 
 static PROTONGE_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
@@ -154,43 +153,3 @@ pub fn check_or_install_protonge() {
     });
 }
 
-pub fn detect_proton_versions() -> GlobalSettings {
-    let mut versions = vec!["Default".to_string()];
-
-    let leyen_proton = get_data_dir().join("proton");
-    if leyen_proton.exists() {
-        if let Ok(entries) = fs::read_dir(&leyen_proton) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() && path.join("proton").is_file() && path.join("version").is_file()
-                {
-                    versions.push(path.to_string_lossy().to_string());
-                }
-            }
-        }
-    } else {
-        let _ = fs::create_dir_all(&leyen_proton);
-    }
-
-    let default_prefix_path = get_data_dir().join("prefixes").join("default");
-    if !default_prefix_path.exists() {
-        let _ = fs::create_dir_all(&default_prefix_path);
-    }
-
-    GlobalSettings {
-        default_prefix_path: default_prefix_path.to_string_lossy().to_string(),
-        default_proton: "Default".to_string(),
-        global_mangohud: false,
-        global_gamemode: false,
-        global_wayland: false,
-        global_wow64: false,
-        global_ntsync: false,
-        global_hdr: false,
-        global_proton_log: false,
-        available_proton_versions: versions,
-        log_errors: true,
-        log_warnings: false,
-        log_operations: false,
-        use_shared_container: true,
-    }
-}

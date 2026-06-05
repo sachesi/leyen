@@ -1,43 +1,46 @@
-use crate::t;
+//! Untracked "run something in this prefix" helpers (winecfg / regedit / pick a
+//! program). These are fire-and-forget umu-run invocations from the client — not
+//! managed games — so they don't go through the daemon's scope tracking. They are
+//! gated on "no game running" (via the daemon) and umu availability.
+
+use leyen_model::t;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use libadwaita as adw;
 use log::info;
 
+use adw::prelude::*;
 use gtk4::gio;
-use gtk4::prelude::*;
 
-use std::sync::atomic::Ordering;
+use crate::daemon::{gio_blocking, running_games_snapshot};
+use leyen_model::runtime::{get_umu_run_path, is_umu_run_available};
 
-use crate::logging::LOG_OPERATIONS;
-use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+async fn preflight(overlay: &adw::ToastOverlay, blocked_msg: &str) -> bool {
+    if !running_games_snapshot().await.is_empty() {
+        overlay.add_toast(adw::Toast::new(blocked_msg));
+        return false;
+    }
+    if !gio_blocking(is_umu_run_available).await {
+        overlay.add_toast(adw::Toast::new(&t!(
+            "umu-launcher is not installed. Please check your internet connection and restart."
+        )));
+        return false;
+    }
+    true
+}
 
 pub async fn run_winecfg_in_prefix(
     overlay: &adw::ToastOverlay,
     prefix_path: &str,
     proton_path: &str,
 ) {
-    let snapshots = crate::launch::running_games_snapshot().await;
-    if !snapshots.is_empty() {
-        overlay.add_toast(adw::Toast::new(
-            &t!("Blocked: Cannot run winecfg while games are running."),
-        ));
-        return;
-    }
-    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is still downloading, please wait…"),
-        ));
-        return;
-    }
-    if !tokio::task::spawn_blocking(is_umu_run_available)
-        .await
-        .unwrap_or(false)
+    if !preflight(
+        overlay,
+        &t!("Blocked: Cannot run winecfg while games are running."),
+    )
+    .await
     {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
-        ));
         return;
     }
 
@@ -48,13 +51,10 @@ pub async fn run_winecfg_in_prefix(
         return;
     }
 
-    let overlay_clone = overlay.clone();
-    let result = tokio::task::spawn_blocking(move || launch_wine_command("winecfg", &prefix, &proton))
-        .await
-        .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+    let result = gio_blocking(move || launch_wine_command("winecfg", &prefix, &proton)).await;
     match result {
-        Ok(()) => overlay_clone.add_toast(adw::Toast::new(&t!("Wine Configuration launched"))),
-        Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
+        Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Wine Configuration launched"))),
+        Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
     }
 }
 
@@ -63,26 +63,12 @@ pub async fn run_regedit_in_prefix(
     prefix_path: &str,
     proton_path: &str,
 ) {
-    let snapshots = crate::launch::running_games_snapshot().await;
-    if !snapshots.is_empty() {
-        overlay.add_toast(adw::Toast::new(
-            &t!("Blocked: Cannot run regedit while games are running."),
-        ));
-        return;
-    }
-    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is still downloading, please wait…"),
-        ));
-        return;
-    }
-    if !tokio::task::spawn_blocking(is_umu_run_available)
-        .await
-        .unwrap_or(false)
+    if !preflight(
+        overlay,
+        &t!("Blocked: Cannot run regedit while games are running."),
+    )
+    .await
     {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
-        ));
         return;
     }
 
@@ -93,13 +79,10 @@ pub async fn run_regedit_in_prefix(
         return;
     }
 
-    let overlay_clone = overlay.clone();
-    let result = tokio::task::spawn_blocking(move || launch_wine_command("regedit", &prefix, &proton))
-        .await
-        .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+    let result = gio_blocking(move || launch_wine_command("regedit", &prefix, &proton)).await;
     match result {
-        Ok(()) => overlay_clone.add_toast(adw::Toast::new(&t!("Registry Editor launched"))),
-        Err(err) => overlay_clone.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
+        Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Registry Editor launched"))),
+        Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
     }
 }
 
@@ -113,9 +96,7 @@ fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Resu
     cmd.env("GAMEID", format!("leyen-{name}"));
     cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
     cmd.env("WINEDEBUG", "fixme-all");
-    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    }
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
     cmd.spawn()
         .map_err(|err| format!("Failed to launch {}: {}", name, err))?;
     info!("Launched '{}' inside prefix '{}'", name, prefix_path);
@@ -128,36 +109,19 @@ pub async fn pick_and_run_in_prefix(
     prefix_path: &str,
     proton_path: &str,
 ) {
-    let snapshots = crate::launch::running_games_snapshot().await;
-    if !snapshots.is_empty() {
-        overlay.add_toast(adw::Toast::new(
-            &t!("Blocked: Cannot run programs in prefix while games are running."),
-        ));
+    if !preflight(
+        overlay,
+        &t!("Blocked: Cannot run programs in prefix while games are running."),
+    )
+    .await
+    {
         return;
     }
 
     let prefix_path = prefix_path.trim().to_string();
     let proton_path = proton_path.trim().to_string();
-
     if prefix_path.is_empty() {
         overlay.add_toast(adw::Toast::new(&t!("Prefix path is required first")));
-        return;
-    }
-
-    if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is still downloading, please wait…"),
-        ));
-        return;
-    }
-
-    if !tokio::task::spawn_blocking(is_umu_run_available)
-        .await
-        .unwrap_or_default()
-    {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
-        ));
         return;
     }
 
@@ -185,11 +149,9 @@ pub async fn pick_and_run_in_prefix(
         let prefix_path = prefix_path.clone();
         let proton_path = proton_path.clone();
         gtk4::glib::spawn_future_local(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                launch_path_in_prefix(&path, &prefix_path, &proton_path)
-            })
-            .await
-            .unwrap_or_else(|e| Err(format!("blocking task failed: {e}")));
+            let result =
+                gio_blocking(move || launch_path_in_prefix(&path, &prefix_path, &proton_path))
+                    .await;
             match result {
                 Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Launched in prefix"))),
                 Err(err) => {
@@ -222,9 +184,7 @@ fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> R
     {
         cmd.current_dir(parent);
     }
-    if !LOG_OPERATIONS.load(Ordering::Relaxed) {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    }
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
     cmd.spawn()
         .map_err(|err| format!("Failed to launch '{}': {}", path.display(), err))?;

@@ -1,19 +1,17 @@
-use crate::t;
+use leyen_model::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk4::{gio, glib};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::config::{get_data_dir, load_settings};
-use crate::deps::{
-    DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
-    get_installed_dep, install_dep_async, read_installed_deps, read_prefix_dep_state,
-    uninstall_dep_async, InstalledDependency,
+use crate::daemon::{self, DaemonEvent, gio_blocking, load_settings};
+use leyen_model::deps::{
+    DEP_CATEGORY_ORDER, DEP_PROFILES, DepProfile, InstalledDependency, find_installed_dependents,
+    get_dep_profile, get_installed_dep, read_installed_deps, read_prefix_dep_state,
 };
+use leyen_model::paths::get_data_dir;
 
 #[derive(Clone)]
 struct DepRowHandle {
@@ -35,7 +33,7 @@ fn dep_category_order(cat: &str) -> usize {
 fn redistribute_rows(
     groups: &Rc<std::cell::RefCell<Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>>>,
     page: &adw::PreferencesPage,
-    entries: &[&crate::deps::DepProfile],
+    entries: &[&DepProfile],
     installed: &std::collections::BTreeSet<String>,
     handles: &[DepRowHandle],
     search_query: &str,
@@ -168,12 +166,7 @@ async fn refresh_dep_rows(
     handles: &[DepRowHandle],
 ) -> std::collections::BTreeSet<String> {
     let prefix_path = prefix_path.to_string();
-    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path))
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("deps dialog: read state task failed: {e}");
-            Default::default()
-        });
+    let state = gio_blocking(move || read_prefix_dep_state(&prefix_path)).await;
     let installed = state
         .installed
         .keys()
@@ -214,7 +207,7 @@ pub async fn open_dependencies_page(
     proton_path: &str,
     overlay: &adw::ToastOverlay,
 ) {
-    let snapshots = crate::launch::running_games_snapshot().await;
+    let snapshots = crate::daemon::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
             &t!("Dependency manager is blocked while games are running. Close all games first."),
@@ -238,13 +231,7 @@ pub async fn open_dependencies_page(
     };
 
     let prefix_path_for_state = resolved_prefix.clone();
-    let installed =
-        tokio::task::spawn_blocking(move || read_installed_deps(&prefix_path_for_state))
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("deps dialog: read installed deps task failed: {e}");
-                Default::default()
-            });
+    let installed = gio_blocking(move || read_installed_deps(&prefix_path_for_state)).await;
 
     let subtitle = installed_subtitle(installed.len());
 
@@ -289,7 +276,7 @@ pub async fn open_dependencies_page(
     // disables the action buttons; navigating back does not interrupt it.
     let dialog_busy = Rc::new(Cell::new(false));
 
-    let mut entries: Vec<&crate::deps::DepProfile> = DEP_PROFILES.iter().collect();
+    let mut entries: Vec<&DepProfile> = DEP_PROFILES.iter().collect();
     entries.sort_by(|a, b| {
         dep_category_order(a.category)
             .cmp(&dep_category_order(b.category))
@@ -375,15 +362,16 @@ pub async fn open_dependencies_page(
                 .visible(false)
                 .build();
 
-            // Flag for the operation currently running in this row, set by the
-            // cancel button and polled by the installer between/within steps.
-            let current_cancel: Rc<RefCell<Option<Arc<AtomicBool>>>> =
-                Rc::new(RefCell::new(None));
+            // Job id of the operation currently running in this row; set when the
+            // daemon job starts and read by the cancel button.
+            let current_job: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
             {
-                let current_cancel = current_cancel.clone();
+                let current_job = current_job.clone();
                 cancel_btn.connect_clicked(move |btn| {
-                    if let Some(flag) = current_cancel.borrow().as_ref() {
-                        flag.store(true, Ordering::Relaxed);
+                    if let Some(job) = current_job.borrow().clone() {
+                        glib::spawn_future_local(async move {
+                            crate::daemon::cancel_dep(&job).await;
+                        });
                     }
                     btn.set_sensitive(false);
                 });
@@ -425,7 +413,7 @@ pub async fn open_dependencies_page(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let cancel_btn2 = cancel_btn.clone();
-                let current_cancel2 = current_cancel.clone();
+                let current_job2 = current_job.clone();
                 let row2 = row.clone();
                 let badge2 = badge.clone();
                 let title2 = title_widget.clone();
@@ -447,8 +435,7 @@ pub async fn open_dependencies_page(
                     spinner2.start();
                     progress_label2.set_visible(true);
 
-                    let cancel = Arc::new(AtomicBool::new(false));
-                    *current_cancel2.borrow_mut() = Some(cancel.clone());
+                    let current_job_for_op = current_job2.clone();
                     cancel_btn2.set_sensitive(true);
                     cancel_btn2.set_visible(true);
 
@@ -512,12 +499,12 @@ pub async fn open_dependencies_page(
                         }
                     };
 
-                    install_dep_async(
+                    start_dep_job(
+                        true,
                         dep_id,
-                        &prefix2,
-                        &proton2,
-                        &overlay2,
-                        cancel.clone(),
+                        prefix2.clone(),
+                        proton2.clone(),
+                        current_job_for_op,
                         on_progress,
                         on_finish,
                     );
@@ -532,7 +519,7 @@ pub async fn open_dependencies_page(
                 let spinner2 = spinner.clone();
                 let progress_label2 = progress_label.clone();
                 let cancel_btn2 = cancel_btn.clone();
-                let current_cancel2 = current_cancel.clone();
+                let current_job2 = current_job.clone();
                 let row2 = row.clone();
                 let badge2 = badge.clone();
                 let title2 = title_widget.clone();
@@ -555,9 +542,9 @@ pub async fn open_dependencies_page(
                     spinner2.start();
                     progress_label2.set_visible(true);
 
-                    let cancel = Arc::new(AtomicBool::new(false));
-                    *current_cancel2.borrow_mut() = Some(cancel.clone());
+                    let current_job_for_op = current_job2.clone();
                     cancel_btn2.set_sensitive(true);
+                    cancel_btn2.set_visible(true);
 
                     let install_btn3 = install_btn2.clone();
                     let reinstall_btn3 = reinstall_btn2.clone();
@@ -621,12 +608,12 @@ pub async fn open_dependencies_page(
                         }
                     };
 
-                    install_dep_async(
+                    start_dep_job(
+                        true,
                         dep_id,
-                        &prefix2,
-                        &proton2,
-                        &overlay2,
-                        cancel.clone(),
+                        prefix2.clone(),
+                        proton2.clone(),
+                        current_job_for_op,
                         on_progress,
                         on_finish,
                     );
@@ -688,18 +675,14 @@ pub async fn open_dependencies_page(
                         let groups4 = groups3.clone();
                         let page4 = page3.clone();
                         let entries4 = entries3.clone();
-                        let detail = tokio::task::spawn_blocking(move || {
+                        let detail = gio_blocking(move || {
                             get_installed_dep(&prefix_for_dep, &dep_id_for_dep)
                                 .map(|installed| installed.removal_detail())
                                 .unwrap_or_else(|| {
                                     t!("This removes the dependency from Leyen's tracking.")
                                 })
                         })
-                        .await
-                        .unwrap_or_else(|e| {
-                            log::warn!("deps dialog: get dep detail task failed: {e}");
-                            t!("This dependency could not be located.")
-                        });
+                        .await;
 
                         let confirm = confirm_builder.detail(&detail).build();
                         let root3 = dialog3
@@ -793,11 +776,12 @@ pub async fn open_dependencies_page(
                                         }
                                     };
 
-                                uninstall_dep_async(
+                                start_dep_job(
+                                    false,
                                     dep_id,
-                                    &prefix3,
-                                    &proton3,
-                                    &overlay3,
+                                    prefix3.clone(),
+                                    proton3.clone(),
+                                    Rc::new(RefCell::new(None)),
                                     on_progress,
                                     on_finish,
                                 );
@@ -846,4 +830,57 @@ pub async fn open_dependencies_page(
         .child(&overlay)
         .build();
     nav.push(&nav_page);
+}
+
+/// Drives a dependency install/uninstall job through the daemon: forwards
+/// `DepProgress` to `on_progress` and the terminal `DepFinished` to `on_finish`,
+/// recording the job id in `current_job` so the cancel button can target it.
+#[allow(clippy::too_many_arguments)]
+fn start_dep_job(
+    install: bool,
+    dep_id: &'static str,
+    prefix: String,
+    proton: String,
+    current_job: Rc<RefCell<Option<String>>>,
+    on_progress: impl Fn(usize, usize, String) + 'static,
+    on_finish: impl FnOnce(bool, Option<String>) + 'static,
+) {
+    glib::spawn_future_local(async move {
+        // Subscribe before starting so no early progress is missed.
+        let events = daemon::subscribe_events();
+        let job_id = if install {
+            daemon::install_dep(&prefix, dep_id, &proton).await
+        } else {
+            daemon::uninstall_dep(&prefix, dep_id, &proton).await
+        };
+        if job_id.is_empty() {
+            on_finish(false, Some(t!("Could not start the operation.")));
+            return;
+        }
+        *current_job.borrow_mut() = Some(job_id.clone());
+
+        let mut on_finish = Some(on_finish);
+        while let Ok(evt) = events.recv().await {
+            match evt {
+                DaemonEvent::DepProgress { job_id: j, msg, .. } if j == job_id => {
+                    on_progress(0, 0, msg);
+                }
+                DaemonEvent::DepFinished {
+                    job_id: j,
+                    success,
+                    message,
+                } if j == job_id => {
+                    if current_job.borrow().as_deref() == Some(job_id.as_str()) {
+                        *current_job.borrow_mut() = None;
+                    }
+                    if let Some(cb) = on_finish.take() {
+                        let note = (!message.is_empty()).then_some(message);
+                        cb(success, note);
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
 }

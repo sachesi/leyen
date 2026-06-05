@@ -1,4 +1,4 @@
-use crate::models::LibraryItem;
+use leyen_model::models::LibraryItem;
 use libadwaita as adw;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

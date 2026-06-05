@@ -34,11 +34,11 @@ pub fn group_icon_path(group_id: &str) -> PathBuf {
 }
 
 pub fn game_icon_name(game_id: &str) -> String {
-    format!("{}.game-{}", crate::APP_ID, game_id)
+    format!("{}.game-{}", leyen_model::APP_ID, game_id)
 }
 
 pub fn group_icon_name(group_id: &str) -> String {
-    format!("{}.group-{}", crate::APP_ID, group_id)
+    format!("{}.group-{}", leyen_model::APP_ID, group_id)
 }
 
 pub fn game_icon_file(game_id: &str) -> Option<PathBuf> {

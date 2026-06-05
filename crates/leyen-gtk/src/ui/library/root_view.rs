@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use crate::models::LibraryItem;
+use leyen_model::models::LibraryItem;
 use crate::ui::LibraryUi;
 use crate::ui::components::game_card::build_game_card;
 use crate::ui::components::group_card::build_group_card;
@@ -32,9 +32,7 @@ pub async fn populate_root_view(
         items.clone()
     };
 
-    crate::dbg_trace!("prv running_game_map…"); // TEMP DEBUG
     let running_games = running_game_map().await;
-    crate::dbg_trace!("prv got_running={} building {} cards…", running_games.len(), cloned_items.len()); // TEMP DEBUG
     let mut sorted_items: Vec<LibraryItem> = cloned_items;
     sorted_items.sort_by(|left, right| root_library_item_cmp(left, right, &running_games));
 
@@ -63,12 +61,10 @@ pub async fn populate_root_view(
         }
     }
 
-    crate::dbg_trace!("prv cards built, swapping…"); // TEMP DEBUG
     finish_list_swap(
         &ui.root_list_stack,
         ui.root_list_showing_primary.as_ref(),
         visible_page,
     );
     ui.root_content_stack.set_visible_child_name("list");
-    crate::dbg_trace!("prv done"); // TEMP DEBUG
 }

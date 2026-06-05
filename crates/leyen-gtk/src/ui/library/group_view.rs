@@ -1,4 +1,4 @@
-use crate::t;
+use leyen_model::t;
 use gtk4::prelude::*;
 use libadwaita as adw;
 

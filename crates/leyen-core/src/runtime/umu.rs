@@ -1,22 +1,26 @@
-use directories::ProjectDirs;
-use leyen_model::paths::get_data_dir;
 use log::{info, warn};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{OnceLock, RwLock};
-use std::time::{Duration, Instant};
 use thiserror::Error;
+
+// Pure path + availability helpers live in `leyen-model::runtime` so clients can
+// reuse them; re-export here so existing `crate::runtime::umu::*` call sites keep
+// working.
+pub use leyen_model::runtime::{
+    get_local_umu_run_path, get_local_winetricks_path, get_umu_core_dir, get_umu_run_path,
+    get_umu_runtime_dir, get_winetricks_dir, get_winetricks_path, is_nixos, is_umu_run_available,
+    is_winetricks_available,
+};
 
 pub static UMU_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// `true` while the background download thread is actively running.
-/// The UI polls this to show/hide the download status banner.
+/// The daemon emits `RuntimeStatus` based on readiness; this gates launches.
 pub static UMU_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 pub static WINETRICKS_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// `true` while the background winetricks download thread is actively running.
-/// The UI polls this to show/hide the download status banner.
 pub static WINETRICKS_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Error, Debug)]
@@ -29,178 +33,6 @@ pub enum UmuError {
     Download(String),
     #[error("Extraction failed: {0}")]
     Extraction(String),
-}
-
-/// Directory where the umu-launcher zipapp is extracted.
-pub fn get_umu_core_dir() -> String {
-    get_data_dir()
-        .join("core")
-        .join("umu-launcher")
-        .to_string_lossy()
-        .to_string()
-}
-
-/// Directory where umu-run stores the Steam Linux Runtime (steamrt3).
-/// Deleting this directory forces umu-run to re-download a clean runtime on
-/// the next launch — useful when pressure-vessel-wrap fails due to a
-/// corrupted or incomplete sniper_platform installation.
-pub fn get_umu_runtime_dir() -> String {
-    ProjectDirs::from("", "", "umu")
-        .map(|p| p.data_dir().join("steamrt3"))
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            std::path::PathBuf::from(format!("{}/.local/share/umu/steamrt3", home))
-        })
-        .to_string_lossy()
-        .to_string()
-}
-
-/// Returns `true` if `cmd` is found in `$PATH`.
-/// In-process search via PATH iteration; no subprocess overhead or hang risk.
-fn is_in_path(cmd: &str) -> bool {
-    let path_env = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path_env).any(|dir| {
-        dir.join(cmd).is_file()
-    })
-}
-
-static NIXOS: OnceLock<bool> = OnceLock::new();
-
-/// Returns true if running on NixOS.
-pub fn is_nixos() -> bool {
-    *NIXOS.get_or_init(|| {
-        if std::path::Path::new("/etc/NIXOS").exists() {
-            return true;
-        }
-        if let Ok(content) = fs::read_to_string("/etc/os-release") {
-            for line in content.lines() {
-                if line == "ID=nixos" || line == "ID=\"nixos\"" {
-                    return true;
-                }
-            }
-        }
-        false
-    })
-}
-
-/// Full path to the `umu-run` binary inside the extracted zipapp (`umu/umu-run`).
-pub fn get_local_umu_run_path() -> String {
-    format!("{}/umu/umu-run", get_umu_core_dir())
-}
-
-/// Returns the command / path to use when invoking `umu-run`.
-/// Prefers the system-wide binary; falls back to the locally downloaded copy.
-pub fn get_umu_run_path() -> String {
-    static CACHED_PATH: OnceLock<String> = OnceLock::new();
-    CACHED_PATH
-        .get_or_init(|| {
-            if is_nixos() {
-                return "umu-run".to_string();
-            }
-
-            if is_in_path("umu-run") {
-                return "umu-run".to_string();
-            }
-
-            let local_path = get_local_umu_run_path();
-            if std::path::Path::new(&local_path).exists() {
-                return local_path;
-            }
-
-            "umu-run".to_string()
-        })
-        .clone()
-}
-
-/// Returns `true` when `umu-run` is actually available (system PATH or local
-/// install).  Unlike `get_umu_run_path()` this does not return a fallback
-/// string when umu-run is absent.
-/// Cached with 1s TTL — avoids `which` subprocess on hot paths.
-pub fn is_umu_run_available() -> bool {
-    static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
-    if let Ok(guard) = cache.read()
-        && guard.1.elapsed() < std::time::Duration::from_secs(1) {
-            return guard.0;
-        }
-    let result = is_umu_run_available_impl();
-    if let Ok(mut guard) = cache.write() {
-        *guard = (result, Instant::now());
-    }
-    result
-}
-
-fn is_umu_run_available_impl() -> bool {
-    if is_in_path("umu-run") {
-        return true;
-    }
-    if is_nixos() {
-        return false;
-    }
-    std::path::Path::new(&get_local_umu_run_path()).exists()
-}
-
-/// Directory where the winetricks script is stored.
-pub fn get_winetricks_dir() -> String {
-    get_data_dir()
-        .join("core")
-        .join("winetricks")
-        .to_string_lossy()
-        .to_string()
-}
-
-/// Full path to the locally downloaded winetricks script.
-pub fn get_local_winetricks_path() -> String {
-    format!("{}/winetricks", get_winetricks_dir())
-}
-
-/// Returns the command / path to use when invoking `winetricks`.
-/// Prefers the system-wide binary; falls back to the locally downloaded copy.
-/// Not cached — always re-checks so a download started during the
-/// session is detected immediately.
-pub fn get_winetricks_path() -> String {
-    static CACHED_PATH: OnceLock<String> = OnceLock::new();
-    CACHED_PATH
-        .get_or_init(|| {
-            if is_nixos() {
-                return "winetricks".to_string();
-            }
-
-            if is_in_path("winetricks") {
-                return "winetricks".to_string();
-            }
-
-            let local_path = get_local_winetricks_path();
-            if std::path::Path::new(&local_path).exists() {
-                return local_path;
-            }
-
-            "winetricks".to_string()
-        })
-        .clone()
-}
-
-/// Returns `true` when `winetricks` is actually available (system PATH or local
-/// download). Cached with 1s TTL — avoids `which` subprocess on hot paths.
-pub fn is_winetricks_available() -> bool {
-    static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| RwLock::new((false, Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or(Instant::now()))));
-    if let Ok(guard) = cache.read()
-        && guard.1.elapsed() < std::time::Duration::from_secs(1) {
-            return guard.0;
-        }
-    let result = is_winetricks_available_impl();
-    if let Ok(mut guard) = cache.write() {
-        *guard = (result, Instant::now());
-    }
-    result
-}
-
-fn is_winetricks_available_impl() -> bool {
-    if is_in_path("winetricks") {
-        return true;
-    }
-    std::path::Path::new(&get_local_winetricks_path()).exists()
 }
 
 /// Downloads the latest winetricks script from GitHub into the local data directory.

@@ -8,8 +8,10 @@
 use serde::{Deserialize, Serialize};
 use zvariant::Type;
 
-/// Well-known bus name (also the app id) and object path.
-pub const BUS_NAME: &str = "com.github.sachesi.leyen";
+/// The daemon's well-known bus name. Distinct from the GUI's GApplication id
+/// (`com.github.sachesi.leyen`), which registers its own session-bus name for
+/// single-instance — they must not collide.
+pub const BUS_NAME: &str = "com.github.sachesi.leyen.Daemon";
 pub const OBJECT_PATH: &str = "/com/github/sachesi/leyen";
 pub const INTERFACE: &str = "com.github.sachesi.leyen.Manager";
 
@@ -54,7 +56,7 @@ pub struct DepStatus {
 
 #[zbus::proxy(
     interface = "com.github.sachesi.leyen.Manager",
-    default_service = "com.github.sachesi.leyen",
+    default_service = "com.github.sachesi.leyen.Daemon",
     default_path = "/com/github/sachesi/leyen"
 )]
 pub trait Leyen {
@@ -73,6 +75,9 @@ pub trait Leyen {
     /// Pull the batch of log lines produced at or after `since_offset`.
     /// Returns `(next_offset, entries)`.
     fn get_logs(&self, since_offset: u64) -> zbus::Result<(u64, Vec<LogEntry>)>;
+
+    /// Clear the daemon's log ring buffer and on-disk log files.
+    fn clear_logs(&self) -> zbus::Result<()>;
 
     /// Persist a TOML-encoded library (the only library writer). The daemon
     /// preserves its authoritative playtime/last-run fields. Returns success.

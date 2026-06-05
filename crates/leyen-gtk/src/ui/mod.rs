@@ -7,7 +7,7 @@ pub mod running_games;
 pub mod settings;
 pub mod utils;
 
-use crate::t;
+use leyen_model::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -25,34 +25,9 @@ use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
 
-use std::sync::atomic::Ordering;
-
-use crate::runtime::umu::{UMU_DOWNLOADING, WINETRICKS_DOWNLOADING};
+use crate::daemon::{self, DaemonEvent};
 
 pub fn build_ui(app: &adw::Application) {
-    // TEMP DEBUG: main-thread stall detector. Fires every 200ms; if the GTK loop
-    // was blocked, the gap between firings exceeds 200ms and we log the exact
-    // blocked duration. The last DBG line before a STALL is the culprit.
-    {
-        let last_beat = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()));
-        let last_log = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()));
-        glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-            let now = std::time::Instant::now();
-            let gap = now.duration_since(last_beat.get()).as_millis();
-            last_beat.set(now);
-            if gap > 450 {
-                crate::dbg_trace!("STALL main thread blocked ~{}ms", gap);
-            }
-            // Always-on liveness tick so a freeze shows as a visible gap: when
-            // these stop, the main loop is dead — last line before the gap = cause.
-            if now.duration_since(last_log.get()).as_millis() >= 1000 {
-                last_log.set(now);
-                crate::dbg_trace!("heartbeat");
-            }
-            glib::ControlFlow::Continue
-        });
-    }
-
     let css = gtk4::CssProvider::new();
     css.load_from_string(&format!(
         "image.edit-icon {{ min-width: 0px; min-height: 0px; margin: 0px; padding: 0px; opacity: 0; }} \
@@ -248,36 +223,33 @@ pub fn build_ui(app: &adw::Application) {
 
     let download_banner = adw::Banner::builder()
         .title(t!("Downloading umu-launcher… Please wait before starting games."))
-        .revealed(
-            UMU_DOWNLOADING.load(Ordering::Relaxed)
-                || WINETRICKS_DOWNLOADING.load(Ordering::Relaxed),
-        )
+        .revealed(false)
         .build();
     toolbar_view.add_top_bar(&download_banner);
     toolbar_view.set_content(Some(&toast_overlay));
 
-    let banner_for_update = download_banner.clone();
-    glib::timeout_add_seconds_local(1, move || {
-        let umu_down = UMU_DOWNLOADING.load(Ordering::Relaxed);
-        let wt_down = WINETRICKS_DOWNLOADING.load(Ordering::Relaxed);
-        let any_down = umu_down || wt_down;
-
-        if any_down {
-            banner_for_update.set_revealed(true);
-            let title = if umu_down && wt_down {
-                t!("Downloading umu-launcher & winetricks… Please wait before starting games.")
-            } else if umu_down {
-                t!("Downloading umu-launcher… Please wait before starting games.")
-            } else {
-                t!("Downloading winetricks…")
-            };
-            banner_for_update.set_title(&title);
-            glib::ControlFlow::Continue
-        } else {
-            banner_for_update.set_revealed(false);
-            glib::ControlFlow::Break
-        }
-    });
+    // Runtime readiness drives the banner via `RuntimeStatus` signals plus an
+    // initial pull — no polling.
+    {
+        let banner = download_banner.clone();
+        glib::spawn_future_local(async move {
+            let status = daemon::get_runtime_status().await;
+            update_download_banner(&banner, status.umu_ready, status.winetricks_ready);
+        });
+        let banner = download_banner.clone();
+        let events = daemon::subscribe_events();
+        glib::spawn_future_local(async move {
+            while let Ok(evt) = events.recv().await {
+                if let DaemonEvent::RuntimeStatus {
+                    umu_ready,
+                    winetricks_ready,
+                } = evt
+                {
+                    update_download_banner(&banner, umu_ready, winetricks_ready);
+                }
+            }
+        });
+    }
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -394,69 +366,48 @@ pub fn build_ui(app: &adw::Application) {
     });
     window.add_action(&add_group_action);
 
-    let running_state_version = std::rc::Rc::new(std::cell::Cell::new(0u64));
-
-    // Event-driven refresh: launch/stop/own-exit publish a wake the instant
-    // running state changes, so the library reflects it in well under the 1s
-    // timer tick. The timer below remains for elapsed-time labels and as a
-    // safety fallback; both share `running_state_version` so a refresh handled
-    // here is not repeated there.
+    // Signal-driven refresh: SessionsChanged / LibraryChanged refresh the library
+    // the instant state changes — no polling, no version bookkeeping.
     {
-        let event_rx = crate::launch::subscribe_session_events();
+        let events = daemon::subscribe_events();
         let ui_event = ui.clone();
         let overlay_event = toast_overlay.clone();
         let window_event = window.clone();
-        let version_event = running_state_version.clone();
         glib::spawn_future_local(async move {
-            while event_rx.recv().await.is_ok() {
-                // Drain a burst (e.g. stop of several games) into one refresh.
-                let mut drained = 0; // TEMP DEBUG
-                while event_rx.try_recv().is_ok() { drained += 1; } // TEMP DEBUG
-                if !window_event.is_visible() {
-                    continue;
-                }
-                let current_version = crate::launch::running_games_version().await;
-                crate::dbg_trace!("event-refresh drained={} ver_cur={} ver_seen={}", drained, current_version, version_event.get()); // TEMP DEBUG
-                if current_version != version_event.get() {
-                    version_event.set(current_version);
-                    refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+            while let Ok(evt) = events.recv().await {
+                match evt {
+                    DaemonEvent::SessionsChanged(sessions) => {
+                        // Window hidden while a game ran (close-to-tray): once the
+                        // last game ends, close it so the app can exit.
+                        if !window_event.is_visible() {
+                            if sessions.is_empty() {
+                                window_event.close();
+                            }
+                            continue;
+                        }
+                        refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                    }
+                    DaemonEvent::LibraryChanged => {
+                        if window_event.is_visible() {
+                            refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                        }
+                    }
+                    _ => {}
                 }
             }
         });
     }
 
+    // Cosmetic 1s tick to advance running-duration labels while a game runs.
     let ui_refresh = ui.clone();
-    let overlay_refresh = toast_overlay.clone();
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
-        if crate::instance::check_and_clear_show_signal() {
-            window_refresh.set_visible(true);
-            window_refresh.present();
-        }
-
-        if !window_refresh.is_visible() && !crate::launch::is_any_game_running() {
-            window_refresh.close();
-            return glib::ControlFlow::Break;
-        }
-
-        if !window_refresh.is_visible() {
-            return glib::ControlFlow::Continue;
-        }
-
-        let ui_refresh = ui_refresh.clone();
-        let overlay_refresh = overlay_refresh.clone();
-        let window_refresh = window_refresh.clone();
-        let running_state_version = running_state_version.clone();
-
-        glib::spawn_future_local(async move {
-            let current_version = crate::launch::running_games_version().await;
-            if current_version != running_state_version.get() {
-                running_state_version.set(current_version);
-                refresh_library_view(&ui_refresh, &overlay_refresh, &window_refresh).await;
-            } else if current_version != 0 {
+        if window_refresh.is_visible() && daemon::is_any_game_running() {
+            let ui_refresh = ui_refresh.clone();
+            glib::spawn_future_local(async move {
                 update_running_duration_labels(&ui_refresh).await;
-            }
-        });
+            });
+        }
         glib::ControlFlow::Continue
     });
     let prefs_action = gio::SimpleAction::new("show-preferences", None);
@@ -538,7 +489,7 @@ pub fn build_ui(app: &adw::Application) {
     window.add_action(&search_toggle_action);
 
     window.connect_close_request(move |win| {
-        if crate::launch::is_any_game_running() {
+        if crate::daemon::is_any_game_running() {
             win.set_visible(false);
             glib::Propagation::Stop
         } else {
@@ -550,10 +501,20 @@ pub fn build_ui(app: &adw::Application) {
     app.set_accels_for_action("win.toggle-search", &["<Ctrl>F"]);
 
     window.present();
+}
 
-    if crate::cli::take_open_logs_on_start() {
-        glib::spawn_future_local(async move {
-            show_log_window(&window, None).await;
-        });
+/// Reveals/updates the runtime download banner from a `RuntimeStatus` reading.
+fn update_download_banner(banner: &adw::Banner, umu_ready: bool, winetricks_ready: bool) {
+    let revealed = !umu_ready || !winetricks_ready;
+    banner.set_revealed(revealed);
+    if revealed {
+        let title = if !umu_ready && !winetricks_ready {
+            t!("Downloading umu-launcher & winetricks… Please wait before starting games.")
+        } else if !umu_ready {
+            t!("Downloading umu-launcher… Please wait before starting games.")
+        } else {
+            t!("Downloading winetricks…")
+        };
+        banner.set_title(&title);
     }
 }

@@ -6,7 +6,7 @@
 //! game is running and no request has arrived recently.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,29 @@ use leyen_model::library::{find_game_by_leyen_id, flatten_games};
 /// exits. Activation restarts it on the next call.
 const IDLE_EXIT_SECONDS: u64 = 30;
 
+/// In-flight units of work: D-Bus method bodies, dependency jobs and detached
+/// engine tasks (deferred shared-container launches). The idle-exit requires
+/// zero — a 30s timer must never kill a winetricks install or a launch waiting
+/// for its container.
+static ACTIVE_WORK: AtomicU64 = AtomicU64::new(0);
+
+/// RAII work token gating the idle-exit. Created at the start of any unit of
+/// work, released on drop (panic-safe).
+struct ActivityGuard;
+
+impl ActivityGuard {
+    fn new() -> Self {
+        ACTIVE_WORK.fetch_add(1, Ordering::SeqCst);
+        ActivityGuard
+    }
+}
+
+impl Drop for ActivityGuard {
+    fn drop(&mut self) {
+        ACTIVE_WORK.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 type DepJobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 
 #[derive(Clone)]
@@ -28,6 +51,12 @@ struct Manager {
     conn: Arc<OnceLock<Connection>>,
     dep_jobs: DepJobs,
     last_activity: Arc<Mutex<Instant>>,
+    /// Bumped on every successful `SaveLibrary`; the optimistic-concurrency
+    /// token clients pass back as `base_version`. Session-scoped.
+    library_version: Arc<AtomicU64>,
+    /// Serializes `SaveLibrary` bodies so the version check, the write and the
+    /// version bump are atomic against concurrent saves.
+    save_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Manager {
@@ -79,48 +108,65 @@ async fn current_runtime_readiness() -> RuntimeReadiness {
 
 #[zbus::interface(name = "com.github.sachesi.leyen.Manager")]
 impl Manager {
-    async fn launch_game(&self, leyen_id: &str) -> bool {
+    async fn launch_game(&self, leyen_id: &str) -> Result<(), leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
         self.touch();
+        // Dependency jobs mutate prefixes (wineserver, registry); launching a
+        // game mid-install would corrupt both. `install_dep` refuses while a
+        // game runs — this is the same exclusion in the other direction.
+        if !self.dep_jobs.lock().map(|j| j.is_empty()).unwrap_or(true) {
+            return Err(leyen_ipc::Error::Failed(
+                "A dependency operation is in progress; try again when it finishes".to_string(),
+            ));
+        }
         let library = leyen_core::config::load_library().await.unwrap_or_default();
         let Some((game, _group)) = find_game_by_leyen_id(&library, leyen_id) else {
             log::error!("LaunchGame: no game for leyen_id '{leyen_id}'");
-            return false;
+            return Err(leyen_ipc::Error::Failed(format!(
+                "No game with id '{leyen_id}'"
+            )));
         };
         let game = game.clone();
         match leyen_core::launch::launch_game_headless(&game).await {
-            Ok(_) => true,
+            Ok(_) => Ok(()),
             Err(e) => {
                 log::error!(
                     target: &format!("game:{}", game.id),
                     "Launch of '{}' ({leyen_id}) failed: {e}",
                     game.title
                 );
-                false
+                Err(leyen_ipc::Error::Failed(e.to_string()))
             }
         }
     }
 
-    async fn stop_game(&self, leyen_id: &str) -> bool {
+    async fn stop_game(&self, leyen_id: &str) -> Result<bool, leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
         self.touch();
         let library = leyen_core::config::load_library().await.unwrap_or_default();
         let Some((game, _group)) = find_game_by_leyen_id(&library, leyen_id) else {
-            return false;
+            return Ok(false);
         };
         let game_id = game.id.clone();
-        leyen_core::launch::stop_game(&game_id).await.unwrap_or(false)
+        leyen_core::launch::stop_game(&game_id)
+            .await
+            .map_err(|e| leyen_ipc::Error::Failed(e.to_string()))
     }
 
     async fn get_running_games(&self) -> Vec<leyen_ipc::RunningGameSnapshot> {
+        let _work = ActivityGuard::new();
         self.touch();
         map_snapshots(leyen_core::launch::running_games_snapshot().await).await
     }
 
     async fn get_runtime_status(&self) -> RuntimeReadiness {
+        let _work = ActivityGuard::new();
         self.touch();
         current_runtime_readiness().await
     }
 
     async fn get_logs(&self, since_offset: u64) -> (u64, Vec<leyen_ipc::LogEntry>) {
+        let _work = ActivityGuard::new();
         self.touch();
         let (next, entries) = leyen_core::logging::get_logs_since(since_offset);
         let mapped = entries
@@ -135,6 +181,7 @@ impl Manager {
     }
 
     async fn clear_logs(&self) {
+        let _work = ActivityGuard::new();
         self.touch();
         leyen_core::logging::clear_log_buffer();
     }
@@ -142,29 +189,67 @@ impl Manager {
     async fn save_library(
         &self,
         toml_bytes: Vec<u8>,
+        base_version: u64,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
-    ) -> bool {
+    ) -> Result<u64, leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
         self.touch();
-        let Ok(text) = String::from_utf8(toml_bytes) else {
+        // Serialize saves: version check, write and bump must be atomic
+        // against a concurrent SaveLibrary.
+        let _save = self.save_lock.lock().await;
+        let current = self.library_version.load(Ordering::SeqCst);
+        if base_version != current {
+            return Err(leyen_ipc::Error::StaleLibraryVersion(format!(
+                "library version is {current}, the save was built against {base_version}; \
+                 reload and retry"
+            )));
+        }
+        let text = String::from_utf8(toml_bytes).map_err(|_| {
             warn!("SaveLibrary: payload is not valid UTF-8");
-            return false;
-        };
-        let items = match toml::from_str::<leyen_model::models::GamesConfig>(&text) {
-            Ok(config) => config.items,
-            Err(e) => {
+            leyen_ipc::Error::Failed("Library payload is not valid UTF-8".to_string())
+        })?;
+        let items = toml::from_str::<leyen_model::models::GamesConfig>(&text)
+            .map_err(|e| {
                 warn!("SaveLibrary: parse failed: {e}");
-                return false;
-            }
-        };
-        leyen_core::config::save_library_merged(items).await;
-        let _ = Manager::library_changed(&emitter).await;
-        true
+                leyen_ipc::Error::Failed(format!("Library payload failed to parse: {e}"))
+            })?
+            .items;
+        if !leyen_core::config::save_library_merged(items).await {
+            return Err(leyen_ipc::Error::Failed(
+                "Failed to persist the library".to_string(),
+            ));
+        }
+        let new_version = self.library_version.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = Manager::library_changed(&emitter, new_version).await;
+        Ok(new_version)
     }
 
-    async fn install_dep(&self, prefix: &str, dep_id: &str, proton_path: &str) -> String {
+    async fn get_library_version(&self) -> u64 {
+        let _work = ActivityGuard::new();
+        self.touch();
+        self.library_version.load(Ordering::SeqCst)
+    }
+
+    async fn reload_settings(&self) {
+        let _work = ActivityGuard::new();
+        self.touch();
+        let settings = leyen_core::config::load_settings().await;
+        leyen_core::logging::apply_log_settings(&settings);
+        info!("leyend: settings reloaded");
+    }
+
+    async fn install_dep(
+        &self,
+        prefix: &str,
+        dep_id: &str,
+        proton_path: &str,
+    ) -> Result<String, leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
         self.touch();
         if leyen_core::launch::is_any_game_running() {
-            return String::new();
+            return Err(leyen_ipc::Error::Failed(
+                "Cannot install dependencies while a game is running".to_string(),
+            ));
         }
         let job_id = uuid::Uuid::new_v4().to_string();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -172,21 +257,33 @@ impl Manager {
             jobs.insert(job_id.clone(), cancel.clone());
         }
         self.spawn_dep_job(job_id.clone(), prefix, dep_id, proton_path, cancel, true);
-        job_id
+        Ok(job_id)
     }
 
-    async fn uninstall_dep(&self, prefix: &str, dep_id: &str, proton_path: &str) -> String {
+    async fn uninstall_dep(
+        &self,
+        prefix: &str,
+        dep_id: &str,
+        proton_path: &str,
+    ) -> Result<String, leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
         self.touch();
+        if leyen_core::launch::is_any_game_running() {
+            return Err(leyen_ipc::Error::Failed(
+                "Cannot uninstall dependencies while a game is running".to_string(),
+            ));
+        }
         let job_id = uuid::Uuid::new_v4().to_string();
         let cancel = Arc::new(AtomicBool::new(false));
         if let Ok(mut jobs) = self.dep_jobs.lock() {
             jobs.insert(job_id.clone(), cancel.clone());
         }
         self.spawn_dep_job(job_id.clone(), prefix, dep_id, proton_path, cancel, false);
-        job_id
+        Ok(job_id)
     }
 
     async fn cancel_dep(&self, job_id: &str) -> bool {
+        let _work = ActivityGuard::new();
         self.touch();
         if let Ok(jobs) = self.dep_jobs.lock()
             && let Some(cancel) = jobs.get(job_id)
@@ -198,6 +295,7 @@ impl Manager {
     }
 
     async fn get_dep_status(&self, prefix: &str) -> leyen_ipc::DepStatus {
+        let _work = ActivityGuard::new();
         self.touch();
         let prefix = prefix.to_string();
         let installed = tokio::task::spawn_blocking(move || {
@@ -251,6 +349,7 @@ impl Manager {
     #[zbus(signal)]
     async fn library_changed(
         emitter: &zbus::object_server::SignalEmitter<'_>,
+        version: u64,
     ) -> zbus::Result<()>;
 }
 
@@ -273,6 +372,9 @@ impl Manager {
         let dep_id = dep_id.to_string();
         let proton_path = proton_path.to_string();
         let jobs = self.dep_jobs.clone();
+        // Hold a work token for the job's lifetime: a multi-minute winetricks
+        // install must keep the idle-exit at bay even with no game running.
+        let work = ActivityGuard::new();
 
         // Progress callback emits DepProgress. Called on the tokio runtime.
         let progress_ctx = Arc::new((conn.clone(), job_id.clone(), prefix.clone(), dep_id.clone()));
@@ -291,6 +393,7 @@ impl Manager {
         };
 
         tokio::spawn(async move {
+            let _work = work;
             let result = if install {
                 leyen_core::deps::install_dep(&dep_id, &prefix, &proton_path, cancel, on_progress)
                     .await
@@ -357,6 +460,8 @@ async fn main() -> anyhow::Result<()> {
         conn: Arc::new(OnceLock::new()),
         dep_jobs: Arc::new(Mutex::new(HashMap::new())),
         last_activity: Arc::new(Mutex::new(Instant::now())),
+        library_version: Arc::new(AtomicU64::new(1)),
+        save_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
     let conn_holder = manager.conn.clone();
     let last_activity = manager.last_activity.clone();
@@ -374,6 +479,10 @@ async fn main() -> anyhow::Result<()> {
     install_listeners(&connection);
     install_bus_name_probe(&connection).await;
 
+    // Detached engine tasks (deferred shared-container launches) hold a work
+    // token so the idle-exit cannot kill the daemon mid-launch.
+    leyen_core::launch::set_work_guard_source(|| Box::new(ActivityGuard::new()));
+
     // Crash recovery: re-adopt live scopes, then start the one monitor.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;
     leyen_core::launch::start_running_sessions_monitor();
@@ -383,11 +492,64 @@ async fn main() -> anyhow::Result<()> {
     leyen_core::runtime::umu::check_or_install_winetricks().await;
     spawn_runtime_status_watcher(connection.clone());
 
-    spawn_idle_exit(last_activity);
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    spawn_idle_exit(last_activity, shutdown.clone());
+    spawn_signal_handlers(shutdown.clone());
 
-    // Serve forever; idle-exit terminates the process.
-    std::future::pending::<()>().await;
+    // Serve until the idle-exit or a termination signal requests shutdown,
+    // then tear down gracefully.
+    shutdown.notified().await;
+    graceful_shutdown(&connection).await;
     Ok(())
+}
+
+/// Graceful teardown: release the bus name first — a client call from here on
+/// activates a fresh daemon instead of hitting a dying one — then drain
+/// in-flight work (bounded) and flush the log thread.
+async fn graceful_shutdown(connection: &Connection) {
+    if let Err(e) = connection.release_name(leyen_ipc::BUS_NAME).await {
+        warn!("leyend: failed to release bus name: {e}");
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ACTIVE_WORK.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let remaining = ACTIVE_WORK.load(Ordering::SeqCst);
+    if remaining > 0 {
+        warn!("leyend: exiting with {remaining} unit(s) of work still in flight");
+    }
+    // Last log line before the log thread is torn down — anything logged after
+    // `shutdown()` is dropped.
+    info!("leyend: shutdown complete");
+    leyen_core::logging::shutdown();
+}
+
+/// Requests shutdown on SIGTERM/SIGINT (systemd stop, session logout, Ctrl-C)
+/// so scopes keep running but logs are flushed and the bus name is released
+/// cleanly. Scopes survive the daemon; the next start re-adopts them.
+fn spawn_signal_handlers(shutdown: Arc<tokio::sync::Notify>) {
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("leyend: failed to install SIGTERM handler: {e}");
+                return;
+            }
+        };
+        let mut int = match signal(SignalKind::interrupt()) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("leyend: failed to install SIGINT handler: {e}");
+                return;
+            }
+        };
+        tokio::select! {
+            _ = term.recv() => info!("leyend: received SIGTERM, shutting down"),
+            _ = int.recv() => info!("leyend: received SIGINT, shutting down"),
+        }
+        shutdown.notify_one();
+    });
 }
 
 /// Gives the engine a session-bus name probe so it can wait for a shared
@@ -488,14 +650,18 @@ fn spawn_runtime_status_watcher(connection: Connection) {
     });
 }
 
-/// Exits the process when no game runs and no request has arrived for
-/// `IDLE_EXIT_SECONDS`. The daemon must outlive any running game (it owns output
-/// capture + playtime finalize), so `is_any_game_running` gates the timer.
-fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>) {
+/// Requests shutdown when no game runs, no work is in flight and no request
+/// has arrived for `IDLE_EXIT_SECONDS`. The daemon must outlive any running
+/// game (it owns output capture + playtime finalize), so `is_any_game_running`
+/// gates the timer; `ACTIVE_WORK` gates it for game-less work (dependency
+/// jobs, deferred launches, in-flight method calls).
+fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>, shutdown: Arc<tokio::sync::Notify>) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
-            if leyen_core::launch::is_any_game_running() {
+            if leyen_core::launch::is_any_game_running()
+                || ACTIVE_WORK.load(Ordering::SeqCst) > 0
+            {
                 continue;
             }
             let idle = last_activity
@@ -504,8 +670,8 @@ fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>) {
                 .unwrap_or_default();
             if idle >= Duration::from_secs(IDLE_EXIT_SECONDS) {
                 info!("leyend: idle for {}s, exiting", idle.as_secs());
-                leyen_core::logging::shutdown();
-                std::process::exit(0);
+                shutdown.notify_one();
+                return;
             }
         }
     });

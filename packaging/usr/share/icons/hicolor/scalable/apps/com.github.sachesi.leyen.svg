@@ -1,0 +1,68 @@
+<svg
+    width="128"
+    height="128"
+    viewBox="0 0 128 128"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+>
+  <title>Leyen — game launcher</title>
+  <desc>A game controller, HIG app icon style.</desc>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#62a0ea" />
+      <stop offset="100%" stop-color="#3584e4" />
+    </linearGradient>
+  </defs>
+
+  <!-- ===== Gamepad body, centered on (64,64) ===== -->
+  <!-- front profile (darker, ~4px) -->
+  <path
+        d="M46 36 H82
+           C95 36 103 43 106 55
+           L112 78
+           C114 89 108 96 99 95
+           C90 94 86 89 82 83
+           L78 77 H50 L46 83
+           C42 89 38 94 29 95
+           C20 96 14 89 16 78
+           L22 55
+           C25 43 33 36 46 36 Z"
+        fill="#1a5fb4"
+    />
+  <!-- top surface: curved → gradient -->
+  <path
+        d="M46 32 H82
+           C95 32 103 39 106 51
+           L112 74
+           C114 85 108 92 99 91
+           C90 90 86 85 82 79
+           L78 73 H50 L46 79
+           C42 85 38 90 29 91
+           C20 92 14 85 16 74
+           L22 51
+           C25 39 33 32 46 32 Z"
+        fill="url(#body)"
+    />
+
+  <!-- ===== Left analog stick (upper-left), white ===== -->
+  <circle cx="41" cy="48" r="8" fill="#1a5fb4" />
+  <circle cx="41" cy="48" r="5" fill="#deddda" />
+
+  <!-- ===== Right analog stick (lower-center), white ===== -->
+  <circle cx="74" cy="63" r="8" fill="#1a5fb4" />
+  <circle cx="74" cy="63" r="5" fill="#deddda" />
+
+  <!-- ===== D-pad (lower-left), flat white plus ===== -->
+  <g fill="#ffffff">
+    <rect x="51" y="57" width="5" height="13" rx="2.5" />
+    <rect x="47" y="61" width="13" height="5" rx="2.5" />
+  </g>
+
+  <!-- ===== ABXY buttons ===== -->
+  <g stroke="#15539c" stroke-width="1">
+    <circle cx="89" cy="41.5" r="3.5" fill="#f6d32d" />
+    <circle cx="96" cy="49" r="3.5" fill="#ed333b" />
+    <circle cx="89" cy="56" r="3.5" fill="#33d17a" />
+    <circle cx="81.5" cy="49" r="3.5" fill="#bcd9fb" />
+  </g>
+</svg>

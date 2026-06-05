@@ -216,12 +216,17 @@ pub fn get_logs_since(since_offset: u64) -> (u64, Vec<LogEntry>) {
         Some(guard) => guard,
         None => return (total, Vec::new()),
     };
-    let len = entries.len() as u64;
-    // Absolute index of the oldest retained entry.
-    let ring_start = total.saturating_sub(len);
-    let skip = since_offset.saturating_sub(ring_start).min(len) as usize;
+    let skip = batch_skip(total, entries.len() as u64, since_offset);
     let batch = entries.iter().skip(skip).cloned().collect();
     (total, batch)
+}
+
+/// How many retained ring entries to skip to serve everything at or after
+/// `since` offset. Entries older than the retained window (`total - len`) are
+/// already gone, so a far-behind client resyncs from the oldest retained line.
+fn batch_skip(total: u64, len: u64, since: u64) -> usize {
+    let ring_start = total.saturating_sub(len);
+    since.saturating_sub(ring_start).min(len) as usize
 }
 
 pub fn clear_log_buffer() {
@@ -250,5 +255,25 @@ pub fn shutdown() {
         && let Some(handle) = thread.take()
     {
         let _ = handle.join();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::batch_skip;
+
+    #[test]
+    fn batch_skip_offset_math() {
+        // total=100, 1000-cap not hit so len=100, ring covers offsets [0,100).
+        assert_eq!(batch_skip(100, 100, 0), 0); // from the start → skip none
+        assert_eq!(batch_skip(100, 100, 60), 60); // caught up to 60 → skip 60
+        assert_eq!(batch_skip(100, 100, 100), 100); // already current → empty batch
+        assert_eq!(batch_skip(100, 100, 200), 100); // ahead (shouldn't happen) → empty
+
+        // Ring rotated: 5000 produced, only last 1000 retained → ring_start=4000.
+        assert_eq!(batch_skip(5000, 1000, 4000), 0); // oldest retained
+        assert_eq!(batch_skip(5000, 1000, 4500), 500);
+        assert_eq!(batch_skip(5000, 1000, 100), 0); // far behind → resync from oldest
+        assert_eq!(batch_skip(5000, 1000, 5000), 1000); // current → empty
     }
 }

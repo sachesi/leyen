@@ -173,38 +173,48 @@ pub async fn save_library(items: Vec<LibraryItem>) {
 pub async fn save_library_merged(incoming: Vec<LibraryItem>) {
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|current| {
-            // Snapshot authoritative fields from the freshly-read on-disk copy.
-            let authoritative: HashMap<String, (u64, u64, u64, String)> = flatten_games(current)
-                .into_iter()
-                .map(|g| {
-                    (
-                        g.id,
-                        (
-                            g.playtime_seconds,
-                            g.last_played_epoch_seconds,
-                            g.last_run_duration_seconds,
-                            g.last_run_status,
-                        ),
-                    )
-                })
-                .collect();
-
-            let mut merged = incoming;
-            for item in &mut merged {
-                match item {
-                    LibraryItem::Game(game) => apply_authoritative(game, &authoritative),
-                    LibraryItem::Group(group) => {
-                        for game in &mut group.games {
-                            apply_authoritative(game, &authoritative);
-                        }
-                    }
-                }
-            }
-            *current = merged;
+            *current = merge_authoritative_fields(incoming, current);
         });
     })
     .await
     .ok();
+}
+
+/// Overlays the daemon-authoritative per-game fields (playtime + last-run) from
+/// `current` (the freshly-read on-disk library) onto a client-submitted
+/// `incoming` library, matched by `game.id`. New games keep client values;
+/// deleted games are dropped. This is what makes `SaveLibrary` race-free against
+/// the daemon's own playtime accounting.
+fn merge_authoritative_fields(
+    mut incoming: Vec<LibraryItem>,
+    current: &[LibraryItem],
+) -> Vec<LibraryItem> {
+    let authoritative: HashMap<String, (u64, u64, u64, String)> = flatten_games(current)
+        .into_iter()
+        .map(|g| {
+            (
+                g.id,
+                (
+                    g.playtime_seconds,
+                    g.last_played_epoch_seconds,
+                    g.last_run_duration_seconds,
+                    g.last_run_status,
+                ),
+            )
+        })
+        .collect();
+
+    for item in &mut incoming {
+        match item {
+            LibraryItem::Game(game) => apply_authoritative(game, &authoritative),
+            LibraryItem::Group(group) => {
+                for game in &mut group.games {
+                    apply_authoritative(game, &authoritative);
+                }
+            }
+        }
+    }
+    incoming
 }
 
 fn apply_authoritative(
@@ -218,6 +228,44 @@ fn apply_authoritative(
         game.last_played_epoch_seconds = *last_played;
         game.last_run_duration_seconds = *last_run_duration;
         game.last_run_status = last_run_status.clone();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use leyen_model::models::Game;
+
+    fn game(id: &str, playtime: u64) -> Game {
+        Game {
+            id: id.to_string(),
+            playtime_seconds: playtime,
+            ..Game::default()
+        }
+    }
+
+    #[test]
+    fn save_library_preserves_authoritative_playtime() {
+        // On disk the daemon recorded 500s of playtime for g1.
+        let current = vec![LibraryItem::Game(game("g1", 500))];
+        // The client submits an edit built from a stale read (playtime 0) plus a
+        // brand-new game g2.
+        let mut edited = game("g1", 0);
+        edited.title = "Renamed".to_string();
+        let incoming = vec![
+            LibraryItem::Game(edited),
+            LibraryItem::Game(game("g2", 0)),
+        ];
+
+        let merged = merge_authoritative_fields(incoming, &current);
+        let games = flatten_games(&merged);
+
+        let g1 = games.iter().find(|g| g.id == "g1").unwrap();
+        // Authoritative playtime preserved; client's structural edit (title) kept.
+        assert_eq!(g1.playtime_seconds, 500);
+        assert_eq!(g1.title, "Renamed");
+        // New game keeps its client values.
+        assert_eq!(games.iter().find(|g| g.id == "g2").unwrap().playtime_seconds, 0);
     }
 }
 

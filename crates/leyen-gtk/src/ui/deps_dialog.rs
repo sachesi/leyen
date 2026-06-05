@@ -508,6 +508,7 @@ pub async fn open_dependencies_page(
                         current_job_for_op,
                         on_progress,
                         on_finish,
+                        page2.clone().upcast::<gtk4::Widget>(),
                     );
                 });
             }
@@ -617,6 +618,7 @@ pub async fn open_dependencies_page(
                         current_job_for_op,
                         on_progress,
                         on_finish,
+                        page2.clone().upcast::<gtk4::Widget>(),
                     );
                 });
             }
@@ -785,6 +787,7 @@ pub async fn open_dependencies_page(
                                     Rc::new(RefCell::new(None)),
                                     on_progress,
                                     on_finish,
+                                    page3.clone().upcast::<gtk4::Widget>(),
                                 );
                             }
                         });
@@ -845,23 +848,29 @@ fn start_dep_job(
     current_job: Rc<RefCell<Option<String>>>,
     on_progress: impl Fn(usize, usize, String) + 'static,
     on_finish: impl FnOnce(bool, Option<String>) + 'static,
+    page_widget: gtk4::Widget,
 ) {
     glib::spawn_future_local(async move {
         // Subscribe before starting so no early progress is missed.
         let events = daemon::subscribe_events();
-        let job_id = if install {
+        let job_id = match if install {
             daemon::install_dep(&prefix, dep_id, &proton).await
         } else {
             daemon::uninstall_dep(&prefix, dep_id, &proton).await
+        } {
+            Ok(job_id) => job_id,
+            Err(reason) => {
+                on_finish(false, Some(reason));
+                return;
+            }
         };
-        if job_id.is_empty() {
-            on_finish(false, Some(t!("Could not start the operation.")));
-            return;
-        }
         *current_job.borrow_mut() = Some(job_id.clone());
 
         let mut on_finish = Some(on_finish);
         while let Ok(evt) = events.recv().await {
+            if !page_widget.is_mapped() {
+                break;
+            }
             match evt {
                 DaemonEvent::DepProgress { job_id: j, msg, .. } if j == job_id => {
                     on_progress(0, 0, msg);

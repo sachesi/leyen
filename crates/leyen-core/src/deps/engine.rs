@@ -1,5 +1,4 @@
-use crate::t;
-use libadwaita as adw;
+use leyen_model::t;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
@@ -10,7 +9,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use futures::future::join_all;
-use gtk4::glib;
 use log::{error, info, warn};
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -21,10 +19,11 @@ use crate::runtime::umu::{
     get_umu_run_path, get_winetricks_path, is_umu_run_available, is_winetricks_available,
 };
 
-use super::catalog::{DepProfile, get_dep_profile, get_dep_steps};
-use super::{
-    InstalledDependency, find_installed_dependents, get_deps_cache_dir, read_prefix_dep_state,
-    remove_installed_dep, upsert_installed_dep,
+use super::recipes::get_dep_steps;
+use super::state::{remove_installed_dep, upsert_installed_dep};
+use leyen_model::deps::{
+    DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile,
+    get_deps_cache_dir, read_prefix_dep_state,
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
@@ -498,15 +497,17 @@ fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton
     cmd.env("WINEDEBUG", "fixme-all");
 }
 
-pub fn install_dep_async(
+/// Installs a dependency (and its prerequisites) into a prefix. Runtime-agnostic:
+/// progress is reported via `on_progress`; the terminal outcome is the `Result`
+/// (`Ok(Some(note))`/`Ok(None)` on success, `Err(message)` on failure). The
+/// daemon spawns this and maps it onto `DepProgress`/`DepFinished` signals.
+pub async fn install_dep(
     dep_id: &str,
     prefix_path: &str,
     proton_path: &str,
-    overlay: &adw::ToastOverlay,
     cancel: Arc<AtomicBool>,
-    on_progress: impl Fn(usize, usize, String) + 'static,
-    on_finish: impl FnOnce(bool, Option<String>) + 'static,
-) {
+    on_progress: impl Fn(usize, usize, String) + Send + 'static,
+) -> Result<Option<String>, String> {
     let profile = get_dep_profile(dep_id);
     let needs_winetricks = profile
         .map(|p| {
@@ -520,416 +521,356 @@ pub fn install_dep_async(
     let prefix_path = prefix_path.to_string();
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
-    let overlay = overlay.clone();
 
-    glib::spawn_future_local(async move {
-        let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
-            on_finish(
-                false,
-                Some(t!("Another dependency operation is already running for this prefix.")),
-            );
-            return;
-        };
+    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+        return Err(t!(
+            "Another dependency operation is already running for this prefix."
+        ));
+    };
 
-        // Preflight: the dependency cache must be writable for downloads.
-        let cache_check = cache_dir.clone();
-        if let Err(message) = tokio::task::spawn_blocking(move || fs::create_dir_all(&cache_check))
-            .await
-            .map_err(join_err)
-            .and_then(|r| {
-                r.map_err(|e| {
-                    t!("Cannot write to the dependency cache directory: {}")
-                        .replacen("{}", &e.to_string(), 1)
-                })
+    // Preflight: the dependency cache must be writable for downloads.
+    let cache_check = cache_dir.clone();
+    tokio::task::spawn_blocking(move || fs::create_dir_all(&cache_check))
+        .await
+        .map_err(join_err)
+        .and_then(|r| {
+            r.map_err(|e| {
+                t!("Cannot write to the dependency cache directory: {}")
+                    .replacen("{}", &e.to_string(), 1)
             })
-        {
-            on_finish(false, Some(message));
-            return;
-        }
+        })?;
 
-        if let Err(message) = ensure_umu_ready(&overlay, needs_winetricks).await {
-            on_finish(false, Some(message));
-            return;
-        }
-        let prefix_path_for_state = prefix_path.clone();
-        let state =
-            tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
-                .await
-                .unwrap_or_default();
+    ensure_umu_ready(needs_winetricks, &on_progress).await?;
 
-        let install_plan = match build_install_plan(&dep_id, &state) {
-            Ok(plan) if !plan.is_empty() => plan,
-            Ok(_) => {
-                on_finish(true, Some(t!("Dependency is already installed.")));
-                return;
-            }
-            Err(message) => {
-                on_finish(false, Some(message));
-                return;
-            }
-        };
+    let prefix_path_for_state = prefix_path.clone();
+    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
+        .await
+        .unwrap_or_default();
 
-        let total_steps = install_plan
-            .iter()
-            .map(|profile| get_dep_steps(profile.id).len())
-            .sum::<usize>();
-        if total_steps == 0 {
-            let message = format!("No install steps defined for '{}'", dep_id);
-            on_finish(false, Some(message));
-            return;
-        }
+    let install_plan = match build_install_plan(&dep_id, &state) {
+        Ok(plan) if !plan.is_empty() => plan,
+        Ok(_) => return Ok(Some(t!("Dependency is already installed."))),
+        Err(message) => return Err(message),
+    };
 
-        info!(
-            "[dep:{}] starting install plan ({} profiles, {} steps)",
-            dep_id,
-            install_plan.len(),
-            total_steps
-        );
+    let total_steps = install_plan
+        .iter()
+        .map(|profile| get_dep_steps(profile.id).len())
+        .sum::<usize>();
+    if total_steps == 0 {
+        return Err(format!("No install steps defined for '{}'", dep_id));
+    }
 
-        let mut completed_steps = 0usize;
-        for profile in &install_plan {
-            let steps = get_dep_steps(profile.id);
-            let mut recorded = StepChanges::default();
+    info!(
+        "[dep:{}] starting install plan ({} profiles, {} steps)",
+        dep_id,
+        install_plan.len(),
+        total_steps
+    );
 
-            // Parallelize independent downloads
-            let download_steps: Vec<&DepStep> = steps.iter().filter(|s| matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
-            let execution_steps: Vec<&DepStep> = steps.iter().filter(|s| !matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
+    let mut completed_steps = 0usize;
+    for profile in &install_plan {
+        let steps = get_dep_steps(profile.id);
+        let mut recorded = StepChanges::default();
 
-            if !download_steps.is_empty() {
-                let description = "Downloading files…";
-                info!("[dep:{}] {} {}/{}", profile.id, description, completed_steps + 1, total_steps);
-                on_progress(completed_steps + 1, total_steps, description.to_string());
+        // Parallelize independent downloads
+        let download_steps: Vec<&DepStep> = steps.iter().filter(|s| matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
+        let execution_steps: Vec<&DepStep> = steps.iter().filter(|s| !matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
 
-                let futures: Vec<_> = download_steps.iter().map(|step| {
-                    execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel)
-                }).collect();
+        if !download_steps.is_empty() {
+            let description = "Downloading files…";
+            info!("[dep:{}] {} {}/{}", profile.id, description, completed_steps + 1, total_steps);
+            on_progress(completed_steps + 1, total_steps, description.to_string());
 
-                let results = join_all(futures).await;
-                for result in results {
-                    match result {
-                        Ok(changes) => recorded.merge(changes),
-                        Err(error) => {
-                            error!("[dep:{}] download failed: {}", profile.id, error);
-                            on_finish(false, Some(error));
-                            return;
-                        }
-                    }
-                }
-                completed_steps += download_steps.len();
-            }
+            let futures: Vec<_> = download_steps.iter().map(|step| {
+                execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel)
+            }).collect();
 
-            // Snapshot the prefix once before the file-creating steps; all new
-            // or changed files are attributed to this profile after they run.
-            // This is cheaper than per-step scans and more robust.
-            let snapshot_before = {
-                let p = prefix_path.clone();
-                match tokio::task::spawn_blocking(move || snapshot_prefix(&p))
-                    .await
-                    .map_err(join_err)
-                    .and_then(|r| r)
-                {
-                    Ok(s) => s,
-                    Err(error) => {
-                        on_finish(false, Some(error));
-                        return;
-                    }
-                }
-            };
-
-            let mut step_error: Option<String> = None;
-            for step in &execution_steps {
-                if cancel.load(Ordering::Relaxed) {
-                    step_error = Some(t!("Cancelled."));
-                    break;
-                }
-                completed_steps += 1;
-                let description = if install_plan.len() > 1 {
-                    format!("{}: {}", profile.name, step.description)
-                } else {
-                    step.description.to_string()
-                };
-
-                info!(
-                    "[dep:{}] step {}/{}: {}",
-                    profile.id, completed_steps, total_steps, description
-                );
-                on_progress(completed_steps, total_steps, description);
-
-                match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel).await {
+            let results = join_all(futures).await;
+            for result in results {
+                match result {
                     Ok(changes) => recorded.merge(changes),
                     Err(error) => {
-                        error!("[dep:{}] install failed: {}", profile.id, error);
-                        step_error = Some(error);
-                        break;
+                        error!("[dep:{}] download failed: {}", profile.id, error);
+                        return Err(error);
                     }
                 }
             }
+            completed_steps += download_steps.len();
+        }
 
-            // Diff once after the steps so we know what this attempt created.
-            {
-                let p = prefix_path.clone();
-                if let Ok(after) = tokio::task::spawn_blocking(move || snapshot_prefix(&p))
-                    .await
-                    .map_err(join_err)
-                    .and_then(|r| r)
-                {
-                    recorded.merge(diff_snapshots(&snapshot_before, &after));
-                }
+        // Snapshot the prefix once before the file-creating steps; all new
+        // or changed files are attributed to this profile after they run.
+        // This is cheaper than per-step scans and more robust.
+        let snapshot_before = {
+            let p = prefix_path.clone();
+            tokio::task::spawn_blocking(move || snapshot_prefix(&p))
+                .await
+                .map_err(join_err)
+                .and_then(|r| r)?
+        };
+
+        let mut step_error: Option<String> = None;
+        for step in &execution_steps {
+            if cancel.load(Ordering::Relaxed) {
+                step_error = Some(t!("Cancelled."));
+                break;
             }
+            completed_steps += 1;
+            let description = if install_plan.len() > 1 {
+                format!("{}: {}", profile.name, step.description)
+            } else {
+                step.description.to_string()
+            };
 
-            // On cancel or a failed step, do NOT mark the dependency installed.
-            // Best-effort remove the files this attempt created so the prefix is
-            // left clean and the entry stays in the available list.
-            if let Some(error) = step_error {
-                let cleanup_files = recorded.created_files.clone();
-                if !cleanup_files.is_empty() {
-                    let cleanup_prefix = prefix_path.clone();
-                    info!(
-                        "[dep:{}] rolling back {} files from the cancelled/failed attempt",
-                        profile.id,
-                        cleanup_files.len()
-                    );
-                    if let Err(cleanup_err) = tokio::task::spawn_blocking(move || {
-                        remove_created_files(&cleanup_prefix, &cleanup_files)
-                    })
-                    .await
-                    .map_err(join_err)
-                    .and_then(|r| r) {
-                        warn!("[dep:{}] cleanup failed during rollback: {}", profile.id, cleanup_err);
-                    }
-                }
-                on_finish(false, Some(error));
-                return;
-            }
+            info!(
+                "[dep:{}] step {}/{}: {}",
+                profile.id, completed_steps, total_steps, description
+            );
+            on_progress(completed_steps, total_steps, description);
 
-            {
-                let upsert_prefix = prefix_path.clone();
-                let upsert_id = profile.id.to_string();
-                let upsert_deps: Vec<String> = profile.dependencies.iter().map(|d| d.to_string()).collect();
-                let upsert_record = recorded.into_dependency_record();
-                if let Err(error) = tokio::task::spawn_blocking(move || {
-                    let upsert_deps_refs: Vec<&str> = upsert_deps.iter().map(|d| d.as_str()).collect();
-                    upsert_installed_dep(&upsert_prefix, &upsert_id, &upsert_deps_refs, &upsert_record)
-                }).await.map_err(join_err).and_then(|r| r) {
-                    on_finish(false, Some(error));
-                    return;
-                }
-            }
-
-            for provided_id in profile.provides {
-                let stub_prefix = prefix_path.clone();
-                let stub_id = provided_id.to_string();
-                let stub = InstalledDependency::default();
-                let deps: Vec<&str> = Vec::new();
-                if let Err(error) = tokio::task::spawn_blocking(move || {
-                    upsert_installed_dep(&stub_prefix, &stub_id, &deps, &stub)
-                }).await.map_err(join_err).and_then(|r| r) {
-                    warn!("[dep:{}] failed to create stub for '{}': {}", profile.id, provided_id, error);
+            match execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel).await {
+                Ok(changes) => recorded.merge(changes),
+                Err(error) => {
+                    error!("[dep:{}] install failed: {}", profile.id, error);
+                    step_error = Some(error);
+                    break;
                 }
             }
         }
 
-        let note = if install_plan.len() > 1 {
-            let prerequisites = install_plan
-                .iter()
-                .map(|profile| profile.id)
-                .filter(|profile_id| *profile_id != dep_id)
-                .collect::<Vec<_>>();
-            if prerequisites.is_empty() {
-                None
-            } else {
-                Some(
-                    t!("Installed prerequisites: {}.")
-                        .replacen("{}", &prerequisites.join(", "), 1),
-                )
+        // Diff once after the steps so we know what this attempt created.
+        {
+            let p = prefix_path.clone();
+            if let Ok(after) = tokio::task::spawn_blocking(move || snapshot_prefix(&p))
+                .await
+                .map_err(join_err)
+                .and_then(|r| r)
+            {
+                recorded.merge(diff_snapshots(&snapshot_before, &after));
             }
-        } else {
-            None
-        };
+        }
 
-        info!("[dep:{}] install complete", dep_id);
-        on_finish(true, note);
-    });
+        // On cancel or a failed step, do NOT mark the dependency installed.
+        // Best-effort remove the files this attempt created so the prefix is
+        // left clean and the entry stays in the available list.
+        if let Some(error) = step_error {
+            let cleanup_files = recorded.created_files.clone();
+            if !cleanup_files.is_empty() {
+                let cleanup_prefix = prefix_path.clone();
+                info!(
+                    "[dep:{}] rolling back {} files from the cancelled/failed attempt",
+                    profile.id,
+                    cleanup_files.len()
+                );
+                if let Err(cleanup_err) = tokio::task::spawn_blocking(move || {
+                    remove_created_files(&cleanup_prefix, &cleanup_files)
+                })
+                .await
+                .map_err(join_err)
+                .and_then(|r| r) {
+                    warn!("[dep:{}] cleanup failed during rollback: {}", profile.id, cleanup_err);
+                }
+            }
+            return Err(error);
+        }
+
+        {
+            let upsert_prefix = prefix_path.clone();
+            let upsert_id = profile.id.to_string();
+            let upsert_deps: Vec<String> = profile.dependencies.iter().map(|d| d.to_string()).collect();
+            let upsert_record = recorded.into_dependency_record();
+            tokio::task::spawn_blocking(move || {
+                let upsert_deps_refs: Vec<&str> = upsert_deps.iter().map(|d| d.as_str()).collect();
+                upsert_installed_dep(&upsert_prefix, &upsert_id, &upsert_deps_refs, &upsert_record)
+            }).await.map_err(join_err).and_then(|r| r)?;
+        }
+
+        for provided_id in profile.provides {
+            let stub_prefix = prefix_path.clone();
+            let stub_id = provided_id.to_string();
+            let stub = InstalledDependency::default();
+            let deps: Vec<&str> = Vec::new();
+            if let Err(error) = tokio::task::spawn_blocking(move || {
+                upsert_installed_dep(&stub_prefix, &stub_id, &deps, &stub)
+            }).await.map_err(join_err).and_then(|r| r) {
+                warn!("[dep:{}] failed to create stub for '{}': {}", profile.id, provided_id, error);
+            }
+        }
+    }
+
+    let note = if install_plan.len() > 1 {
+        let prerequisites = install_plan
+            .iter()
+            .map(|profile| profile.id)
+            .filter(|profile_id| *profile_id != dep_id)
+            .collect::<Vec<_>>();
+        if prerequisites.is_empty() {
+            None
+        } else {
+            Some(
+                t!("Installed prerequisites: {}.")
+                    .replacen("{}", &prerequisites.join(", "), 1),
+            )
+        }
+    } else {
+        None
+    };
+
+    info!("[dep:{}] install complete", dep_id);
+    Ok(note)
 }
 
-pub fn uninstall_dep_async(
+/// Removes a tracked dependency from a prefix. Runtime-agnostic: progress via
+/// `on_progress`, terminal outcome via the `Result`.
+pub async fn uninstall_dep(
     dep_id: &str,
     prefix_path: &str,
     proton_path: &str,
-    overlay: &adw::ToastOverlay,
-    on_progress: impl Fn(usize, usize, String) + 'static,
-    on_finish: impl FnOnce(bool, Option<String>) + 'static,
-) {
+    on_progress: impl Fn(usize, usize, String) + Send + 'static,
+) -> Result<Option<String>, String> {
     let dep_id = dep_id.to_string();
     let prefix_path = prefix_path.to_string();
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
-    let overlay = overlay.clone();
 
-    glib::spawn_future_local(async move {
-        let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
-            on_finish(
-                false,
-                Some(t!("Another dependency operation is already running for this prefix.")),
-            );
-            return;
-        };
-        let prefix_path_for_state = prefix_path.clone();
-        let state =
-            tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
-                .await
-                .unwrap_or_default();
+    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+        return Err(t!(
+            "Another dependency operation is already running for this prefix."
+        ));
+    };
+    let prefix_path_for_state = prefix_path.clone();
+    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
+        .await
+        .unwrap_or_default();
 
-        let installed = match state.installed.get(&dep_id).cloned() {
-            Some(installed) => installed,
-            None => {
-                on_finish(true, Some(t!("Dependency is no longer tracked.")));
-                return;
-            }
-        };
-        let dependents = find_installed_dependents(&state, &dep_id);
-        if !dependents.is_empty() {
-            on_finish(
-                false,
-                Some(
-                    t!("Cannot remove '{}': still required by {}.")
-                        .replacen("{}", &dep_id, 1)
-                        .replacen("{}", &dependents.join(", "), 1),
-                ),
-            );
-            return;
-        }
+    let installed = match state.installed.get(&dep_id).cloned() {
+        Some(installed) => installed,
+        None => return Ok(Some(t!("Dependency is no longer tracked."))),
+    };
+    let dependents = find_installed_dependents(&state, &dep_id);
+    if !dependents.is_empty() {
+        return Err(t!("Cannot remove '{}': still required by {}.")
+            .replacen("{}", &dep_id, 1)
+            .replacen("{}", &dependents.join(", "), 1));
+    }
 
-        let actions = build_cleanup_actions(&installed);
+    let actions = build_cleanup_actions(&installed);
 
-        // Detect winetricks-based deps and uninstall their registry markers first
-        // so reinstall doesn't fail with "already installed"
-        let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id).iter()
-            .filter_map(|step| match &step.action {
-                DepStepAction::RunWinetricks { verb } => Some(verb.clone()),
-                _ => None,
-            })
-            .collect();
+    // Detect winetricks-based deps and uninstall their registry markers first
+    // so reinstall doesn't fail with "already installed"
+    let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id).iter()
+        .filter_map(|step| match &step.action {
+            DepStepAction::RunWinetricks { verb } => Some(verb.clone()),
+            _ => None,
+        })
+        .collect();
 
-        let requires_umu = actions.iter().any(|(_, action)| {
-            matches!(
-                action,
-                CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
-            )
-        });
-        let needs_umu = requires_umu || !winetricks_verbs.is_empty();
-        if needs_umu
-            && let Err(message) = ensure_umu_ready(&overlay, false).await {
-                on_finish(false, Some(message));
-                return;
-            }
-
-        // Async winetricks uninstall before sync cleanup loop
-        for verb in &winetricks_verbs {
-            on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
-            let prefix_path = prefix_path.clone();
-            let proton_path = proton_path.clone();
-            let verb = verb.clone();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let result: Result<(), String> = {
-                let mut cmd = AsyncCommand::new(get_umu_run_path());
-                configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
-                cmd.args([get_winetricks_path().as_str(), "--uninstall", &verb]);
-                run_umu_command(cmd, format!("winetricks --uninstall {}", verb), cancel.clone()).await.map(|_| ())
-            };
-            if let Err(e) = result {
-                warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
-            }
-        }
-
-        info!(
-            "[dep:{}] starting removal ({} cleanup actions)",
-            dep_id,
-            actions.len()
-        );
-
-        let total_actions = actions.len();
-        for (index, (description, action)) in actions.into_iter().enumerate() {
-            on_progress(index + 1, total_actions, description.clone());
-
-            let prefix_path = prefix_path.clone();
-            let proton_path = proton_path.clone();
-            let cache_dir = cache_dir.clone();
-
-            let result = tokio::task::spawn_blocking(move || match action {
-                CleanupAction::RemoveDllOverrides(dlls) => {
-                    remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
-                }
-                CleanupAction::UnregisterDlls(dlls) => {
-                    unregister_dlls(&prefix_path, &proton_path, &dlls)
-                }
-                CleanupAction::RemoveCreatedFiles(files) => {
-                    remove_created_files(&prefix_path, &files)
-                }
-            })
-            .await
-            .map_err(join_err)
-            .and_then(|r| r);
-
-            if let Err(error) = result {
-                error!("[dep:{}] removal failed: {}", dep_id, error);
-                on_finish(false, Some(error));
-                return;
-            }
-        }
-
-        if let Some(profile) = get_dep_profile(&dep_id) {
-            for provided_id in profile.provides {
-                if let Some(entry) = state.installed.get(*provided_id)
-                    && !entry.has_removable_changes() && !entry.touched_existing_files {
-                        let remove_prefix = prefix_path.clone();
-                        let remove_id = provided_id.to_string();
-                        if let Err(error) = tokio::task::spawn_blocking(move || {
-                            remove_installed_dep(&remove_prefix, &remove_id)
-                        }).await.map_err(join_err).and_then(|r| r) {
-                            warn!("[dep:{}] failed to remove stub for '{}': {}", dep_id, provided_id, error);
-                        }
-                    }
-            }
-        }
-
-        {
-            let remove_prefix = prefix_path.clone();
-            let remove_id = dep_id.clone();
-            if let Err(error) = tokio::task::spawn_blocking(move || {
-                remove_installed_dep(&remove_prefix, &remove_id)
-            }).await.map_err(join_err).and_then(|r| r) {
-                on_finish(false, Some(error));
-                return;
-            }
-        }
-
-        let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
-            (true, true) => Some(t!(
-                "Some existing prefix files were changed during installation and were not reverted."
-            )),
-            (false, true) => Some(t!(
-                "Removed from tracking. Existing prefix files changed during installation were not reverted."
-            )),
-            (false, false) => Some(t!("Removed from tracking.")),
-            (true, false) => None,
-        };
-
-        info!("[dep:{}] removal complete", dep_id);
-        on_finish(true, note);
+    let requires_umu = actions.iter().any(|(_, action)| {
+        matches!(
+            action,
+            CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
+        )
     });
+    let needs_umu = requires_umu || !winetricks_verbs.is_empty();
+    if needs_umu {
+        ensure_umu_ready(false, &on_progress).await?;
+    }
+
+    // Async winetricks uninstall before sync cleanup loop
+    for verb in &winetricks_verbs {
+        on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
+        let prefix_path = prefix_path.clone();
+        let proton_path = proton_path.clone();
+        let verb = verb.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let result: Result<(), String> = {
+            let mut cmd = AsyncCommand::new(get_umu_run_path());
+            configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
+            cmd.args([get_winetricks_path().as_str(), "--uninstall", &verb]);
+            run_umu_command(cmd, format!("winetricks --uninstall {}", verb), cancel.clone()).await.map(|_| ())
+        };
+        if let Err(e) = result {
+            warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
+        }
+    }
+
+    info!(
+        "[dep:{}] starting removal ({} cleanup actions)",
+        dep_id,
+        actions.len()
+    );
+
+    let total_actions = actions.len();
+    for (index, (description, action)) in actions.into_iter().enumerate() {
+        on_progress(index + 1, total_actions, description.clone());
+
+        let prefix_path = prefix_path.clone();
+        let proton_path = proton_path.clone();
+        let cache_dir = cache_dir.clone();
+
+        tokio::task::spawn_blocking(move || match action {
+            CleanupAction::RemoveDllOverrides(dlls) => {
+                remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
+            }
+            CleanupAction::UnregisterDlls(dlls) => {
+                unregister_dlls(&prefix_path, &proton_path, &dlls)
+            }
+            CleanupAction::RemoveCreatedFiles(files) => {
+                remove_created_files(&prefix_path, &files)
+            }
+        })
+        .await
+        .map_err(join_err)
+        .and_then(|r| r)
+        .inspect_err(|error| error!("[dep:{}] removal failed: {}", dep_id, error))?;
+    }
+
+    if let Some(profile) = get_dep_profile(&dep_id) {
+        for provided_id in profile.provides {
+            if let Some(entry) = state.installed.get(*provided_id)
+                && !entry.has_removable_changes() && !entry.touched_existing_files {
+                    let remove_prefix = prefix_path.clone();
+                    let remove_id = provided_id.to_string();
+                    if let Err(error) = tokio::task::spawn_blocking(move || {
+                        remove_installed_dep(&remove_prefix, &remove_id)
+                    }).await.map_err(join_err).and_then(|r| r) {
+                        warn!("[dep:{}] failed to remove stub for '{}': {}", dep_id, provided_id, error);
+                    }
+                }
+        }
+    }
+
+    {
+        let remove_prefix = prefix_path.clone();
+        let remove_id = dep_id.clone();
+        tokio::task::spawn_blocking(move || {
+            remove_installed_dep(&remove_prefix, &remove_id)
+        }).await.map_err(join_err).and_then(|r| r)?;
+    }
+
+    let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
+        (true, true) => Some(t!(
+            "Some existing prefix files were changed during installation and were not reverted."
+        )),
+        (false, true) => Some(t!(
+            "Removed from tracking. Existing prefix files changed during installation were not reverted."
+        )),
+        (false, false) => Some(t!("Removed from tracking.")),
+        (true, false) => None,
+    };
+
+    info!("[dep:{}] removal complete", dep_id);
+    Ok(note)
 }
 
-async fn ensure_umu_ready(
-    overlay: &adw::ToastOverlay,
+async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
     check_winetricks: bool,
+    on_progress: &F,
 ) -> Result<(), String> {
     info!("[dep] Checking umu-launcher availability…");
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is still downloading, please wait…"),
-        ));
-        return Err("umu-launcher not ready".to_string());
+        return Err(t!("umu-launcher is still downloading, please wait…"));
     }
 
     if !tokio::task::spawn_blocking(is_umu_run_available)
@@ -940,20 +881,16 @@ async fn ensure_umu_ready(
         })
     {
         info!("[dep] umu-launcher not available");
-        overlay.add_toast(adw::Toast::new(
-            &t!("umu-launcher is not installed. Please check your internet connection and restart."),
+        return Err(t!(
+            "umu-launcher is not installed. Please check your internet connection and restart."
         ));
-        return Err("umu-launcher not available".to_string());
     }
     info!("[dep] umu-launcher is available");
 
     if check_winetricks {
         info!("[dep] Checking winetricks availability…");
         if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
-            overlay.add_toast(adw::Toast::new(
-                &t!("winetricks is still downloading, please wait…"),
-            ));
-            return Err("winetricks not ready".to_string());
+            return Err(t!("winetricks is still downloading, please wait…"));
         }
 
         if !tokio::task::spawn_blocking(is_winetricks_available)
@@ -964,7 +901,7 @@ async fn ensure_umu_ready(
             })
         {
             info!("[dep] winetricks not found, triggering download");
-            overlay.add_toast(adw::Toast::new(&t!("Downloading winetricks…")));
+            on_progress(0, 0, t!("Downloading winetricks…"));
 
             if !WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
                 info!("[dep] Starting winetricks download…");
@@ -1026,7 +963,7 @@ fn configure_umu_command(cmd: &mut std::process::Command, prefix_path: &str, pro
 
 fn build_install_plan(
     dep_id: &str,
-    state: &super::PrefixDependencyState,
+    state: &leyen_model::deps::PrefixDependencyState,
 ) -> Result<Vec<&'static DepProfile>, String> {
     let mut visiting = BTreeSet::new();
     let mut planned_ids = BTreeSet::new();
@@ -1044,7 +981,7 @@ fn build_install_plan(
 
 fn append_install_plan(
     dep_id: &str,
-    state: &super::PrefixDependencyState,
+    state: &leyen_model::deps::PrefixDependencyState,
     visiting: &mut BTreeSet<String>,
     planned_ids: &mut BTreeSet<String>,
     planned: &mut Vec<&'static DepProfile>,

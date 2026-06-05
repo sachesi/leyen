@@ -1,4 +1,4 @@
-use crate::t;
+use leyen_model::t;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -16,13 +16,15 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{
-    add_game_playtime, effective_game_id, find_game_and_group, get_config_dir, load_library,
-    load_settings_with_auto_install, record_game_launch_result, record_game_launch_start,
+    add_game_playtime, load_library, load_settings_with_auto_install, record_game_launch_result,
+    record_game_launch_start,
 };
-use crate::models::{Game, GameGroup};
 use crate::runtime::proton::resolve_proton_path;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 use crate::tools::{gamemode_available, join_err, mangohud_available};
+use leyen_model::library::{effective_game_id, find_game_and_group};
+use leyen_model::models::{Game, GameGroup};
+use leyen_model::paths::get_config_dir;
 
 #[derive(Debug, Clone)]
 pub struct LaunchReport {
@@ -420,47 +422,38 @@ static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
 /// close handler) answer without taking the `RwLock`.
 static ANY_GAME_RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// Wakes the GTK refresh loop the instant running state changes, instead of
-/// waiting for the next 1s poll tick. Bounded + drop-on-full: the receiver only
-/// needs to know "something changed", so coalescing a burst into one wake is
-/// correct. Sender is cloned out; the held receiver keeps the channel open.
-static SESSION_EVENT_CHANNEL: OnceLock<(
-    async_channel::Sender<()>,
-    async_channel::Receiver<()>,
-)> = OnceLock::new();
+/// Notified (on the tokio runtime) whenever running-session state is
+/// republished. The daemon installs an emitter here to drive `SessionsChanged`;
+/// the listener receives the fresh snapshot set so it can be sent over D-Bus
+/// without re-reading. Replaces the in-process async-channel wake of the old
+/// single-binary GUI.
+static SESSIONS_LISTENER: OnceLock<Box<dyn Fn(Vec<RunningGameSnapshot>) + Send + Sync>> =
+    OnceLock::new();
 
-fn session_event_channel() -> &'static (async_channel::Sender<()>, async_channel::Receiver<()>) {
-    SESSION_EVENT_CHANNEL.get_or_init(|| async_channel::bounded(8))
+/// Installs the publish listener. No-op if called more than once.
+pub fn set_sessions_listener(listener: impl Fn(Vec<RunningGameSnapshot>) + Send + Sync + 'static) {
+    let _ = SESSIONS_LISTENER.set(Box::new(listener));
 }
 
-/// Returns a receiver that fires whenever running-session state is republished.
-pub fn subscribe_session_events() -> async_channel::Receiver<()> {
-    session_event_channel().1.clone()
-}
-
-/// Single path that makes a new session set visible to the UI: refreshes the
-/// snapshot cache, the `any running` mirror and the version atomic, then nudges
-/// the event channel so the GTK loop refreshes immediately. Called by the
-/// background monitor and by the launch/stop/exit fast paths.
+/// Single path that makes a new session set visible: refreshes the snapshot
+/// cache, the `any running` mirror and the version atomic, then notifies the
+/// listener. Called by the monitor and by the launch/stop/exit fast paths.
 fn publish_sessions(sessions: &[RunningGameSession]) {
     let snapshots = running_sessions_to_snapshots(sessions);
     let version = running_sessions_version(sessions);
     let any_running = !snapshots.is_empty();
 
-    let prev_version = RUNNING_SESSIONS_VERSION_CACHE.load(Ordering::Acquire); // TEMP DEBUG
-    if version != prev_version {
-        crate::dbg_trace!("publish version {}->{} n={} any={}", prev_version, version, sessions.len(), any_running); // TEMP DEBUG
-    }
-
     if let Ok(mut cache) = get_running_sessions_cache().write() {
-        *cache = snapshots;
+        *cache = snapshots.clone();
     }
     ANY_GAME_RUNNING.store(any_running, Ordering::Relaxed);
     // Release pairs with the Acquire load in running_games_version so a reader
     // seeing the new version also sees the new snapshot.
     RUNNING_SESSIONS_VERSION_CACHE.store(version, Ordering::Release);
-    // Non-blocking: a full channel already has a pending wake, which is enough.
-    let _ = session_event_channel().0.try_send(());
+
+    if let Some(listener) = SESSIONS_LISTENER.get() {
+        listener(snapshots);
+    }
 }
 
 fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
@@ -471,11 +464,8 @@ pub fn start_running_sessions_monitor() {
     tokio::spawn(async move {
         let mut consecutive_errors: u32 = 0;
         loop {
-            let _mt = std::time::Instant::now(); // TEMP DEBUG
             match synchronize_running_sessions().await {
                 Ok(sessions) => {
-                    let ms = _mt.elapsed().as_millis(); // TEMP DEBUG
-                    if ms > 100 { crate::dbg_trace!("monitor sync slow {}ms n={}", ms, sessions.len()); } // TEMP DEBUG
                     publish_sessions(&sessions);
                     consecutive_errors = 0;
                 }
@@ -583,21 +573,8 @@ pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
         .unwrap_or_default()
 }
 
-pub async fn monitor_running_game(game_id: &str) -> Result<(), LaunchError> {
-    loop {
-        let active = synchronize_running_sessions().await?;
-        if !active.iter().any(|session| session.game_id == game_id) {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
 pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
-    let _dbg_t = std::time::Instant::now(); // TEMP DEBUG
-    crate::dbg_trace!("stop_game enter game={}", game_id); // TEMP DEBUG
     let Some(session) = find_running_session(game_id).await? else {
-        crate::dbg_trace!("stop_game no-session game={}", game_id); // TEMP DEBUG
         return Ok(false);
     };
 
@@ -618,7 +595,6 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         // empty too.
         let mut probe = target.clone();
         if matched.is_empty() && !scope_alive(&mut probe) {
-            crate::dbg_trace!("stop_game already-dead game={} unit={}", game_id_clone, unit); // TEMP DEBUG
             return Ok(true);
         }
 
@@ -627,7 +603,6 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         // game's own PIDs. Sole occupant → also tear the scope down for a clean
         // container shutdown.
         let shared = prefix_shared_with_other_live(&target, &all, &universe);
-        crate::dbg_trace!("stop_game game={} matched_pids={} shared_container={}", game_id_clone, matched.len(), shared); // TEMP DEBUG
 
         let _ = mark_running_session_termination_requested(&game_id_clone);
 
@@ -635,7 +610,6 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         // its own launcher scope so Wine/Proton can flush and save state.
         let signaled = signal_pids(&matched, libc::SIGTERM)
             | systemctl(&["kill", "--signal=SIGTERM", &unit]);
-        crate::dbg_trace!("stop_game sigterm game={} pids={} ok={}", game_id_clone, matched.len(), signaled); // TEMP DEBUG
         info!(
             target: &format!("game:{}", game_id_clone),
             "Sent SIGTERM to {} process(es) of {}", matched.len(), unit
@@ -688,7 +662,6 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
     // Reflect the stopped state immediately instead of waiting for the monitor.
     republish_running_sessions().await;
-    crate::dbg_trace!("stop_game done game={} ok={:?} total_ms={}", game_id, result.is_ok(), _dbg_t.elapsed().as_millis()); // TEMP DEBUG
 
     result
 }
@@ -1167,52 +1140,15 @@ where
 }
 
 pub async fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
-    launch_game_managed(game, true, true, false).await
-}
-
-fn spawn_detached_monitor(game_id: &str) {
-    let Ok(current_exe) = std::env::current_exe() else {
-        warn!(
-            target: &format!("game:{game_id}"),
-            "Failed to resolve the current executable for the runtime monitor"
-        );
-        return;
-    };
-
-    match StdCommand::new(&current_exe)
-        .arg("internal-monitor")
-        .arg(game_id)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => {
-            let pid = child.id();
-            // Detach immediately — the monitor handles its own lifecycle.
-            info!(
-                target: &format!("game:{game_id}"),
-                "Spawned detached runtime monitor (pid {pid})"
-            );
-        }
-        Err(e) => {
-            warn!(
-                target: &format!("game:{game_id}"),
-                "Failed to start the runtime monitor: {}", e
-            );
-        }
-    }
+    launch_game_managed(game, true, true).await
 }
 
 async fn launch_game_managed(
     game: &Game,
     capture_output: bool,
     reap_child_locally: bool,
-    spawn_background_monitor: bool,
 ) -> Result<LaunchReport, LaunchError> {
     let mut notices = Vec::new();
-    let _dbg_t = std::time::Instant::now(); // TEMP DEBUG
-    crate::dbg_trace!("launch_managed enter game={}", game.id); // TEMP DEBUG
 
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
@@ -1245,11 +1181,8 @@ async fn launch_game_managed(
         ));
     }
 
-    crate::dbg_trace!("lm preflight-ok game={}", game.id); // TEMP DEBUG
     let settings = load_settings_with_auto_install(false).await;
-    crate::dbg_trace!("lm settings-loaded game={}", game.id); // TEMP DEBUG
     let library = load_library().await.map_err(LaunchError::Other)?;
-    crate::dbg_trace!("lm library-loaded game={}", game.id); // TEMP DEBUG
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
     let launch_game_id = effective_game_id(game);
@@ -1367,7 +1300,6 @@ async fn launch_game_managed(
     let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
         .await
         .unwrap_or_default();
-    crate::dbg_trace!("lm try_lock_prefix game={}…", game.id); // TEMP DEBUG
     let allow_shared_container = settings.use_shared_container;
     match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Available => {}
@@ -1382,7 +1314,6 @@ async fn launch_game_managed(
         PrefixLockState::Busy => {}
         PrefixLockState::Unavailable => {}
     }
-    crate::dbg_trace!("lm prefix_locked game={}", game.id); // TEMP DEBUG
 
     let launch_summary = format!(
         "Launching '{}' | exe: {} | cwd: {} | prefix: {} | proton: {}",
@@ -1448,11 +1379,9 @@ async fn launch_game_managed(
     scoped_args.extend(cmd_args);
     let cmd_args = scoped_args;
 
-    crate::dbg_trace!("lm pre-spawn systemd-run unit={}", scope_unit); // TEMP DEBUG
     // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
     let (mut child, child_pid, child_stdout, child_stderr) =
         tokio::task::spawn_blocking(move || {
-            crate::dbg_trace!("lm in-closure, cmd.spawn()…"); // TEMP DEBUG
             let mut cmd = tokio::process::Command::new(&cmd_args[0]);
             cmd.args(&cmd_args[1..]);
             cmd.stdin(Stdio::null());
@@ -1482,7 +1411,6 @@ async fn launch_game_managed(
         })
         .await
         .map_err(|e| LaunchError::Other(join_err(e)))??;
-    crate::dbg_trace!("launch_managed spawned game={} pid={} unit={} elapsed_ms={}", game.id, child_pid, scope_unit, _dbg_t.elapsed().as_millis()); // TEMP DEBUG
     let match_exe = Path::new(&game.exe_path)
         .file_name()
         .map(|name| name.to_string_lossy().to_lowercase())
@@ -1502,12 +1430,10 @@ async fn launch_game_managed(
     };
 
     let registered = try_register_running_session(session).await?;
-    crate::dbg_trace!("launch_managed register game={} registered={}", game.id, registered); // TEMP DEBUG
     if !registered {
         let unit = scope_unit.clone();
         let _ = tokio::task::spawn_blocking(move || systemctl(&["stop", &unit])).await;
         let _ = child.wait().await;
-        crate::dbg_trace!("launch_managed lost-race killed-scope game={} unit={}", game.id, scope_unit); // TEMP DEBUG
         return Err(LaunchError::Other(
             t!("This game is already running"),
         ));
@@ -1516,7 +1442,6 @@ async fn launch_game_managed(
     // Reflect the new "running" state immediately instead of waiting for the
     // next background monitor tick.
     republish_running_sessions().await;
-    crate::dbg_trace!("launch_managed done game={} total_ms={}", game.id, _dbg_t.elapsed().as_millis()); // TEMP DEBUG
 
     if !record_game_launch_start(&game.id, started_at_epoch_seconds).await {
         warn!(target: &format!("game:{}", game.id), "Failed to record game launch start");
@@ -1527,10 +1452,6 @@ async fn launch_game_managed(
     }
     if let Some(stderr) = child_stderr {
         pipe_process_output(stderr, game.id.clone(), game.title.clone(), "stderr");
-    }
-
-    if spawn_background_monitor {
-        spawn_detached_monitor(&game.id);
     }
 
     if reap_child_locally {

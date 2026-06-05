@@ -1,6 +1,9 @@
-use serde::{Deserialize, Serialize};
+//! Per-prefix dependency state — the **write** side (daemon-only).
+//!
+//! Types and read accessors live in `leyen-model`; this module owns the flocked
+//! upsert/remove and atomic persistence.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
@@ -8,7 +11,9 @@ use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::config::get_data_dir;
+use leyen_model::deps::{
+    InstalledDependency, PrefixDependencyState, get_prefix_deps_dir, get_prefix_deps_state_path,
+};
 
 /// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
 /// Releases the lock on Drop — panic-safe.
@@ -83,74 +88,6 @@ fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencySt
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct PrefixDependencyState {
-    #[serde(default)]
-    pub installed: BTreeMap<String, InstalledDependency>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct InstalledDependency {
-    #[serde(default)]
-    pub installed_at_epoch_seconds: u64,
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    #[serde(default)]
-    pub created_files: Vec<String>,
-    #[serde(default)]
-    pub touched_existing_files: bool,
-    #[serde(default)]
-    pub dll_overrides: Vec<String>,
-    #[serde(default)]
-    pub registered_dlls: Vec<String>,
-}
-
-impl InstalledDependency {
-    pub fn has_removable_changes(&self) -> bool {
-        !self.created_files.is_empty()
-            || !self.dll_overrides.is_empty()
-            || !self.registered_dlls.is_empty()
-    }
-
-    pub fn is_prefix_integration(&self) -> bool {
-        self.touched_existing_files
-            && !self.has_removable_changes()
-    }
-
-    pub fn removal_detail(&self) -> String {
-        match (self.has_removable_changes(), self.touched_existing_files) {
-            (true, true) => "This will remove Leyen-tracked files and overrides from the prefix. Some existing prefix files were changed during installation and may remain.".to_string(),
-            (true, false) => "This will remove Leyen-tracked files and overrides from the prefix.".to_string(),
-            (false, true) => "Leyen can remove this dependency from tracking, but it cannot undo registry changes. This component is integrated into the Wine prefix.".to_string(),
-            (false, false) => "This removes the dependency from Leyen's tracking.".to_string(),
-        }
-    }
-}
-
-pub fn get_deps_cache_dir() -> String {
-    get_data_dir()
-        .join("deps")
-        .join("cache")
-        .to_string_lossy()
-        .to_string()
-}
-
-pub fn get_prefix_deps_dir(prefix_path: &str) -> PathBuf {
-    PathBuf::from(prefix_path).join(".leyen/deps")
-}
-
-pub fn get_prefix_deps_state_path(prefix_path: &str) -> PathBuf {
-    get_prefix_deps_dir(prefix_path).join("state.toml")
-}
-
-pub fn read_prefix_dep_state(prefix_path: &str) -> PrefixDependencyState {
-    let path = get_prefix_deps_state_path(prefix_path);
-    fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| toml::from_str::<PrefixDependencyState>(&content).ok())
-        .unwrap_or_default()
-}
-
 pub fn save_prefix_dep_state(
     prefix_path: &str,
     state: &PrefixDependencyState,
@@ -177,37 +114,6 @@ pub fn save_prefix_dep_state(
         let _ = fs::remove_file(&temp_path);
         format!("Failed to rename temporary dependency state: {err}")
     })
-}
-
-pub fn read_installed_deps(prefix_path: &str) -> BTreeSet<String> {
-    read_prefix_dep_state(prefix_path)
-        .installed
-        .into_keys()
-        .collect()
-}
-
-pub fn get_installed_dep(prefix_path: &str, dep_id: &str) -> Option<InstalledDependency> {
-    read_prefix_dep_state(prefix_path)
-        .installed
-        .get(dep_id)
-        .cloned()
-}
-
-pub fn find_installed_dependents(state: &PrefixDependencyState, dep_id: &str) -> Vec<String> {
-    state
-        .installed
-        .iter()
-        .filter(|(installed_id, installed)| {
-            installed_id.as_str() != dep_id
-                && installed
-                    .dependencies
-                    .iter()
-                    .any(|dependency| dependency == dep_id)
-        })
-        .map(|(installed_id, _)| installed_id.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 pub fn upsert_installed_dep(
@@ -271,12 +177,8 @@ fn unique_sorted_strings(values: Vec<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        InstalledDependency, PrefixDependencyState, find_installed_dependents,
-        save_prefix_dep_state, upsert_installed_dep,
-    };
-
-    use std::collections::BTreeMap;
+    use super::{save_prefix_dep_state, upsert_installed_dep};
+    use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
     use std::fs;
     use std::path::PathBuf;
 
@@ -321,32 +223,5 @@ mod tests {
         assert!(content.contains("touched_existing_files = true"));
 
         let _ = fs::remove_dir_all(prefix);
-    }
-
-    #[test]
-    fn finds_reverse_dependency_links() {
-        let state = PrefixDependencyState {
-            installed: BTreeMap::from([
-                (
-                    "base".to_string(),
-                    InstalledDependency {
-                        dependencies: Vec::new(),
-                        ..InstalledDependency::default()
-                    },
-                ),
-                (
-                    "child".to_string(),
-                    InstalledDependency {
-                        dependencies: vec!["base".to_string()],
-                        ..InstalledDependency::default()
-                    },
-                ),
-            ]),
-        };
-
-        assert_eq!(
-            find_installed_dependents(&state, "base"),
-            vec!["child".to_string()]
-        );
     }
 }

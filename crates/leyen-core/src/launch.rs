@@ -216,9 +216,14 @@ fn with_running_registry<R>(
     if dirty {
         let data = toml::to_string_pretty(&registry)
             .map_err(|e| LaunchError::SerializationError(e.to_string()))?;
-        fs::write(&registry_path, data).map_err(|e| LaunchError::WriteError {
-            path: registry_path,
-            source: e,
+        // Durable temp+rename: a crash mid-write must never leave a truncated
+        // registry, or the next startup parses garbage, defaults to empty and
+        // orphans every live scope.
+        leyen_model::paths::atomic_write(&registry_path, &data).map_err(|e| {
+            LaunchError::WriteError {
+                path: registry_path,
+                source: e,
+            }
         })?;
     }
 
@@ -278,12 +283,40 @@ fn running_sessions_version(sessions: &[RunningGameSession]) -> u64 {
 }
 
 async fn finalize_finished_session(session: &RunningGameSession) {
-    let elapsed_seconds = current_epoch_seconds().saturating_sub(session.started_at_epoch_seconds);
+    // Prefer the monotonic start instant recorded at launch; the epoch
+    // difference is only for sessions adopted from a previous daemon life and
+    // is vulnerable to wall-clock steps.
+    let instant_key = (session.game_id.clone(), session.started_at_epoch_seconds);
+    let monotonic_elapsed = session_start_instants()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&instant_key)
+        .map(|started| started.elapsed().as_secs());
+    let elapsed_seconds = monotonic_elapsed.unwrap_or_else(|| {
+        current_epoch_seconds().saturating_sub(session.started_at_epoch_seconds)
+    });
     let status = if session.termination_requested {
         "Last run: stopped"
     } else {
         "Last run: completed"
     };
+
+    // The game tree is gone; its output-capture readers will never see EOF if a
+    // descendant inherited the pipe fds. Give the tail a moment to drain, then
+    // abort them.
+    let handles = output_capture_tasks()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&session.game_id)
+        .unwrap_or_default();
+    if !handles.is_empty() {
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            for handle in handles {
+                handle.abort();
+            }
+        });
+    }
 
     let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds).await;
     if !record_game_launch_result(&session.game_id, elapsed_seconds, status).await {
@@ -330,14 +363,14 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
             }
         }
 
-        // Phase 3: apply the result under the lock (fast). Match by (game_id,
+        // Phase 3: apply the updates under the lock (fast). Finished sessions
+        // are NOT removed here — they stay registered until their playtime is
+        // finalized below, so a daemon death in between can never drop the
+        // session record before the playtime is written. Match by (game_id,
         // started_at) so a session relaunched during the unlocked scan — a new
         // instance with a fresh start time — is never wrongly removed or updated.
         let active_sessions = with_running_registry(|registry| {
             let before = registry.sessions.clone();
-            registry
-                .sessions
-                .retain(|s| !finished_keys.contains(&(s.game_id.clone(), s.started_at_epoch_seconds)));
             for s in registry.sessions.iter_mut() {
                 if let Some((dir, count)) = updates.get(&(s.game_id.clone(), s.started_at_epoch_seconds)) {
                     if s.cgroup_dir.is_none() {
@@ -347,7 +380,13 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
                 }
             }
             let dirty = registry.sessions != before;
-            (registry.sessions.clone(), dirty)
+            let active: Vec<RunningGameSession> = registry
+                .sessions
+                .iter()
+                .filter(|s| !finished_keys.contains(&(s.game_id.clone(), s.started_at_epoch_seconds)))
+                .cloned()
+                .collect();
+            (active, dirty)
         })?;
 
         Ok::<_, LaunchError>((active_sessions, finished_sessions))
@@ -357,10 +396,53 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
     .and_then(|r| r)?;
 
     for session in &finished_sessions {
-        finalize_finished_session(session).await;
+        let key = (session.game_id.clone(), session.started_at_epoch_seconds);
+        // The in-process claim makes concurrent synchronize passes (a monitor
+        // tick racing a launch/stop fast-path republish) finalize a session
+        // exactly once — both passes can have snapshotted it as finished.
+        if claim_session_finalize(&key) {
+            finalize_finished_session(session).await;
+        }
+        // Drop from the registry only after the playtime is recorded — never
+        // the other way around. If the daemon dies in between, startup
+        // reconciliation drops the leftover entry without recording again, so
+        // playtime is never double-counted.
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            with_running_registry(|registry| {
+                let before = registry.sessions.len();
+                registry
+                    .sessions
+                    .retain(|s| !(s.game_id == key.0 && s.started_at_epoch_seconds == key.1));
+                ((), registry.sessions.len() != before)
+            })
+        })
+        .await
+        .map_err(|e| LaunchError::Other(join_err(e)))
+        .and_then(|r| r)
+        {
+            warn!("Failed to drop a finished session from the registry: {e}");
+        }
     }
 
     Ok(active_sessions)
+}
+
+/// Claims `(game_id, started_at)` for finalization; `false` if already claimed.
+/// Claims are not released when the session is removed — a claim freed too
+/// early would let a concurrent pass that snapshotted the session before its
+/// removal finalize it again. Instead, claims whose session started over a day
+/// ago are pruned: no concurrent synchronize pass can still hold a snapshot
+/// that old, and the set stays bounded on a long-lived daemon.
+fn claim_session_finalize(key: &(String, u64)) -> bool {
+    static CLAIMED: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, u64)>>> =
+        OnceLock::new();
+    let mut claimed = CLAIMED
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let horizon = current_epoch_seconds().saturating_sub(24 * 60 * 60);
+    claimed.retain(|(_, started_at)| *started_at >= horizon);
+    claimed.insert(key.clone())
 }
 
 /// Re-scans running sessions and republishes them so the UI reflects the change
@@ -447,6 +529,49 @@ pub fn set_bus_name_probe(
     probe: impl Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync + 'static,
 ) {
     let _ = BUS_NAME_PROBE.set(Box::new(probe));
+}
+
+/// Source of RAII work tokens, installed by the daemon. Detached engine tasks
+/// (the deferred shared-container launch) hold a token for their lifetime so the
+/// daemon's idle-exit cannot kill the process mid-task. Without an installed
+/// source this is a no-op (the CLI/tests don't idle-exit).
+type WorkGuardSource = Box<dyn Fn() -> Box<dyn Send> + Send + Sync>;
+static WORK_GUARD_SOURCE: OnceLock<WorkGuardSource> = OnceLock::new();
+
+/// Installs the work-token source. No-op if called more than once.
+pub fn set_work_guard_source(source: impl Fn() -> Box<dyn Send> + Send + Sync + 'static) {
+    let _ = WORK_GUARD_SOURCE.set(Box::new(source));
+}
+
+fn acquire_work_guard() -> Option<Box<dyn Send>> {
+    WORK_GUARD_SOURCE.get().map(|source| source())
+}
+
+/// Monotonic start instants for sessions launched by this process, keyed by
+/// `(game_id, started_at_epoch_seconds)`. Playtime finalization prefers these
+/// over wall-clock arithmetic, which an NTP step or manual clock change would
+/// corrupt. Sessions adopted from a previous daemon life are absent here and
+/// fall back to the epoch difference.
+static SESSION_START_INSTANTS: OnceLock<
+    std::sync::Mutex<HashMap<(String, u64), std::time::Instant>>,
+> = OnceLock::new();
+
+fn session_start_instants()
+-> &'static std::sync::Mutex<HashMap<(String, u64), std::time::Instant>> {
+    SESSION_START_INSTANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Detached output-capture task handles per game. A game's descendants can
+/// inherit the stdout/stderr pipe fds and keep them open indefinitely (notably
+/// siblings in a shared container), so the reader tasks would never see EOF;
+/// they are aborted shortly after the session finalizes.
+static OUTPUT_CAPTURE_TASKS: OnceLock<
+    std::sync::Mutex<HashMap<String, Vec<tokio::task::JoinHandle<()>>>>,
+> = OnceLock::new();
+
+fn output_capture_tasks()
+-> &'static std::sync::Mutex<HashMap<String, Vec<tokio::task::JoinHandle<()>>>> {
+    OUTPUT_CAPTURE_TASKS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
 /// The command-launcher bus name umu's pressure-vessel container registers for
@@ -580,7 +705,7 @@ pub fn start_running_sessions_monitor() {
 /// are dropped WITHOUT recording playtime rather than finalized with an inflated
 /// `now - started_at` elapsed. Run once before the monitor starts.
 pub async fn reconcile_stale_sessions_on_startup() {
-    let dropped = tokio::task::spawn_blocking(|| {
+    let outcome = tokio::task::spawn_blocking(|| {
         with_running_registry(|registry| {
             let before = registry.sessions.len();
             let mut kept = Vec::new();
@@ -595,20 +720,23 @@ pub async fn reconcile_stale_sessions_on_startup() {
                 }
             }
             let dirty = kept.len() != before;
-            registry.sessions = kept;
-            (dropped, dirty)
+            registry.sessions = kept.clone();
+            ((dropped, kept), dirty)
         })
     })
     .await;
 
-    match dropped {
-        Ok(Ok(dropped)) => {
+    match outcome {
+        Ok(Ok((dropped, kept))) => {
             for game_id in dropped {
                 warn!(
                     target: &format!("game:{game_id}"),
                     "Dropping stale running session with no live scope (playtime not recorded)"
                 );
             }
+            // Publish the crash-recovered state right away so clients see the
+            // re-adopted sessions before the monitor's first tick.
+            publish_sessions(&kept);
         }
         Ok(Err(e)) => warn!("Startup session reconciliation failed: {e}"),
         Err(e) => warn!("Startup session reconciliation task failed: {e}"),
@@ -872,6 +1000,22 @@ fn systemctl(args: &[&str]) -> bool {
         return false;
     };
     matches!(wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT), Some(s) if s.success())
+}
+
+/// Stops a scope and verifies it actually wound down, escalating to SIGKILL if
+/// it lingers. `systemctl stop` can return before the cgroup is empty (or fail
+/// outright on a half-started unit), which would leak the scope and its
+/// processes.
+fn stop_scope_verified(unit: &str) {
+    let _ = systemctl(&["stop", unit]);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while systemctl(&["is-active", "--quiet", unit]) {
+        if std::time::Instant::now() >= deadline {
+            systemctl(&["kill", "--signal=SIGKILL", unit]);
+            return;
+        }
+        sleep(Duration::from_millis(200));
+    }
 }
 
 /// Returns the value of a single systemd property for `unit`, or `None` if the
@@ -1211,7 +1355,8 @@ fn pipe_process_output<R>(reader: R, game_id: String, game_title: String, stream
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    tokio::spawn(async move {
+    let key = game_id.clone();
+    let handle = tokio::spawn(async move {
         let reader = AsyncBufReader::new(reader);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -1223,6 +1368,14 @@ where
             }
         }
     });
+    // Registered so session finalization can abort the reader: a descendant
+    // that inherited the pipe fds would otherwise keep it alive forever.
+    output_capture_tasks()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(key)
+        .or_default()
+        .push(handle);
 }
 
 pub async fn launch_game_headless(game: &Game) -> Result<LaunchReport, LaunchError> {
@@ -1427,7 +1580,12 @@ async fn launch_game_managed(
         let game_bg = game.clone();
         let prefix = prefix_path.clone();
         let proton = proton_path.clone();
+        // Hold a daemon work token for the task's lifetime: nothing is
+        // registered as "running" during the container wait, so without it the
+        // idle-exit could kill the daemon mid-wait and lose the launch.
+        let work_guard = acquire_work_guard();
         tokio::spawn(async move {
+            let _work_guard = work_guard;
             let game = game_bg;
             let mut env_vars = env_vars;
             if wait_for_shared_container(&prefix, &game.id).await {
@@ -1602,12 +1760,22 @@ async fn finish_launch(
     let registered = try_register_running_session(session).await?;
     if !registered {
         let unit = scope_unit.clone();
-        let _ = tokio::task::spawn_blocking(move || systemctl(&["stop", &unit])).await;
+        let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
         let _ = child.wait().await;
         return Err(LaunchError::Other(
             t!("This game is already running"),
         ));
     }
+
+    // Monotonic start instant for playtime: immune to wall-clock steps that
+    // would corrupt the epoch arithmetic.
+    session_start_instants()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(
+            (game.id.clone(), started_at_epoch_seconds),
+            std::time::Instant::now(),
+        );
 
     // Reflect the new "running" state immediately instead of waiting for the
     // next background monitor tick.

@@ -43,7 +43,10 @@ fn append_entries(
             empty_state.set_visible(false);
             appended = true;
         }
-        let line = format!("[{}] {}\n", entry.timestamp, entry.line);
+        // RFC3339 local timestamp → wall-clock "HH:MM:SS"; the date is noise
+        // in a live log view.
+        let time = entry.timestamp.get(11..19).unwrap_or(&entry.timestamp);
+        let line = format!("[{time}] {}\n", entry.line);
         let mut end_iter = buffer.end_iter();
         buffer.insert(&mut end_iter, &line);
     }
@@ -58,6 +61,7 @@ fn append_entries(
 pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: Option<&str>) {
     thread_local! {
         static ACTIVE_LOG_WINDOW: RefCell<Option<adw::Window>> = const { RefCell::new(None) };
+        static SUBSCRIPTION_ACTIVE: RefCell<bool> = const { RefCell::new(false) };
     }
 
     if let Some(existing) = ACTIVE_LOG_WINDOW.with(|w| w.borrow().clone())
@@ -243,7 +247,19 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     }
 
     // Incremental appends driven by LogsAppended (notify-then-pull).
-    {
+    // Guard against duplicate subscriptions if window is reopened: spawn only
+    // when this call claims the flag.
+    let should_spawn_subscription = SUBSCRIPTION_ACTIVE.with(|s| {
+        let mut active = s.borrow_mut();
+        if *active {
+            false
+        } else {
+            *active = true;
+            true
+        }
+    });
+
+    if should_spawn_subscription {
         let events = daemon::subscribe_events();
         let buffer = buffer.clone();
         let scroll = scroll.clone();
@@ -269,6 +285,12 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
                     offset.set(next);
                 }
             }
+            SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);
         });
     }
+
+    window.connect_close_request(move |_| {
+        SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);
+        glib::Propagation::Proceed
+    });
 }

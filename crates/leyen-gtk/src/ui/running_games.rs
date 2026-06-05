@@ -209,6 +209,8 @@ pub async fn update_running_duration_labels(
 pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
         static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
+        static SUBSCRIPTION_ACTIVE: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
+        static TIMEOUT_SOURCE_ID: std::cell::RefCell<Option<gtk4::glib::source::SourceId>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone())
@@ -282,7 +284,19 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     window.present();
 
     // Rebuild the list whenever running-state changes — signal-driven, no polling.
-    {
+    // Guard against duplicate subscriptions if window is reopened: spawn only
+    // when this call claims the flag.
+    let should_spawn_subscription = SUBSCRIPTION_ACTIVE.with(|s| {
+        let mut active = s.borrow_mut();
+        if *active {
+            false
+        } else {
+            *active = true;
+            true
+        }
+    });
+
+    if should_spawn_subscription {
         let events = daemon::subscribe_events();
         let list_box_ref = list_box.clone();
         let content_stack_ref = content_stack.clone();
@@ -308,13 +322,14 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
                     .await;
                 }
             }
+            SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);
         });
     }
 
     // Cosmetic 1s tick to advance the elapsed-time labels while the window is open.
     let running_duration_labels_ref = running_duration_labels.clone();
     let window_ref = window.clone();
-    glib::timeout_add_seconds_local(1, move || {
+    let source_id = glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
@@ -323,5 +338,16 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
             update_running_duration_labels(&labels).await;
         });
         glib::ControlFlow::Continue
+    });
+    TIMEOUT_SOURCE_ID.with(|id| *id.borrow_mut() = Some(source_id));
+
+    window.connect_close_request(move |_| {
+        TIMEOUT_SOURCE_ID.with(|id| {
+            if let Some(source_id) = id.borrow_mut().take() {
+                source_id.remove();
+            }
+        });
+        SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);
+        glib::Propagation::Proceed
     });
 }

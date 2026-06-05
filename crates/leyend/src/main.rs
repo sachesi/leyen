@@ -83,14 +83,18 @@ impl Manager {
         self.touch();
         let library = leyen_core::config::load_library().await.unwrap_or_default();
         let Some((game, _group)) = find_game_by_leyen_id(&library, leyen_id) else {
-            warn!("LaunchGame: no game for leyen_id '{leyen_id}'");
+            log::error!("LaunchGame: no game for leyen_id '{leyen_id}'");
             return false;
         };
         let game = game.clone();
         match leyen_core::launch::launch_game_headless(&game).await {
             Ok(_) => true,
             Err(e) => {
-                warn!("LaunchGame '{leyen_id}' failed: {e}");
+                log::error!(
+                    target: &format!("game:{}", game.id),
+                    "Launch of '{}' ({leyen_id}) failed: {e}",
+                    game.title
+                );
                 false
             }
         }
@@ -368,6 +372,7 @@ async fn main() -> anyhow::Result<()> {
     info!("leyend: owning {} at {}", leyen_ipc::BUS_NAME, OBJECT_PATH);
 
     install_listeners(&connection);
+    install_bus_name_probe(&connection).await;
 
     // Crash recovery: re-adopt live scopes, then start the one monitor.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;
@@ -383,6 +388,25 @@ async fn main() -> anyhow::Result<()> {
     // Serve forever; idle-exit terminates the process.
     std::future::pending::<()>().await;
     Ok(())
+}
+
+/// Gives the engine a session-bus name probe so it can wait for a shared
+/// pressure-vessel container (`com.steampowered.App<md5(prefix)>`) to become
+/// joinable before launching a same-prefix follower with NSENTER.
+async fn install_bus_name_probe(connection: &Connection) {
+    let Ok(dbus) = zbus::fdo::DBusProxy::new(connection).await else {
+        warn!("leyend: failed to build DBus proxy; shared-container waits disabled");
+        return;
+    };
+    leyen_core::launch::set_bus_name_probe(move |name| {
+        let dbus = dbus.clone();
+        Box::pin(async move {
+            match zbus::names::BusName::try_from(name) {
+                Ok(bus_name) => dbus.name_has_owner(bus_name).await.unwrap_or(false),
+                Err(_) => false,
+            }
+        })
+    });
 }
 
 /// Wires the engine's publish/log hooks to D-Bus signals.

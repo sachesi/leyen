@@ -387,10 +387,8 @@ pub fn build_ui(app: &adw::Application) {
                         }
                         refresh_library_view(&ui_event, &overlay_event, &window_event).await;
                     }
-                    DaemonEvent::LibraryChanged => {
-                        if window_event.is_visible() {
-                            refresh_library_view(&ui_event, &overlay_event, &window_event).await;
-                        }
+                    DaemonEvent::LibraryChanged if window_event.is_visible() => {
+                        refresh_library_view(&ui_event, &overlay_event, &window_event).await;
                     }
                     _ => {}
                 }

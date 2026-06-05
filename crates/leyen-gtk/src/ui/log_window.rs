@@ -25,6 +25,7 @@ fn entry_matches(entry: &LogEntry, filter: &Option<String>) -> bool {
 
 /// Appends matching entries to the buffer, toggling the empty state and
 /// autoscrolling if pinned to the bottom.
+#[allow(clippy::too_many_arguments)]
 fn append_entries(
     buffer: &gtk4::TextBuffer,
     filter: &Option<String>,

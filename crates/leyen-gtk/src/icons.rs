@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use image::imageops::FilterType;
 use pelite::PeFile;
 use pelite::resources::FindError;
-use log;
 
 const MANAGED_ICON_SIZE: u32 = 256;
 const ICO_HEADER_LEN: usize = 6;

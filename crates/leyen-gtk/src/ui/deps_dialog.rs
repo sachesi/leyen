@@ -30,6 +30,7 @@ fn dep_category_order(cat: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+#[allow(clippy::type_complexity)]
 fn redistribute_rows(
     groups: &Rc<std::cell::RefCell<Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>>>,
     page: &adw::PreferencesPage,

@@ -161,20 +161,18 @@ fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
 
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
-        if path
+        let is_desktop = path
             .extension()
             .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"));
+        if is_desktop
+            && let Ok(file) = fs::File::open(&path)
         {
-            if let Ok(file) = fs::File::open(&path) {
-                let reader = BufReader::new(file);
-                for line in reader.lines() {
-                    if let Ok(content) = line {
-                        if content.trim() == exec_line {
-                            result.push(path);
-                            break;
-                        }
-                    }
+            let reader = BufReader::new(file);
+            for content in reader.lines().map_while(Result::ok) {
+                if content.trim() == exec_line {
+                    result.push(path);
+                    break;
                 }
             }
         }

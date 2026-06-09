@@ -35,17 +35,66 @@ pub fn next_swap_list_box<'a>(
     }
 }
 
+/// Clamps `offset` to the adjustment's current scrollable range and applies it.
+fn pin_scroll_offset(adjustment: &gtk4::Adjustment, offset: f64) {
+    let max = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+    adjustment.set_value(offset.clamp(adjustment.lower(), max));
+}
+
 pub fn finish_list_swap(
     list_stack: &gtk4::Stack,
     showing_primary: &std::cell::Cell<bool>,
     visible_page: &str,
 ) {
+    // Preserve the scroll position across the double-buffer page swap. Two things
+    // conspire to reset it to the top: on the first fill the scroll range is still
+    // growing as cards are laid out, and the crossfade transition resets the
+    // shared vadjustment mid-animation without changing the range (so no `changed`
+    // fires to catch it). Capture the offset, then re-assert it immediately, on
+    // every range change, and once more after the transition has finished.
+    let scroll = list_stack
+        .ancestor(gtk4::ScrolledWindow::static_type())
+        .and_then(|widget| widget.downcast::<gtk4::ScrolledWindow>().ok());
+    let saved_offset = scroll.as_ref().map(|s| s.vadjustment().value());
+
     list_stack.set_visible_child_name(visible_page);
     showing_primary.set(visible_page == LIST_PAGE_PRIMARY);
     // Force re-layout: cards built on hidden page may have stale allocation sizes
     if let Some(child) = list_stack.visible_child() {
         child.queue_resize();
     }
+
+    let (Some(scroll), Some(saved_offset)) = (scroll, saved_offset) else {
+        return;
+    };
+    let adjustment = scroll.vadjustment();
+    pin_scroll_offset(&adjustment, saved_offset);
+
+    // Re-pin while the first fill grows the range; release once it can hold the
+    // offset so the handler can't fight user scrolling or accumulate.
+    let handler_slot = std::rc::Rc::new(std::cell::Cell::new(None));
+    let slot_for_changed = handler_slot.clone();
+    let id = adjustment.connect_changed(move |adjustment| {
+        pin_scroll_offset(adjustment, saved_offset);
+        let max = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+        if max + 0.5 >= saved_offset
+            && let Some(id) = slot_for_changed.take()
+        {
+            adjustment.disconnect(id);
+        }
+    });
+    handler_slot.set(Some(id));
+
+    // The crossfade resets the offset partway through the animation with no
+    // `changed` to catch it, so re-assert once it has settled, then release the
+    // range handler. 280ms clears the 240ms crossfade.
+    let adjustment_after = adjustment.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(280), move || {
+        pin_scroll_offset(&adjustment_after, saved_offset);
+        if let Some(id) = handler_slot.take() {
+            adjustment_after.disconnect(id);
+        }
+    });
 }
 
 pub fn find_group<'a>(items: &'a [LibraryItem], group_id: &str) -> Option<&'a GameGroup> {

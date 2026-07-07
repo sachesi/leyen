@@ -347,12 +347,12 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                         let overlay_clone = overlay_clone.clone();
                         let runtime_dir = get_umu_runtime_dir();
                         glib::spawn_future_local(async move {
-                            let result = tokio::task::spawn_blocking(move || {
+                            // The GTK thread has no tokio runtime; local blocking
+                            // work goes through gio_blocking (see daemon.rs).
+                            let result = crate::daemon::gio_blocking(move || {
                                 fs::remove_dir_all(&runtime_dir)
-                            }).await.unwrap_or_else(|e| {
-                                log::warn!("runtime reset task failed: {e}");
-                                Err(std::io::Error::other(e.to_string()))
-                            });
+                            })
+                            .await;
 
                             match result {
                                 Ok(_) => {

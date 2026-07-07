@@ -840,7 +840,7 @@ pub async fn show_add_library_item_dialog(
                 let desktop_game = game.clone();
                 if !insert_game(&mut items, current_group_id.as_deref(), game) {
                     let gid = game_id.clone();
-                    clear_game_icon(&gid);
+                    gio_blocking(move || clear_game_icon(&gid)).await;
                     overlay_clone
                         .add_toast(adw::Toast::new(&t!("Failed to add game to the selected group")));
                     return;
@@ -2201,17 +2201,17 @@ pub async fn show_delete_confirmation(
                 let mut delete_notice = None;
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();
-                    clear_game_icon(&gid);
+                    gio_blocking(move || clear_game_icon(&gid)).await;
                     if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                         delete_notice = Some(t!("Failed to remove menu entry: {}").replacen("{}", &err.to_string(), 1));
                     }
                     Some(game.title)
                 } else if let Some(group) = remove_group(&mut items, &item_id) {
                     let gid = group.id.clone();
-                    clear_group_icon(&gid);
+                    gio_blocking(move || clear_group_icon(&gid)).await;
                     for game in &group.games {
                         let gid = game.id.clone();
-                        clear_game_icon(&gid);
+                        gio_blocking(move || clear_game_icon(&gid)).await;
                         if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                             delete_notice = Some(t!("Failed to remove a menu entry: {}").replacen("{}", &err.to_string(), 1));
                         }

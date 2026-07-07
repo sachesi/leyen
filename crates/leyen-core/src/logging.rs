@@ -32,6 +32,11 @@ pub static LOG_ERRORS: AtomicBool = AtomicBool::new(true);
 pub static LOG_WARNINGS: AtomicBool = AtomicBool::new(false);
 pub static LOG_OPERATIONS: AtomicBool = AtomicBool::new(false);
 
+/// Set by `clear_log_buffer` after it unlinks `logs.jsonl`: the writer thread
+/// holds an open fd to the (now phantom) inode and must reopen the path, or
+/// every later line lands in an unreachable file for the rest of the process.
+static LOG_FILE_REOPEN: AtomicBool = AtomicBool::new(false);
+
 static LOG_SENDER: Mutex<Option<Sender<LogEntry>>> = Mutex::new(None);
 static LOG_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static UI_LOG_ENTRIES: OnceLock<RwLock<VecDeque<LogEntry>>> = OnceLock::new();
@@ -172,6 +177,10 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                 }
             }
 
+            if LOG_FILE_REOPEN.swap(false, Ordering::Relaxed) {
+                file = None;
+            }
+
             if file.is_none() {
                 file = OpenOptions::new()
                     .create(true)
@@ -267,6 +276,9 @@ pub fn clear_log_buffer() {
     let mut old_path = path.clone();
     old_path.set_extension("jsonl.old");
     let _ = fs::remove_file(old_path);
+    // Unlinking doesn't invalidate the writer thread's open fd — tell it to
+    // reopen so lines keep reaching the on-disk file.
+    LOG_FILE_REOPEN.store(true, Ordering::Relaxed);
 }
 
 pub fn shutdown() {

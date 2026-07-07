@@ -44,6 +44,33 @@ impl Drop for ActivityGuard {
     }
 }
 
+/// Launches currently inside `launch_game`. The launch/dep-job mutual exclusion
+/// needs it: until the game is registered as running, `is_any_game_running()`
+/// can't see it, so a dep job checking only that could start mid-launch.
+static LAUNCHES_IN_FLIGHT: AtomicU64 = AtomicU64::new(0);
+
+/// RAII token for `LAUNCHES_IN_FLIGHT` (panic-safe, like `ActivityGuard`).
+struct LaunchGuard;
+
+impl LaunchGuard {
+    fn new() -> Self {
+        LAUNCHES_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        LaunchGuard
+    }
+}
+
+impl Drop for LaunchGuard {
+    fn drop(&mut self) {
+        LAUNCHES_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Fail closed on a poisoned `dep_jobs` lock: proceeding blind could let a
+/// launch and a dependency job overlap — the corruption the lock prevents.
+fn poisoned_lock_error() -> leyen_ipc::Error {
+    leyen_ipc::Error::Failed("Internal state lock poisoned; restart the daemon".to_string())
+}
+
 type DepJobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 
 #[derive(Clone)]
@@ -76,7 +103,11 @@ impl Manager {
 async fn map_snapshots(
     core: Vec<leyen_core::launch::RunningGameSnapshot>,
 ) -> Vec<leyen_ipc::RunningGameSnapshot> {
-    let library = leyen_core::config::load_library().await.unwrap_or_default();
+    let library = leyen_core::config::load_library().await.unwrap_or_else(|e| {
+        // Signal path — keep publishing (with empty leyen_ids) but say why.
+        warn!("map_snapshots: failed to read the library: {e}");
+        Vec::new()
+    });
     let leyen_ids: HashMap<String, String> = flatten_games(&library)
         .into_iter()
         .map(|g| (g.id, g.leyen_id))
@@ -113,13 +144,22 @@ impl Manager {
         self.touch();
         // Dependency jobs mutate prefixes (wineserver, registry); launching a
         // game mid-install would corrupt both. `install_dep` refuses while a
-        // game runs — this is the same exclusion in the other direction.
-        if !self.dep_jobs.lock().map(|j| j.is_empty()).unwrap_or(true) {
-            return Err(leyen_ipc::Error::Failed(
-                "A dependency operation is in progress; try again when it finishes".to_string(),
-            ));
-        }
-        let library = leyen_core::config::load_library().await.unwrap_or_default();
+        // game runs or launches — this is the same exclusion in the other
+        // direction, made atomic by marking the launch under the same lock.
+        let _launch = {
+            let jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if !jobs.is_empty() {
+                return Err(leyen_ipc::Error::Failed(
+                    "A dependency operation is in progress; try again when it finishes"
+                        .to_string(),
+                ));
+            }
+            LaunchGuard::new()
+        };
+        let library = leyen_core::config::load_library().await.map_err(|e| {
+            log::error!("LaunchGame: failed to read the library: {e}");
+            leyen_ipc::Error::Failed(format!("Failed to read the game library: {e}"))
+        })?;
         let Some((game, _group)) = find_game_by_leyen_id(&library, leyen_id) else {
             log::error!("LaunchGame: no game for leyen_id '{leyen_id}'");
             return Err(leyen_ipc::Error::Failed(format!(
@@ -143,7 +183,10 @@ impl Manager {
     async fn stop_game(&self, leyen_id: &str) -> Result<bool, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
-        let library = leyen_core::config::load_library().await.unwrap_or_default();
+        let library = leyen_core::config::load_library().await.map_err(|e| {
+            log::error!("StopGame: failed to read the library: {e}");
+            leyen_ipc::Error::Failed(format!("Failed to read the game library: {e}"))
+        })?;
         let Some((game, _group)) = find_game_by_leyen_id(&library, leyen_id) else {
             return Ok(false);
         };
@@ -246,17 +289,28 @@ impl Manager {
     ) -> Result<String, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
-        if leyen_core::launch::is_any_game_running() {
+        let Some(conn) = self.connection() else {
             return Err(leyen_ipc::Error::Failed(
-                "Cannot install dependencies while a game is running".to_string(),
+                "The daemon is still starting; try again shortly".to_string(),
             ));
-        }
+        };
         let job_id = uuid::Uuid::new_v4().to_string();
         let cancel = Arc::new(AtomicBool::new(false));
-        if let Ok(mut jobs) = self.dep_jobs.lock() {
+        {
+            // Check-and-insert under one lock: `launch_game` checks `dep_jobs`
+            // under the same lock, so a launch can't slip in between the
+            // running check and the job becoming visible.
+            let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if leyen_core::launch::is_any_game_running()
+                || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
+            {
+                return Err(leyen_ipc::Error::Failed(
+                    "Cannot install dependencies while a game is running".to_string(),
+                ));
+            }
             jobs.insert(job_id.clone(), cancel.clone());
         }
-        self.spawn_dep_job(job_id.clone(), prefix, dep_id, proton_path, cancel, true);
+        self.spawn_dep_job(conn, job_id.clone(), prefix, dep_id, proton_path, cancel, true);
         Ok(job_id)
     }
 
@@ -268,17 +322,26 @@ impl Manager {
     ) -> Result<String, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
-        if leyen_core::launch::is_any_game_running() {
+        let Some(conn) = self.connection() else {
             return Err(leyen_ipc::Error::Failed(
-                "Cannot uninstall dependencies while a game is running".to_string(),
+                "The daemon is still starting; try again shortly".to_string(),
             ));
-        }
+        };
         let job_id = uuid::Uuid::new_v4().to_string();
         let cancel = Arc::new(AtomicBool::new(false));
-        if let Ok(mut jobs) = self.dep_jobs.lock() {
+        {
+            // Same atomic check-and-insert as `install_dep`.
+            let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if leyen_core::launch::is_any_game_running()
+                || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
+            {
+                return Err(leyen_ipc::Error::Failed(
+                    "Cannot uninstall dependencies while a game is running".to_string(),
+                ));
+            }
             jobs.insert(job_id.clone(), cancel.clone());
         }
-        self.spawn_dep_job(job_id.clone(), prefix, dep_id, proton_path, cancel, false);
+        self.spawn_dep_job(conn, job_id.clone(), prefix, dep_id, proton_path, cancel, false);
         Ok(job_id)
     }
 
@@ -358,6 +421,7 @@ impl Manager {
     /// terminal result → `DepFinished`.
     fn spawn_dep_job(
         &self,
+        conn: Connection,
         job_id: String,
         prefix: &str,
         dep_id: &str,
@@ -365,9 +429,6 @@ impl Manager {
         cancel: Arc<AtomicBool>,
         install: bool,
     ) {
-        let Some(conn) = self.connection() else {
-            return;
-        };
         let prefix = prefix.to_string();
         let dep_id = dep_id.to_string();
         let proton_path = proton_path.to_string();
@@ -480,8 +541,13 @@ async fn main() -> anyhow::Result<()> {
     install_bus_name_probe(&connection).await;
 
     // Detached engine tasks (deferred shared-container launches) hold a work
-    // token so the idle-exit cannot kill the daemon mid-launch.
-    leyen_core::launch::set_work_guard_source(|| Box::new(ActivityGuard::new()));
+    // token so the idle-exit cannot kill the daemon mid-launch. The token also
+    // carries a LaunchGuard: during the container wait nothing is registered
+    // as running yet, and a dependency job slipping in would mutate the very
+    // prefix the pending launch is about to use.
+    leyen_core::launch::set_work_guard_source(|| {
+        Box::new((ActivityGuard::new(), LaunchGuard::new()))
+    });
 
     // Crash recovery: re-adopt live scopes, then start the one monitor.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;

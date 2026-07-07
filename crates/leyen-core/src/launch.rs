@@ -400,8 +400,17 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
         // The in-process claim makes concurrent synchronize passes (a monitor
         // tick racing a launch/stop fast-path republish) finalize a session
         // exactly once — both passes can have snapshotted it as finished.
+        // Removal is gated on the finalize having completed: a losing pass
+        // removing the entry while the winner's finalize is still in flight
+        // would open a crash window where the playtime is lost with no
+        // registry entry left for startup reconciliation to notice. Passes
+        // that see an already-finalized session still fall through to the
+        // removal below, so a transiently failed removal is retried.
         if claim_session_finalize(&key) {
             finalize_finished_session(session).await;
+            mark_session_finalized(&key);
+        } else if !session_finalize_done(&key) {
+            continue;
         }
         // Drop from the registry only after the playtime is recorded — never
         // the other way around. If the daemon dies in between, startup
@@ -430,19 +439,54 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
 /// Claims `(game_id, started_at)` for finalization; `false` if already claimed.
 /// Claims are not released when the session is removed — a claim freed too
 /// early would let a concurrent pass that snapshotted the session before its
-/// removal finalize it again. Instead, claims whose session started over a day
-/// ago are pruned: no concurrent synchronize pass can still hold a snapshot
-/// that old, and the set stays bounded on a long-lived daemon.
+/// removal finalize it again. Instead, claims made over a day ago are pruned:
+/// no concurrent synchronize pass can still be processing a snapshot that old,
+/// and the map stays bounded on a long-lived daemon. The prune is keyed on the
+/// claim time, not the session start — a session that ran longer than the
+/// horizon would otherwise have its fresh claim pruned and be finalized twice.
 fn claim_session_finalize(key: &(String, u64)) -> bool {
-    static CLAIMED: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, u64)>>> =
-        OnceLock::new();
-    let mut claimed = CLAIMED
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+    let mut claimed = finalize_claims();
+    let now = current_epoch_seconds();
+    let horizon = now.saturating_sub(24 * 60 * 60);
+    claimed.retain(|_, (_, claimed_at)| *claimed_at >= horizon);
+    match claimed.entry(key.clone()) {
+        // A losing claim must not clobber the winner's "finalized" flag.
+        std::collections::hash_map::Entry::Occupied(_) => false,
+        std::collections::hash_map::Entry::Vacant(slot) => {
+            slot.insert((false, now));
+            true
+        }
+    }
+}
+
+/// Records that the claimed finalize (playtime write) has completed, unblocking
+/// registry removal by any later synchronize pass.
+fn mark_session_finalized(key: &(String, u64)) {
+    let now = current_epoch_seconds();
+    finalize_claims()
+        .entry(key.clone())
+        .and_modify(|(done, _)| *done = true)
+        .or_insert((true, now));
+}
+
+/// Whether the claimed finalize for `key` has completed.
+fn session_finalize_done(key: &(String, u64)) -> bool {
+    finalize_claims()
+        .get(key)
+        .map(|(done, _)| *done)
+        .unwrap_or(false)
+}
+
+/// Claim map: key → (finalize completed, claim epoch seconds). See
+/// `claim_session_finalize`.
+type FinalizeClaims = HashMap<(String, u64), (bool, u64)>;
+
+fn finalize_claims() -> std::sync::MutexGuard<'static, FinalizeClaims> {
+    static CLAIMED: OnceLock<std::sync::Mutex<FinalizeClaims>> = OnceLock::new();
+    CLAIMED
+        .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
         .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let horizon = current_epoch_seconds().saturating_sub(24 * 60 * 60);
-    claimed.retain(|(_, started_at)| *started_at >= horizon);
-    claimed.insert(key.clone())
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 /// Re-scans running sessions and republishes them so the UI reflects the change
@@ -1420,7 +1464,9 @@ async fn launch_game_managed(
         ));
     }
 
-    let settings = leyen_model::settings::load_settings();
+    // Settings load re-scans the Proton install dir — keep it off the async
+    // worker (crate::config::load_settings wraps it in spawn_blocking).
+    let settings = crate::config::load_settings().await;
     let library = load_library().await.map_err(LaunchError::Other)?;
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
@@ -1821,7 +1867,10 @@ async fn finish_launch(
 
 #[cfg(test)]
 mod tests {
-    use super::shared_container_bus_name;
+    use super::{
+        claim_session_finalize, current_epoch_seconds, mark_session_finalized,
+        session_finalize_done, shared_container_bus_name,
+    };
 
     #[test]
     fn shared_container_bus_name_matches_umu_derivation() {
@@ -1830,6 +1879,27 @@ mod tests {
         assert_eq!(
             shared_container_bus_name("/mnt/data-0/.wine/prefixes/pwclassic"),
             "com.steampowered.App9ab17f3e489d0c144ccb2e8685166f0f"
+        );
+    }
+
+    #[test]
+    fn session_finalize_claim_is_exclusive_and_gates_removal() {
+        let key = ("test-finalize-claim".to_string(), current_epoch_seconds());
+        assert!(claim_session_finalize(&key), "first claim must win");
+        assert!(!claim_session_finalize(&key), "second claim must lose");
+        assert!(
+            !session_finalize_done(&key),
+            "removal must stay blocked until the finalize is marked done"
+        );
+        mark_session_finalized(&key);
+        assert!(session_finalize_done(&key));
+        assert!(
+            !claim_session_finalize(&key),
+            "late claim must lose after finalize"
+        );
+        assert!(
+            session_finalize_done(&key),
+            "a losing late claim must not clobber the finalized flag"
         );
     }
 }

@@ -120,9 +120,11 @@ pub async fn check_or_install_umu() {
         umu_core_dir
     );
     tokio::spawn(async move {
+        // A panic in the blocking task must still reset the flags below, or
+        // UMU_DOWNLOADING stuck at `true` blocks every future launch.
         let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir))
             .await
-            .unwrap();
+            .unwrap_or_else(|e| Err(UmuError::Download(format!("install task failed: {e}"))));
         match &result {
             Ok(()) => info!("[dbg] umu-launcher download+install completed"),
             Err(e) => warn!("[dbg] umu-launcher download+install failed: {e}"),
@@ -162,9 +164,10 @@ pub async fn check_or_install_winetricks() {
 
     info!("[dbg] winetricks not found, starting background download");
     tokio::spawn(async move {
+        // Same as the umu install above: never leave WINETRICKS_DOWNLOADING set.
         let result = tokio::task::spawn_blocking(download_winetricks)
             .await
-            .unwrap();
+            .unwrap_or_else(|e| Err(UmuError::Download(format!("download task failed: {e}"))));
         match &result {
             Ok(()) => info!("[dbg] winetricks download completed"),
             Err(e) => warn!("[dbg] winetricks download failed: {e}"),

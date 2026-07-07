@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use futures_util::StreamExt;
-use zbus::Connection;
 
 use leyen_ipc::{LeyenProxy, RunningGameSnapshot};
 use leyen_model::library::{find_game_by_leyen_id, read_library_from_disk};
@@ -59,7 +58,12 @@ async fn main() {
 }
 
 async fn proxy() -> Result<LeyenProxy<'static>> {
-    let connection = Connection::session()
+    // Without a method timeout a wedged (not just absent) daemon hangs every
+    // subcommand forever. 30s matches the GTK client's action bound — launches
+    // can do real work inline. Signal streams (`logs -f`) are unaffected.
+    let connection = zbus::connection::Builder::session()?
+        .method_timeout(std::time::Duration::from_secs(30))
+        .build()
         .await
         .context("Failed to connect to the session bus")?;
     LeyenProxy::new(&connection)
@@ -144,6 +148,24 @@ async fn list_games() -> Result<()> {
                     if snapshot.tracked_pid_count == 1 { "" } else { "es" }
                 );
             }
+        }
+
+        // Games the daemon tracks but the library no longer knows (removed or
+        // re-ID'd while running) — show them like the empty-library branch
+        // does, so they stay visible and killable.
+        let mut orphans: Vec<_> = running_map
+            .values()
+            .filter(|s| !indexed_games.contains_key(&s.game_id))
+            .collect();
+        orphans.sort_by(|a, b| a.leyen_id.cmp(&b.leyen_id));
+        for snapshot in orphans {
+            println!(
+                "  {}  <unknown>  [running, pid {}, {} process{}]",
+                snapshot.leyen_id,
+                snapshot.pid,
+                snapshot.tracked_pid_count,
+                if snapshot.tracked_pid_count == 1 { "" } else { "es" }
+            );
         }
 
         println!();

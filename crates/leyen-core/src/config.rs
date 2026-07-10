@@ -233,44 +233,6 @@ fn apply_authoritative(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use leyen_model::models::Game;
-
-    fn game(id: &str, playtime: u64) -> Game {
-        Game {
-            id: id.to_string(),
-            playtime_seconds: playtime,
-            ..Game::default()
-        }
-    }
-
-    #[test]
-    fn save_library_preserves_authoritative_playtime() {
-        // On disk the daemon recorded 500s of playtime for g1.
-        let current = vec![LibraryItem::Game(game("g1", 500))];
-        // The client submits an edit built from a stale read (playtime 0) plus a
-        // brand-new game g2.
-        let mut edited = game("g1", 0);
-        edited.title = "Renamed".to_string();
-        let incoming = vec![
-            LibraryItem::Game(edited),
-            LibraryItem::Game(game("g2", 0)),
-        ];
-
-        let merged = merge_authoritative_fields(incoming, &current);
-        let games = flatten_games(&merged);
-
-        let g1 = games.iter().find(|g| g.id == "g1").unwrap();
-        // Authoritative playtime preserved; client's structural edit (title) kept.
-        assert_eq!(g1.playtime_seconds, 500);
-        assert_eq!(g1.title, "Renamed");
-        // New game keeps its client values.
-        assert_eq!(games.iter().find(|g| g.id == "g2").unwrap().playtime_seconds, 0);
-    }
-}
-
 pub async fn load_games() -> Vec<leyen_model::models::Game> {
     flatten_games(&load_library().await.unwrap_or_default())
 }
@@ -326,4 +288,42 @@ pub async fn record_game_launch_result(game_id: &str, duration_seconds: u64, sta
     })
     .await
     .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use leyen_model::models::Game;
+
+    fn game(id: &str, playtime: u64) -> Game {
+        Game {
+            id: id.to_string(),
+            playtime_seconds: playtime,
+            ..Game::default()
+        }
+    }
+
+    #[test]
+    fn save_library_preserves_authoritative_playtime() {
+        // On disk the daemon recorded 500s of playtime for g1.
+        let current = vec![LibraryItem::Game(game("g1", 500))];
+        // The client submits an edit built from a stale read (playtime 0) plus a
+        // brand-new game g2.
+        let mut edited = game("g1", 0);
+        edited.title = "Renamed".to_string();
+        let incoming = vec![
+            LibraryItem::Game(edited),
+            LibraryItem::Game(game("g2", 0)),
+        ];
+
+        let merged = merge_authoritative_fields(incoming, &current);
+        let games = flatten_games(&merged);
+
+        let g1 = games.iter().find(|g| g.id == "g1").unwrap();
+        // Authoritative playtime preserved; client's structural edit (title) kept.
+        assert_eq!(g1.playtime_seconds, 500);
+        assert_eq!(g1.title, "Renamed");
+        // New game keeps its client values.
+        assert_eq!(games.iter().find(|g| g.id == "g2").unwrap().playtime_seconds, 0);
+    }
 }

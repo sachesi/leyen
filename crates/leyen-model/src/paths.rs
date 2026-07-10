@@ -13,9 +13,14 @@ use std::sync::OnceLock;
 use directories::ProjectDirs;
 use uuid::Uuid;
 
-pub fn get_project_dirs() -> ProjectDirs {
+pub fn get_project_dirs() -> Option<ProjectDirs> {
     ProjectDirs::from("com.github.sachesi", "leyen", "leyen")
-        .expect("Could not determine home directory")
+}
+
+/// `$HOME`, falling back to `/tmp` when even that isn't set — mirrors
+/// `leyen_model::runtime::get_umu_runtime_dir`'s fallback.
+fn home_or_tmp() -> String {
+    std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }
 
 static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -24,7 +29,9 @@ static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 pub fn get_config_dir() -> PathBuf {
     CONFIG_DIR
         .get_or_init(|| {
-            let dir = get_project_dirs().config_dir().to_path_buf();
+            let dir = get_project_dirs()
+                .map(|p| p.config_dir().to_path_buf())
+                .unwrap_or_else(|| PathBuf::from(format!("{}/.config/leyen", home_or_tmp())));
             let _ = fs::create_dir_all(&dir);
             dir
         })
@@ -34,7 +41,9 @@ pub fn get_config_dir() -> PathBuf {
 pub fn get_data_dir() -> PathBuf {
     DATA_DIR
         .get_or_init(|| {
-            let dir = get_project_dirs().data_dir().to_path_buf();
+            let dir = get_project_dirs()
+                .map(|p| p.data_dir().to_path_buf())
+                .unwrap_or_else(|| PathBuf::from(format!("{}/.local/share/leyen", home_or_tmp())));
             let _ = fs::create_dir_all(&dir);
             dir
         })

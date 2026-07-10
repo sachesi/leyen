@@ -40,6 +40,15 @@ pub fn download_winetricks() -> Result<(), UmuError> {
     let dest_dir = get_winetricks_dir();
     fs::create_dir_all(&dest_dir)?;
     let dest_path = format!("{}/winetricks", dest_dir);
+    // Download to a uniquely-named temp file first and rename into place only
+    // once curl succeeds — a process dying mid-download must not leave a
+    // truncated script that `Path::exists()` treats as installed forever.
+    let temp_path = format!(
+        "{}/winetricks.tmp.{}.{}",
+        dest_dir,
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    );
 
     let status = std::process::Command::new("curl")
         .args([
@@ -59,14 +68,14 @@ pub fn download_winetricks() -> Result<(), UmuError> {
             "--retry-delay",
             "1",
             "-o",
-            &dest_path,
+            &temp_path,
             "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
         ])
         .status()
         .map_err(|e| UmuError::Download(e.to_string()))?;
 
     if !status.success() {
-        let _ = fs::remove_file(&dest_path);
+        let _ = fs::remove_file(&temp_path);
         return Err(UmuError::Download(
             "Failed to download winetricks".to_string(),
         ));
@@ -75,11 +84,18 @@ pub fn download_winetricks() -> Result<(), UmuError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = fs::metadata(&dest_path) {
+        if let Ok(meta) = fs::metadata(&temp_path) {
             let mut perms = meta.permissions();
             perms.set_mode(0o755);
-            let _ = fs::set_permissions(&dest_path, perms);
+            let _ = fs::set_permissions(&temp_path, perms);
         }
+    }
+
+    if let Err(e) = fs::rename(&temp_path, &dest_path) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(UmuError::Download(format!(
+            "Failed to install winetricks: {e}"
+        )));
     }
 
     Ok(())
@@ -269,17 +285,27 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
 
     info!("[dbg] download_and_install_umu: download done, extracting");
     // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
-    let extracted = std::process::Command::new("tar")
+    let umu_dir = format!("{}/umu", dest_dir);
+    let status = std::process::Command::new("tar")
         .args(["-xf", &tarball_path, "-C", dest_dir])
-        .status()
-        .map_err(|e| UmuError::Extraction(e.to_string()))?
-        .success();
+        .status();
 
     let _ = fs::remove_file(&tarball_path);
 
+    // A truncated/partial extraction must not be left behind — availability is
+    // just `Path::exists()`, so a half-extracted `umu/` would count as
+    // installed forever otherwise.
+    let extracted = match status {
+        Ok(s) => s.success(),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&umu_dir);
+            return Err(UmuError::Extraction(e.to_string()));
+        }
+    };
+
     if extracted {
         // Ensure the binary is executable.
-        let umu_run = format!("{}/umu/umu-run", dest_dir);
+        let umu_run = format!("{}/umu-run", umu_dir);
         let version_file = format!("{}/version", dest_dir);
         let _ = fs::write(version_file, version);
         #[cfg(unix)]
@@ -293,6 +319,7 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         }
         Ok(())
     } else {
+        let _ = fs::remove_dir_all(&umu_dir);
         Err(UmuError::Extraction("Extraction failed".to_string()))
     }
 }

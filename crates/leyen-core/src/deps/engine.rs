@@ -278,6 +278,8 @@ pub async fn execute_dep_step(
                 cmd.args([
                     "--proto",
                     "=https",
+                    "--proto-redir",
+                    "=https",
                     "--tlsv1.2",
                     "--silent",
                     "--show-error",
@@ -320,6 +322,7 @@ pub async fn execute_dep_step(
                                         }
                                     }
                                     let _ = (&mut wait_fut).await;
+                                    let _ = fs::remove_file(&dest);
                                     return Err(t!("Cancelled."));
                                 }
                             }
@@ -768,6 +771,7 @@ pub async fn uninstall_dep(
     dep_id: &str,
     prefix_path: &str,
     proton_path: &str,
+    cancel: Arc<AtomicBool>,
     on_progress: impl Fn(usize, usize, String) + Send + 'static,
 ) -> Result<Option<String>, String> {
     let dep_id = dep_id.to_string();
@@ -824,7 +828,7 @@ pub async fn uninstall_dep(
         let prefix_path = prefix_path.clone();
         let proton_path = proton_path.clone();
         let verb = verb.clone();
-        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel = cancel.clone();
         let result: Result<(), String> = {
             let mut cmd = AsyncCommand::new(get_umu_run_path());
             configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
@@ -844,27 +848,31 @@ pub async fn uninstall_dep(
 
     let total_actions = actions.len();
     for (index, (description, action)) in actions.into_iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(t!("Cancelled."));
+        }
         on_progress(index + 1, total_actions, description.clone());
 
         let prefix_path = prefix_path.clone();
         let proton_path = proton_path.clone();
         let cache_dir = cache_dir.clone();
 
-        tokio::task::spawn_blocking(move || match action {
+        let result = match action {
             CleanupAction::RemoveDllOverrides(dlls) => {
-                remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls)
+                remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls, cancel.clone())
+                    .await
             }
             CleanupAction::UnregisterDlls(dlls) => {
-                unregister_dlls(&prefix_path, &proton_path, &dlls)
+                unregister_dlls(&prefix_path, &proton_path, &dlls, cancel.clone()).await
             }
             CleanupAction::RemoveCreatedFiles(files) => {
-                remove_created_files(&prefix_path, &files)
+                tokio::task::spawn_blocking(move || remove_created_files(&prefix_path, &files))
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r)
             }
-        })
-        .await
-        .map_err(join_err)
-        .and_then(|r| r)
-        .inspect_err(|error| error!("[dep:{}] removal failed: {}", dep_id, error))?;
+        };
+        result.inspect_err(|error| error!("[dep:{}] removal failed: {}", dep_id, error))?;
     }
 
     if let Some(profile) = get_dep_profile(&dep_id) {
@@ -987,19 +995,6 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
     }
 
     Ok(())
-}
-
-fn configure_umu_command(cmd: &mut std::process::Command, prefix_path: &str, proton_path: &str) {
-    cmd.env("WINEPREFIX", prefix_path);
-    if !proton_path.is_empty() {
-        cmd.env("PROTONPATH", proton_path);
-    }
-    cmd.env("GAMEID", "leyen-dep-install");
-    cmd.env(
-        "WINEDLLOVERRIDES",
-        "mscoree=b;mshtml=b;winemenubuilder.exe=d",
-    );
-    cmd.env("WINEDEBUG", "fixme-all");
 }
 
 fn build_install_plan(
@@ -1250,11 +1245,12 @@ fn build_cleanup_actions(installed: &InstalledDependency) -> Vec<(String, Cleanu
     actions
 }
 
-fn remove_dll_overrides(
+async fn remove_dll_overrides(
     prefix_path: &str,
     proton_path: &str,
     cache_dir: &str,
     dlls: &[String],
+    cancel: Arc<AtomicBool>,
 ) -> Result<(), String> {
     fs::create_dir_all(cache_dir)
         .map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
@@ -1274,77 +1270,42 @@ fn remove_dll_overrides(
     fs::write(&reg_path, reg_content)
         .map_err(|err| format!("Failed to write override removal file: {err}"))?;
 
-    let mut cmd = std::process::Command::new(get_umu_run_path());
-    configure_umu_command(&mut cmd, prefix_path, proton_path);
+    let mut cmd = AsyncCommand::new(get_umu_run_path());
+    configure_umu_command_async(&mut cmd, prefix_path, proton_path);
     cmd.args(["regedit.exe", "/S"]);
     cmd.arg(reg_path.as_os_str());
 
-    let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("Failed to spawn regedit: {err}"))?;
-
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let _ = fs::remove_file(&reg_path);
-                if !status.success() {
-                    return Err(format!("Failed to remove DLL overrides: regedit exited with status {}", status));
-                }
-                return Ok(());
-            }
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    warn!("[dep] regedit timed out after {} seconds", COMMAND_TIMEOUT_SECS);
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = fs::remove_file(&reg_path);
-                    return Err(format!("remove_dll_overrides timed out after {} seconds", COMMAND_TIMEOUT_SECS));
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(err) => {
-                let _ = fs::remove_file(&reg_path);
-                return Err(format!("Failed to wait for regedit: {err}"));
-            }
-        }
+    let result = run_umu_command(cmd, "regedit /S".to_string(), cancel).await;
+    let _ = fs::remove_file(&reg_path);
+    let output = result.map_err(|e| format!("Failed to remove DLL overrides: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to remove DLL overrides: regedit exited with status {}",
+            output.status
+        ));
     }
+    Ok(())
 }
 
-fn unregister_dlls(prefix_path: &str, proton_path: &str, dlls: &[String]) -> Result<(), String> {
+async fn unregister_dlls(
+    prefix_path: &str,
+    proton_path: &str,
+    dlls: &[String],
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
     for dll in dlls {
-        let mut cmd = std::process::Command::new(get_umu_run_path());
-        configure_umu_command(&mut cmd, prefix_path, proton_path);
+        let mut cmd = AsyncCommand::new(get_umu_run_path());
+        configure_umu_command_async(&mut cmd, prefix_path, proton_path);
         cmd.args(["regsvr32.exe", "/u", "/s", dll]);
 
-        let start = std::time::Instant::now();
-        let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
-        let mut child = cmd
-            .spawn()
-            .map_err(|err| format!("Failed to spawn regsvr32 for '{}': {}", dll, err))?;
-
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    if !status.success() {
-                        return Err(format!("Failed to unregister '{}': regsvr32 exited with status {}", dll, status));
-                    }
-                    break;
-                }
-                Ok(None) => {
-                    if start.elapsed() >= timeout {
-                        warn!("[dep] regsvr32 for '{}' timed out after {} seconds", dll, COMMAND_TIMEOUT_SECS);
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Err(format!("regsvr32 for '{}' timed out after {} seconds", dll, COMMAND_TIMEOUT_SECS));
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(err) => {
-                    return Err(format!("Failed to wait for regsvr32 for '{}': {}", dll, err));
-                }
-            }
+        let output = run_umu_command(cmd, format!("regsvr32 /u {}", dll), cancel.clone())
+            .await
+            .map_err(|e| format!("Failed to unregister '{}': {}", dll, e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to unregister '{}': regsvr32 exited with status {}",
+                dll, output.status
+            ));
         }
     }
 

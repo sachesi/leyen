@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use log::{info, warn};
+use log::{error, info, warn};
 use zbus::Connection;
 use zbus::connection::Builder;
 
@@ -247,23 +247,29 @@ impl Manager {
                  reload and retry"
             )));
         }
-        let text = String::from_utf8(toml_bytes).map_err(|_| {
-            warn!("SaveLibrary: payload is not valid UTF-8");
-            leyen_ipc::Error::Failed("Library payload is not valid UTF-8".to_string())
-        })?;
-        let items = toml::from_str::<leyen_model::models::GamesConfig>(&text)
-            .map_err(|e| {
-                warn!("SaveLibrary: parse failed: {e}");
-                leyen_ipc::Error::Failed(format!("Library payload failed to parse: {e}"))
-            })?
-            .items;
+        let items = tokio::task::spawn_blocking(move || {
+            let text = String::from_utf8(toml_bytes).map_err(|_| {
+                warn!("SaveLibrary: payload is not valid UTF-8");
+                leyen_ipc::Error::Failed("Library payload is not valid UTF-8".to_string())
+            })?;
+            toml::from_str::<leyen_model::models::GamesConfig>(&text)
+                .map(|c| c.items)
+                .map_err(|e| {
+                    warn!("SaveLibrary: parse failed: {e}");
+                    leyen_ipc::Error::Failed(format!("Library payload failed to parse: {e}"))
+                })
+        })
+        .await
+        .map_err(|e| leyen_ipc::Error::Failed(format!("Internal task error: {e}")))??;
         if !leyen_core::config::save_library_merged(items).await {
             return Err(leyen_ipc::Error::Failed(
                 "Failed to persist the library".to_string(),
             ));
         }
         let new_version = self.library_version.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = Manager::library_changed(&emitter, new_version).await;
+        if let Err(e) = Manager::library_changed(&emitter, new_version).await {
+            warn!("leyend: failed to emit LibraryChanged: {e}");
+        }
         Ok(new_version)
     }
 
@@ -416,9 +422,48 @@ impl Manager {
     ) -> zbus::Result<()>;
 }
 
+/// RAII guard on a `dep_jobs` entry: removes it on drop (panic-safe), like
+/// `ActivityGuard`/`LaunchGuard`. `finish()` marks the completion as normal;
+/// if dropped without it (the job's future panicked), the entry is still
+/// cleared but a warning is logged.
+struct DepJobGuard {
+    jobs: DepJobs,
+    job_id: String,
+    finished: bool,
+}
+
+impl DepJobGuard {
+    fn new(jobs: DepJobs, job_id: String) -> Self {
+        DepJobGuard {
+            jobs,
+            job_id,
+            finished: false,
+        }
+    }
+
+    fn finish(&mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for DepJobGuard {
+    fn drop(&mut self) {
+        if let Ok(mut jobs) = self.jobs.lock() {
+            jobs.remove(&self.job_id);
+        }
+        if !self.finished {
+            warn!(
+                "leyend: dep job '{}' ended without a normal finish (likely panicked); entry cleared",
+                self.job_id
+            );
+        }
+    }
+}
+
 impl Manager {
     /// Spawns a dependency install/uninstall job: progress → `DepProgress`,
     /// terminal result → `DepFinished`.
+    #[allow(clippy::too_many_arguments)]
     fn spawn_dep_job(
         &self,
         conn: Connection,
@@ -448,27 +493,39 @@ impl Manager {
             };
             tokio::spawn(async move {
                 let (conn, job_id, prefix, dep_id) = (&ctx.0, &ctx.1, &ctx.2, &ctx.3);
-                let _ = emit_dep_progress(conn, job_id, prefix, dep_id, "running", fraction, &msg)
-                    .await;
+                if let Err(e) =
+                    emit_dep_progress(conn, job_id, prefix, dep_id, "running", fraction, &msg).await
+                {
+                    warn!("leyend: failed to emit DepProgress: {e}");
+                }
             });
         };
 
         tokio::spawn(async move {
             let _work = work;
+            let mut job_guard = DepJobGuard::new(jobs, job_id.clone());
             let result = if install {
                 leyen_core::deps::install_dep(&dep_id, &prefix, &proton_path, cancel, on_progress)
                     .await
             } else {
-                leyen_core::deps::uninstall_dep(&dep_id, &prefix, &proton_path, on_progress).await
+                leyen_core::deps::uninstall_dep(
+                    &dep_id,
+                    &prefix,
+                    &proton_path,
+                    cancel,
+                    on_progress,
+                )
+                .await
             };
-            if let Ok(mut jobs) = jobs.lock() {
-                jobs.remove(&job_id);
-            }
+            job_guard.finish();
+            drop(job_guard);
             let (success, message) = match result {
                 Ok(note) => (true, note.unwrap_or_default()),
                 Err(e) => (false, e),
             };
-            let _ = emit_dep_finished(&conn, &job_id, success, &message).await;
+            if let Err(e) = emit_dep_finished(&conn, &job_id, success, &message).await {
+                warn!("leyend: failed to emit DepFinished: {e}");
+            }
         });
     }
 }
@@ -590,11 +647,24 @@ async fn graceful_shutdown(connection: &Connection) {
     leyen_core::logging::shutdown();
 }
 
+/// Spawns a long-lived background task under a supervisor: a panic inside
+/// `fut` is caught and logged instead of silently killing the loop forever
+/// (the task itself never returns, so nothing else would ever notice).
+fn spawn_supervised(name: &'static str, fut: impl std::future::Future<Output = ()> + Send + 'static) {
+    tokio::spawn(async move {
+        if let Err(e) = tokio::spawn(fut).await
+            && e.is_panic()
+        {
+            error!("leyend: background task '{name}' panicked and stopped");
+        }
+    });
+}
+
 /// Requests shutdown on SIGTERM/SIGINT (systemd stop, session logout, Ctrl-C)
 /// so scopes keep running but logs are flushed and the bus name is released
 /// cleanly. Scopes survive the daemon; the next start re-adopts them.
 fn spawn_signal_handlers(shutdown: Arc<tokio::sync::Notify>) {
-    tokio::spawn(async move {
+    spawn_supervised("signal-handlers", async move {
         use tokio::signal::unix::{SignalKind, signal};
         let mut term = match signal(SignalKind::terminate()) {
             Ok(s) => s,
@@ -646,10 +716,10 @@ fn install_listeners(connection: &Connection) {
         let _ = sessions_tx.send(snaps);
     });
     let conn = connection.clone();
-    tokio::spawn(async move {
+    spawn_supervised("sessions-relay", async move {
         while let Some(core) = sessions_rx.recv().await {
             let mapped = map_snapshots(core).await;
-            let _ = conn
+            if let Err(e) = conn
                 .emit_signal(
                     Option::<&str>::None,
                     OBJECT_PATH,
@@ -657,7 +727,10 @@ fn install_listeners(connection: &Connection) {
                     "SessionsChanged",
                     &(mapped,),
                 )
-                .await;
+                .await
+            {
+                warn!("leyend: failed to emit SessionsChanged: {e}");
+            }
         }
     });
 
@@ -668,11 +741,11 @@ fn install_listeners(connection: &Connection) {
         let _ = logs_tx.send(total);
     });
     let conn = connection.clone();
-    tokio::spawn(async move {
+    spawn_supervised("logs-relay", async move {
         while logs_rx.changed().await.is_ok() {
             tokio::time::sleep(Duration::from_millis(150)).await;
             let total = *logs_rx.borrow_and_update();
-            let _ = conn
+            if let Err(e) = conn
                 .emit_signal(
                     Option::<&str>::None,
                     OBJECT_PATH,
@@ -680,7 +753,10 @@ fn install_listeners(connection: &Connection) {
                     "LogsAppended",
                     &(total,),
                 )
-                .await;
+                .await
+            {
+                warn!("leyend: failed to emit LogsAppended: {e}");
+            }
         }
     });
 }
@@ -688,7 +764,7 @@ fn install_listeners(connection: &Connection) {
 /// Emits `RuntimeStatus` whenever umu/winetricks readiness changes. Cheap
 /// (readiness checks are cached) and not the per-game scanning we eliminated.
 fn spawn_runtime_status_watcher(connection: Connection) {
-    tokio::spawn(async move {
+    spawn_supervised("runtime-status-watcher", async move {
         let mut last: Option<RuntimeReadiness> = None;
         loop {
             let now = current_runtime_readiness().await;
@@ -700,7 +776,7 @@ fn spawn_runtime_status_watcher(connection: Connection) {
                 None => true,
             };
             if changed {
-                let _ = connection
+                if let Err(e) = connection
                     .emit_signal(
                         Option::<&str>::None,
                         OBJECT_PATH,
@@ -708,7 +784,10 @@ fn spawn_runtime_status_watcher(connection: Connection) {
                         "RuntimeStatus",
                         &(now.umu_ready, now.winetricks_ready),
                     )
-                    .await;
+                    .await
+                {
+                    warn!("leyend: failed to emit RuntimeStatus: {e}");
+                }
                 last = Some(now);
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -722,7 +801,7 @@ fn spawn_runtime_status_watcher(connection: Connection) {
 /// gates the timer; `ACTIVE_WORK` gates it for game-less work (dependency
 /// jobs, deferred launches, in-flight method calls).
 fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>, shutdown: Arc<tokio::sync::Notify>) {
-    tokio::spawn(async move {
+    spawn_supervised("idle-exit", async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
             if leyen_core::launch::is_any_game_running()

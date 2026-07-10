@@ -61,11 +61,17 @@ async fn proxy() -> Result<LeyenProxy<'static>> {
     // Without a method timeout a wedged (not just absent) daemon hangs every
     // subcommand forever. 30s matches the GTK client's action bound — launches
     // can do real work inline. Signal streams (`logs -f`) are unaffected.
-    let connection = zbus::connection::Builder::session()?
-        .method_timeout(std::time::Duration::from_secs(30))
-        .build()
-        .await
-        .context("Failed to connect to the session bus")?;
+    // The initial bus handshake has no timeout of its own, so bound it
+    // separately — a wedged broker would otherwise hang before any call.
+    let connection = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        zbus::connection::Builder::session()?
+            .method_timeout(std::time::Duration::from_secs(30))
+            .build(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("Timed out connecting to the session bus"))?
+    .context("Failed to connect to the session bus")?;
     LeyenProxy::new(&connection)
         .await
         .context("Failed to reach the Leyen daemon")

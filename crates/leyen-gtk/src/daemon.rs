@@ -645,10 +645,30 @@ pub fn run_event_dispatch(evt_rx: async_channel::Receiver<DaemonEvent>) {
 /// Runs `f` on a throwaway thread and awaits the result on the glib loop. Used
 /// for local blocking work (file reads, icon extraction, desktop entries) since
 /// the GTK thread has no tokio runtime. Infrequent, so a per-call thread is fine.
+///
+/// A panicking `f` is caught and logged rather than left to drop the sender:
+/// the caller's `.await` simply never resolves instead of the panic
+/// resurfacing as a `.expect()` failure on the glib main thread and taking the
+/// whole app down with it.
 pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = async_channel::bounded(1);
     std::thread::spawn(move || {
-        let _ = tx.send_blocking(f());
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            Ok(value) => {
+                let _ = tx.send_blocking(value);
+            }
+            Err(payload) => {
+                let msg = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                log::error!("gio_blocking: blocking task panicked: {msg}");
+            }
+        }
     });
-    rx.recv().await.expect("blocking task dropped before completion")
+    match rx.recv().await {
+        Ok(value) => value,
+        Err(_) => std::future::pending().await,
+    }
 }

@@ -2,6 +2,7 @@ use leyen_model::t;
 use libadwaita as adw;
 
 use adw::prelude::*;
+use futures_util::future::{Either, select};
 use gtk4::{gio, glib};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -836,6 +837,11 @@ pub async fn open_dependencies_page(
     nav.push(&nav_page);
 }
 
+/// Backstop for a job whose daemon dies without ever sending `DepFinished`,
+/// `DaemonRestarted`, or `Error`: without this the row spinner and
+/// `dialog_busy` would stay stuck forever.
+const DEP_JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Drives a dependency install/uninstall job through the daemon: forwards
 /// `DepProgress` to `on_progress` and the terminal `DepFinished` to `on_finish`,
 /// recording the job id in `current_job` so the cancel button can target it.
@@ -866,11 +872,31 @@ fn start_dep_job(
         };
         *current_job.borrow_mut() = Some(job_id.clone());
 
+        let deadline = std::time::Instant::now() + DEP_JOB_TIMEOUT;
         let mut on_finish = Some(on_finish);
-        while let Ok(evt) = events.recv().await {
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let evt = if remaining.is_zero() {
+                None
+            } else {
+                match select(Box::pin(events.recv()), Box::pin(glib::timeout_future(remaining))).await {
+                    Either::Left((Ok(evt), _)) => Some(evt),
+                    Either::Left((Err(_), _)) => break,
+                    Either::Right(_) => None,
+                }
+            };
+
             if !page_widget.is_mapped() {
                 break;
             }
+
+            let Some(evt) = evt else {
+                if let Some(cb) = on_finish.take() {
+                    cb(false, Some(t!("Timed out waiting for the daemon.")));
+                }
+                break;
+            };
+
             match evt {
                 DaemonEvent::DepProgress { job_id: j, msg, .. } if j == job_id => {
                     on_progress(0, 0, msg);
@@ -886,6 +912,21 @@ fn start_dep_job(
                     if let Some(cb) = on_finish.take() {
                         let note = (!message.is_empty()).then_some(message);
                         cb(success, note);
+                    }
+                    break;
+                }
+                DaemonEvent::DaemonRestarted => {
+                    if let Some(cb) = on_finish.take() {
+                        cb(
+                            false,
+                            Some(t!("The daemon restarted; the operation's outcome is unknown.")),
+                        );
+                    }
+                    break;
+                }
+                DaemonEvent::Error(message) => {
+                    if let Some(cb) = on_finish.take() {
+                        cb(false, Some(message));
                     }
                     break;
                 }

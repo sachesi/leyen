@@ -23,6 +23,7 @@ const RESOURCE_DATA_ENTRY_LEN: usize = 16;
 const RT_ICON: u32 = 3;
 const RT_GROUP_ICON: u32 = 14;
 const MAX_GROUP_ICON_ENTRIES: usize = 256;
+const MAX_ICON_DECODE_DIMENSION: u32 = 4096;
 
 pub fn game_icon_path(game_id: &str) -> PathBuf {
     managed_icons_dir_path().join(format!("{}.png", game_icon_name(game_id)))
@@ -81,12 +82,26 @@ pub fn clear_group_icon(group_id: &str) {
     let _ = fs::remove_file(group_icon_path(group_id));
 }
 
+/// Decode limits for icons pulled from untrusted input (custom icon files,
+/// blobs extracted from arbitrary game executables): caps dimensions so a
+/// crafted image can't force an oversized allocation.
+fn icon_decode_limits() -> image::Limits {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_ICON_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_ICON_DECODE_DIMENSION);
+    limits
+}
+
 fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
     if source.as_os_str().is_empty() {
         return Err("Custom icon path is required".to_string());
     }
 
-    let image = image::open(source)
+    let mut reader = image::ImageReader::open(source)
+        .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
+    reader.limits(icon_decode_limits());
+    let image = reader
+        .decode()
         .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
     let normalized = image.resize(MANAGED_ICON_SIZE, MANAGED_ICON_SIZE, FilterType::CatmullRom);
 
@@ -151,7 +166,11 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
 }
 
 fn decode_icon_blob(bytes: &[u8]) -> Option<image::DynamicImage> {
-    image::load_from_memory(bytes).ok()
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    reader.limits(icon_decode_limits());
+    reader.decode().ok()
 }
 
 fn score_match(image: &image::DynamicImage, target_size: u32) -> u64 {

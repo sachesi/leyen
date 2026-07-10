@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock, RwLock};
 use std::thread::JoinHandle;
 
 use chrono::Local;
-use crossbeam_channel::{Sender, unbounded};
+use crossbeam_channel::{Sender, bounded};
 use log::{Level, LevelFilter, Metadata, Record};
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,14 @@ static LOG_SENDER: Mutex<Option<Sender<LogEntry>>> = Mutex::new(None);
 static LOG_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 static UI_LOG_ENTRIES: OnceLock<RwLock<VecDeque<LogEntry>>> = OnceLock::new();
 static TOTAL_LOG_LINES_PRODUCED: AtomicU64 = AtomicU64::new(0);
+/// Lines dropped because the channel to the writer thread was full. Drained
+/// into a single marker line the next time a send succeeds.
+static DROPPED_LOG_LINES: AtomicU64 = AtomicU64::new(0);
 const MAX_UI_LOGS: usize = 1000; // Reduced to 1000 for better GTK performance
+/// Capacity of the channel feeding the writer thread. Bounded so a
+/// log-flooding game (piped stdout/stderr) can't grow daemon RSS without
+/// limit; `send_log_line` drops lines rather than blocking the caller once full.
+const LOG_CHANNEL_CAPACITY: usize = 10_000;
 
 /// Notified (with the new total offset) whenever a log line is appended. The
 /// daemon installs a coalescing emitter here to drive the `LogsAppended` signal.
@@ -54,6 +61,31 @@ pub fn set_logs_appended_listener(listener: impl Fn(u64) + Send + Sync + 'static
 
 fn log_path() -> PathBuf {
     get_config_dir().join("logs.jsonl")
+}
+
+/// Sends `entry` on `tx` without blocking. A log call happens on arbitrary
+/// caller threads (including game stdout/stderr readers in launch.rs); if the
+/// writer thread falls behind and the channel fills, the caller must not
+/// stall on it, so the line is dropped and counted instead. Once a later send
+/// succeeds, one marker line reporting the drop count is emitted through the
+/// same channel.
+fn send_log_line(tx: &Sender<LogEntry>, entry: LogEntry) {
+    if tx.try_send(entry).is_err() {
+        DROPPED_LOG_LINES.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
+
+    let dropped = DROPPED_LOG_LINES.swap(0, Ordering::Relaxed);
+    if dropped > 0 {
+        let marker = LogEntry {
+            timestamp: Local::now().to_rfc3339(),
+            line: format!("[WARN] {dropped} log lines dropped (writer backlogged)"),
+            game_id: None,
+        };
+        if tx.try_send(marker).is_err() {
+            DROPPED_LOG_LINES.fetch_add(dropped, Ordering::Relaxed);
+        }
+    }
 }
 
 struct LeyenLogger;
@@ -110,7 +142,7 @@ impl log::Log for LeyenLogger {
         if let Ok(sender) = LOG_SENDER.lock()
             && let Some(tx) = sender.as_ref()
         {
-            let _ = tx.send(entry);
+            send_log_line(tx, entry);
         }
     }
 
@@ -129,7 +161,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
         let _ = fs::rename(&path, &old_path);
     }
 
-    let (tx, rx) = unbounded::<LogEntry>();
+    let (tx, rx) = bounded::<LogEntry>(LOG_CHANNEL_CAPACITY);
     if let Ok(mut sender) = LOG_SENDER.lock() {
         *sender = Some(tx);
     }
@@ -295,7 +327,44 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests {
-    use super::batch_skip;
+    use super::{DROPPED_LOG_LINES, LogEntry, batch_skip, send_log_line};
+    use crossbeam_channel::bounded;
+    use std::sync::atomic::Ordering;
+
+    fn entry(line: &str) -> LogEntry {
+        LogEntry {
+            timestamp: String::new(),
+            line: line.to_string(),
+            game_id: None,
+        }
+    }
+
+    #[test]
+    fn send_log_line_drops_when_full_then_marks_on_recovery() {
+        // Writer stalled/absent: nothing drains the channel.
+        let (tx, rx) = bounded::<LogEntry>(2);
+        DROPPED_LOG_LINES.store(0, Ordering::Relaxed);
+
+        send_log_line(&tx, entry("a"));
+        send_log_line(&tx, entry("b"));
+        assert_eq!(DROPPED_LOG_LINES.load(Ordering::Relaxed), 0);
+
+        // Channel full: these must not block and must be dropped + counted.
+        send_log_line(&tx, entry("c"));
+        send_log_line(&tx, entry("d"));
+        assert_eq!(DROPPED_LOG_LINES.load(Ordering::Relaxed), 2);
+
+        // Writer catches up, freeing room for the next send and its marker.
+        rx.recv().unwrap();
+        rx.recv().unwrap();
+        send_log_line(&tx, entry("e"));
+        assert_eq!(DROPPED_LOG_LINES.load(Ordering::Relaxed), 0);
+
+        assert_eq!(rx.recv().unwrap().line, "e");
+        let marker = rx.recv().unwrap();
+        assert!(marker.line.contains("2 log lines dropped"));
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn batch_skip_offset_math() {

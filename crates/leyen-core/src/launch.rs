@@ -605,6 +605,45 @@ fn session_start_instants()
     SESSION_START_INSTANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Game ids with a launch accepted but not yet registered in the running
+/// registry. `try_register_running_session` only dedupes already-registered
+/// sessions, and the deferred shared-container path can wait up to
+/// `SHARED_CONTAINER_WAIT_SECS` before registering — without a claim, a second
+/// launch of the same game in that window passes every guard and spawns a
+/// second process tree against the same prefix. In-process only by design:
+/// every launch funnels through the daemon, and a claim must die with the
+/// process rather than persist past a crash and block the game forever.
+static PENDING_LAUNCHES: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    OnceLock::new();
+
+fn pending_launches() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    PENDING_LAUNCHES.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Exclusive claim on launching a game id, released on drop — any exit path,
+/// including a panic unwinding the deferred launch task.
+struct LaunchClaim {
+    game_id: String,
+}
+
+impl LaunchClaim {
+    fn try_claim(game_id: &str) -> Option<Self> {
+        let mut pending = pending_launches().lock().unwrap_or_else(|e| e.into_inner());
+        pending.insert(game_id.to_string()).then(|| LaunchClaim {
+            game_id: game_id.to_string(),
+        })
+    }
+}
+
+impl Drop for LaunchClaim {
+    fn drop(&mut self) {
+        pending_launches()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.game_id);
+    }
+}
+
 /// Detached output-capture task handles per game. A game's descendants can
 /// inherit the stdout/stderr pipe fds and keep them open indefinitely (notably
 /// siblings in a shared container), so the reader tasks would never see EOF;
@@ -1478,6 +1517,14 @@ async fn launch_game_managed(
         ));
     }
 
+    // Held until the session is registered (or the launch fails); covers the
+    // whole pre-registration window the running check above can't see.
+    let Some(launch_claim) = LaunchClaim::try_claim(&game.id) else {
+        return Err(LaunchError::Other(
+            t!("This game is already running"),
+        ));
+    };
+
     // Fail fast on a missing executable: without this, umu/wine only surface it
     // minutes of log noise later as a cryptic exit status.
     if game.exe_path.starts_with('/') {
@@ -1632,6 +1679,7 @@ async fn launch_game_managed(
         let work_guard = acquire_work_guard();
         tokio::spawn(async move {
             let _work_guard = work_guard;
+            let _launch_claim = launch_claim;
             let game = game_bg;
             let mut env_vars = env_vars;
             if wait_for_shared_container(&prefix, &game.id).await {
@@ -1868,9 +1916,28 @@ async fn finish_launch(
 #[cfg(test)]
 mod tests {
     use super::{
-        claim_session_finalize, current_epoch_seconds, mark_session_finalized,
+        LaunchClaim, claim_session_finalize, current_epoch_seconds, mark_session_finalized,
         session_finalize_done, shared_container_bus_name,
     };
+
+    #[test]
+    fn launch_claim_is_exclusive_until_dropped() {
+        let claim = LaunchClaim::try_claim("test-launch-claim");
+        assert!(claim.is_some(), "first claim must win");
+        assert!(
+            LaunchClaim::try_claim("test-launch-claim").is_none(),
+            "second claim must lose while the first is held"
+        );
+        assert!(
+            LaunchClaim::try_claim("test-launch-claim-other").is_some(),
+            "claims on other game ids must be independent"
+        );
+        drop(claim);
+        assert!(
+            LaunchClaim::try_claim("test-launch-claim").is_some(),
+            "the claim must be released on drop"
+        );
+    }
 
     #[test]
     fn shared_container_bus_name_matches_umu_derivation() {

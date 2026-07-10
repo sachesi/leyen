@@ -732,7 +732,7 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !std::path::Path::new(&p).exists()
+                    if !gio_blocking(move || std::path::Path::new(&p).exists()).await
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -776,7 +776,7 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !std::path::Path::new(&p).exists()
+                    if !gio_blocking(move || std::path::Path::new(&p).exists()).await
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -1292,7 +1292,7 @@ pub async fn show_edit_group_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !std::path::Path::new(&p).exists()
+                if !gio_blocking(move || std::path::Path::new(&p).exists()).await
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
@@ -1578,7 +1578,7 @@ pub async fn show_edit_game_dialog(
         .build();
 
     let lid = game.leyen_id.clone();
-    let exists = desktop_entry_exists(&lid);
+    let exists = gio_blocking(move || desktop_entry_exists(&lid)).await;
     let menu_btn = gtk4::Button::builder()
         .label(if exists {
             t!("Remove from menu")
@@ -1824,7 +1824,7 @@ pub async fn show_edit_game_dialog(
         let group = group_for_menu.clone();
         glib::spawn_future_local(async move {
             let leyen_id = game.leyen_id.clone();
-            let exists = desktop_entry_exists(&leyen_id);
+            let exists = gio_blocking(move || desktop_entry_exists(&leyen_id)).await;
             if exists {
                 match remove_game_desktop_entry(game.leyen_id.clone()).await {
                     Ok(_) => {
@@ -2039,7 +2039,7 @@ pub async fn show_edit_game_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !std::path::Path::new(&p).exists()
+                if !gio_blocking(move || std::path::Path::new(&p).exists()).await
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;

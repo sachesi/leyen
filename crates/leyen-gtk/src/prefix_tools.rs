@@ -97,8 +97,12 @@ fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Resu
     cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
     cmd.env("WINEDEBUG", "fixme-all");
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|err| format!("Failed to launch {}: {}", name, err))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     info!("Launched '{}' inside prefix '{}'", name, prefix_path);
     Ok(())
 }
@@ -186,8 +190,12 @@ fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> R
     }
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
-    cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|err| format!("Failed to launch '{}': {}", path.display(), err))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 
     info!(
         "Launched '{}' inside prefix '{}'",

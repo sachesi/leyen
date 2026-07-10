@@ -20,10 +20,10 @@ use crate::runtime::umu::{
 };
 
 use super::recipes::get_dep_steps;
-use super::state::{remove_installed_dep, upsert_installed_dep};
+use super::state::{read_prefix_dep_state_checked, remove_installed_dep, upsert_installed_dep};
 use leyen_model::deps::{
     DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile,
-    get_deps_cache_dir, read_prefix_dep_state,
+    get_deps_cache_dir,
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
@@ -56,6 +56,51 @@ fn try_lock_prefix_op(prefix: &str) -> Option<PrefixOpGuard> {
         return None;
     }
     Some(PrefixOpGuard(prefix.to_string()))
+}
+
+/// Files currently being downloaded/verified in the shared dependency cache.
+/// `get_deps_cache_dir()` is one global directory across all prefixes, so two
+/// installs/uninstalls for *different* prefixes (which `busy_prefixes` does not
+/// serialize against each other) can target the same cached file; this stops
+/// one from treating a sibling's half-written download as complete, or
+/// deleting a file the other still needs mid-verification.
+fn busy_cache_files() -> &'static Mutex<HashSet<String>> {
+    static BUSY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    BUSY.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Releases the cache file claim on drop.
+struct CacheFileGuard(String);
+
+impl Drop for CacheFileGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = busy_cache_files().lock() {
+            set.remove(&self.0);
+        }
+    }
+}
+
+/// Attempts to claim exclusive access to `file_name` in the shared dependency
+/// cache, or returns `None` if another task already holds it.
+fn try_claim_cache_file(file_name: &str) -> Option<CacheFileGuard> {
+    let mut set = busy_cache_files().lock().ok()?;
+    if !set.insert(file_name.to_string()) {
+        return None;
+    }
+    Some(CacheFileGuard(file_name.to_string()))
+}
+
+/// Claims `file_name`, waiting (honoring `cancel`) while another task holds it.
+async fn claim_cache_file(file_name: &str, cancel: &Arc<AtomicBool>) -> Result<CacheFileGuard, String> {
+    loop {
+        if let Some(guard) = try_claim_cache_file(file_name) {
+            return Ok(guard);
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Err(t!("Cancelled."));
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
 fn join_err(e: tokio::task::JoinError) -> String {
@@ -255,6 +300,11 @@ pub async fn execute_dep_step(
                     file_name
                 ));
             }
+
+            // Claimed for the whole exists-check + download + verify sequence
+            // below: a sibling operation for another prefix may share this
+            // exact cache file.
+            let _cache_claim = claim_cache_file(file_name, cancel).await?;
 
             let dest = Path::new(cache_dir).join(file_name);
             let d = dest.clone();
@@ -587,9 +637,18 @@ pub async fn install_dep(
     ensure_umu_ready(needs_winetricks, &on_progress).await?;
 
     let prefix_path_for_state = prefix_path.clone();
-    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
-        .await
-        .unwrap_or_default();
+    let state = match tokio::task::spawn_blocking(move || {
+        read_prefix_dep_state_checked(&prefix_path_for_state)
+    })
+    .await
+    .map_err(join_err)
+    .and_then(|r| r)
+    {
+        Ok(state) => state,
+        Err(err) => {
+            return Err(t!("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
+        }
+    };
 
     let install_plan = match build_install_plan(&dep_id, &state) {
         Ok(plan) if !plan.is_empty() => plan,
@@ -785,9 +844,18 @@ pub async fn uninstall_dep(
         ));
     };
     let prefix_path_for_state = prefix_path.clone();
-    let state = tokio::task::spawn_blocking(move || read_prefix_dep_state(&prefix_path_for_state))
-        .await
-        .unwrap_or_default();
+    let state = match tokio::task::spawn_blocking(move || {
+        read_prefix_dep_state_checked(&prefix_path_for_state)
+    })
+    .await
+    .map_err(join_err)
+    .and_then(|r| r)
+    {
+        Ok(state) => state,
+        Err(err) => {
+            return Err(t!("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
+        }
+    };
 
     let installed = match state.installed.get(&dep_id).cloned() {
         Some(installed) => installed,
@@ -1266,7 +1334,14 @@ async fn remove_dll_overrides(
         reg_lines.join("\r\n")
     );
 
-    let reg_path = Path::new(cache_dir).join("remove_dependency_overrides.reg");
+    // Unique per invocation: cache_dir is one global directory shared by every
+    // prefix, so a fixed name here would let concurrent uninstalls for
+    // different prefixes overwrite each other's file before regedit reads it.
+    let reg_path = Path::new(cache_dir).join(format!(
+        "remove_dependency_overrides.{}.{}.reg",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
     fs::write(&reg_path, reg_content)
         .map_err(|err| format!("Failed to write override removal file: {err}"))?;
 

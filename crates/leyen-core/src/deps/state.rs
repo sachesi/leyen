@@ -70,8 +70,12 @@ fn prefix_deps_lock_path(prefix_path: &str) -> PathBuf {
 
 /// Reads dependency state, distinguishing "absent" (defaults) from "present but
 /// corrupt" (error). Mutating callers must use this — silently defaulting on a
-/// parse error would erase all tracked dependencies on the next write.
-fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencyState, String> {
+/// parse error would erase all tracked dependencies on the next write. Install
+/// and uninstall planning also route through this: their decisions gate a
+/// later mutation, so the same corrupt-state-as-empty trap applies (e.g. an
+/// uninstall would silently no-op on a dependency that's actually still
+/// tracked).
+pub(crate) fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencyState, String> {
     let path = get_prefix_deps_state_path(prefix_path);
     match fs::read_to_string(&path) {
         Ok(content) => toml::from_str::<PrefixDependencyState>(&content).map_err(|err| {

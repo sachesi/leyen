@@ -583,6 +583,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let conn_holder = manager.conn.clone();
     let last_activity = manager.last_activity.clone();
+    let dep_jobs = manager.dep_jobs.clone();
 
     // Bus-name ownership is the singleton guarantee: build() fails if another
     // daemon already holds the name.
@@ -622,16 +623,32 @@ async fn main() -> anyhow::Result<()> {
     // Serve until the idle-exit or a termination signal requests shutdown,
     // then tear down gracefully.
     shutdown.notified().await;
-    graceful_shutdown(&connection).await;
+    graceful_shutdown(&connection, &dep_jobs).await;
     Ok(())
 }
 
 /// Graceful teardown: release the bus name first — a client call from here on
-/// activates a fresh daemon instead of hitting a dying one — then drain
-/// in-flight work (bounded) and flush the log thread.
-async fn graceful_shutdown(connection: &Connection) {
+/// activates a fresh daemon instead of hitting a dying one — then cancel any
+/// in-flight dependency jobs, drain in-flight work (bounded) and flush the
+/// log thread.
+async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
     if let Err(e) = connection.release_name(leyen_ipc::BUS_NAME).await {
         warn!("leyend: failed to release bus name: {e}");
+    }
+    // Flip every in-flight dep job's cancel flag: `run_umu_command_inner`
+    // notices within ~200ms and kills the process group, so this turns a
+    // SIGTERM mid-install into a clean cancel instead of an orphaned child.
+    let cancelled = dep_jobs
+        .lock()
+        .map(|jobs| {
+            for cancel in jobs.values() {
+                cancel.store(true, Ordering::Relaxed);
+            }
+            jobs.len()
+        })
+        .unwrap_or_default();
+    if cancelled > 0 {
+        info!("leyend: cancelling {cancelled} in-flight dependency job(s) for shutdown");
     }
     let deadline = Instant::now() + Duration::from_secs(5);
     while ACTIVE_WORK.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {

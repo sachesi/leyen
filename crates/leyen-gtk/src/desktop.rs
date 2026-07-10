@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use crate::daemon::gio_blocking;
@@ -123,7 +122,27 @@ fn desktop_icon(game: &Game) -> String {
 }
 
 fn desired_desktop_entry_path(game: &Game, group: Option<&GameGroup>) -> PathBuf {
-    applications_dir_path().join(desktop_entry_file_name(game, group))
+    let dir = applications_dir_path();
+    let plain_name = desktop_entry_file_name(game, group);
+    let existing_content = fs::read_to_string(dir.join(&plain_name)).ok();
+    let file_name =
+        disambiguate_file_name(&plain_name, &game.leyen_id, existing_content.as_deref());
+    dir.join(file_name)
+}
+
+fn disambiguate_file_name(
+    plain_name: &str,
+    leyen_id: &str,
+    existing_content: Option<&str>,
+) -> String {
+    match existing_content {
+        Some(content) if !content_owns_leyen_id(content, leyen_id) => {
+            let stem = plain_name.strip_suffix(".desktop").unwrap_or(plain_name);
+            let suffix: String = leyen_id.chars().take(8).collect();
+            format!("{stem}-{suffix}.desktop")
+        }
+        _ => plain_name.to_string(),
+    }
 }
 
 fn desktop_entry_file_name(game: &Game, group: Option<&GameGroup>) -> String {
@@ -156,7 +175,6 @@ fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
         return Vec::new();
     };
 
-    let exec_line = format!("Exec=leyen run {}", leyen_id.trim());
     let mut result = Vec::new();
 
     for entry in entries.filter_map(Result::ok) {
@@ -166,18 +184,18 @@ fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"));
         if is_desktop
-            && let Ok(file) = fs::File::open(&path)
+            && let Ok(content) = fs::read_to_string(&path)
+            && content_owns_leyen_id(&content, leyen_id)
         {
-            let reader = BufReader::new(file);
-            for content in reader.lines().map_while(Result::ok) {
-                if content.trim() == exec_line {
-                    result.push(path);
-                    break;
-                }
-            }
+            result.push(path);
         }
     }
     result
+}
+
+fn content_owns_leyen_id(content: &str, leyen_id: &str) -> bool {
+    let exec_line = format!("Exec=leyen run {}", leyen_id.trim());
+    content.lines().any(|line| line.trim() == exec_line)
 }
 
 fn sanitize_desktop_value(value: &str) -> String {
@@ -205,7 +223,8 @@ fn sanitize_desktop_file_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        desktop_entry_file_name, desktop_icon, render_game_desktop_entry, startup_wm_class,
+        desktop_entry_file_name, desktop_icon, disambiguate_file_name, render_game_desktop_entry,
+        startup_wm_class,
     };
     use leyen_model::models::{Game, GameGroup, GroupLaunchDefaults};
 
@@ -285,5 +304,31 @@ mod tests {
     #[test]
     fn desktop_icon_falls_back_to_app_id_without_game_icon() {
         assert_eq!(desktop_icon(&sample_game()), leyen_model::APP_ID);
+    }
+
+    #[test]
+    fn disambiguate_keeps_plain_name_when_no_collision() {
+        assert_eq!(
+            disambiguate_file_name("Nier Replicant.desktop", "ly-1234", None),
+            "Nier Replicant.desktop"
+        );
+    }
+
+    #[test]
+    fn disambiguate_keeps_plain_name_when_collision_is_own_entry() {
+        let own_content = "[Desktop Entry]\nExec=leyen run ly-1234\n";
+        assert_eq!(
+            disambiguate_file_name("Nier Replicant.desktop", "ly-1234", Some(own_content)),
+            "Nier Replicant.desktop"
+        );
+    }
+
+    #[test]
+    fn disambiguate_suffixes_name_when_collision_is_foreign() {
+        let foreign_content = "[Desktop Entry]\nExec=some-other-app\n";
+        assert_eq!(
+            disambiguate_file_name("Nier Replicant.desktop", "ly-1234", Some(foreign_content)),
+            "Nier Replicant-ly-1234.desktop"
+        );
     }
 }

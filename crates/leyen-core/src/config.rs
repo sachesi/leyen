@@ -15,8 +15,23 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use leyen_model::library::{find_game_mut, flatten_games};
-use leyen_model::models::{GamesConfig, LibraryItem};
+use leyen_model::models::{GAMES_CONFIG_VERSION, GamesConfig, LibraryItem};
 use leyen_model::paths::get_config_path;
+
+/// Refuses a games config written by a newer, not-yet-understood schema
+/// version rather than silently accepting it (and later overwriting it with a
+/// stripped-down current-version copy).
+fn check_games_config_version(version: u32, path: &Path) -> Result<(), String> {
+    if version > GAMES_CONFIG_VERSION {
+        return Err(format!(
+            "'{}' was written by a newer version of leyen (file version {}, this build supports {})",
+            path.display(),
+            version,
+            GAMES_CONFIG_VERSION
+        ));
+    }
+    Ok(())
+}
 
 fn config_lock_path() -> std::path::PathBuf {
     leyen_model::paths::get_config_dir().join(".games.lock")
@@ -88,7 +103,13 @@ where
     // unparseable" (must NOT overwrite — would erase the entire library).
     let mut items = match fs::read_to_string(&path) {
         Ok(data) => match toml::from_str::<GamesConfig>(&data) {
-            Ok(config) => config.items,
+            Ok(config) => {
+                if let Err(e) = check_games_config_version(config.version, &path) {
+                    log::error!("Refusing to mutate games config: {e}");
+                    return None;
+                }
+                config.items
+            }
             Err(e) => {
                 log::error!(
                     "Refusing to mutate games config: parse failed for '{}': {}",
@@ -112,6 +133,7 @@ where
     let result = f(&mut items);
 
     let data = match toml::to_string_pretty(&GamesConfig {
+        version: GAMES_CONFIG_VERSION,
         items: items.clone(),
     }) {
         Ok(data) => data,
@@ -294,6 +316,15 @@ pub async fn record_game_launch_result(game_id: &str, duration_seconds: u64, sta
 mod tests {
     use super::*;
     use leyen_model::models::Game;
+
+    #[test]
+    fn refuses_newer_schema_version() {
+        let path = Path::new("games.toml");
+        let err = check_games_config_version(GAMES_CONFIG_VERSION + 1, path).unwrap_err();
+        assert!(err.contains("newer version of leyen"), "{err}");
+
+        check_games_config_version(GAMES_CONFIG_VERSION, path).unwrap();
+    }
 
     fn game(id: &str, playtime: u64) -> Game {
         Game {

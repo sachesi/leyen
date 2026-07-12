@@ -12,8 +12,19 @@ use std::path::PathBuf;
 
 use crate::paths::get_data_dir;
 
+/// Current per-prefix `state.toml` schema version. Bump when a change to
+/// `PrefixDependencyState` needs the reader/writer split below to distinguish
+/// old files from new ones.
+pub const DEP_STATE_VERSION: u32 = 1;
+
+fn default_dep_state_version() -> u32 {
+    DEP_STATE_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrefixDependencyState {
+    #[serde(default = "default_dep_state_version")]
+    pub version: u32,
     #[serde(default)]
     pub installed: BTreeMap<String, InstalledDependency>,
 }
@@ -73,10 +84,24 @@ pub fn get_prefix_deps_state_path(prefix_path: &str) -> PathBuf {
 
 pub fn read_prefix_dep_state(prefix_path: &str) -> PrefixDependencyState {
     let path = get_prefix_deps_state_path(prefix_path);
-    fs::read_to_string(&path)
+    let state: PrefixDependencyState = fs::read_to_string(&path)
         .ok()
-        .and_then(|content| toml::from_str::<PrefixDependencyState>(&content).ok())
-        .unwrap_or_default()
+        .and_then(|content| toml::from_str(&content).ok())
+        .unwrap_or_default();
+
+    // No Result channel here — same reasoning as settings::load_settings: warn
+    // and keep using the parsed data rather than silently defaulting (which a
+    // later write could persist over a newer-versioned file).
+    if state.version > DEP_STATE_VERSION {
+        log::warn!(
+            "Dependency state '{}' was written by a newer version of leyen (file version {}, this build supports {}); continuing with the parsed data",
+            path.display(),
+            state.version,
+            DEP_STATE_VERSION
+        );
+    }
+
+    state
 }
 
 pub fn read_installed_deps(prefix_path: &str) -> BTreeSet<String> {
@@ -116,8 +141,15 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn missing_version_field_parses_as_one() {
+        let state: PrefixDependencyState = toml::from_str("").unwrap();
+        assert_eq!(state.version, 1);
+    }
+
+    #[test]
     fn finds_reverse_dependency_links() {
         let state = PrefixDependencyState {
+            version: DEP_STATE_VERSION,
             installed: BTreeMap::from([
                 (
                     "base".to_string(),

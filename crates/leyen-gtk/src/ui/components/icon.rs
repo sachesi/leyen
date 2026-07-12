@@ -128,7 +128,9 @@ pub fn build_library_icon(
     let wrapper_clone = wrapper.clone();
     gtk4::glib::spawn_future_local(async move {
         let stamp_path = path.clone();
-        let Some(stamp) = crate::daemon::gio_blocking(move || icon_file_stamp(&stamp_path)).await
+        let Some(stamp) = crate::daemon::gio_blocking(move || icon_file_stamp(&stamp_path))
+            .await
+            .flatten()
         else {
             // No icon file (or unreadable) — keep the fallback / cached texture.
             return;
@@ -147,7 +149,9 @@ pub fn build_library_icon(
 
         // Cache miss — decode and resize off the main thread, then swap in.
         let decode_path = path.clone();
-        let result = crate::daemon::gio_blocking(move || process_icon_file(&decode_path)).await;
+        let result = crate::daemon::gio_blocking(move || process_icon_file(&decode_path))
+            .await
+            .flatten();
 
         if let Some((width, height, rgba)) = result {
             let texture = make_texture(width, height, &rgba);

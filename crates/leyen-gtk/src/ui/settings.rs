@@ -352,7 +352,10 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
                             let result = crate::daemon::gio_blocking(move || {
                                 fs::remove_dir_all(&runtime_dir)
                             })
-                            .await;
+                            .await
+                            .unwrap_or_else(|| {
+                                Err(std::io::Error::other("background task failed"))
+                            });
 
                             match result {
                                 Ok(_) => {

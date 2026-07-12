@@ -114,6 +114,7 @@ async fn apply_game_icon(
         }
     })
     .await
+    .unwrap_or_else(|| Err(t!("Internal error: background task failed")))
 }
 
 async fn apply_group_icon(
@@ -134,6 +135,7 @@ async fn apply_group_icon(
         }
     })
     .await
+    .unwrap_or_else(|| Err(t!("Internal error: background task failed")))
 }
 
 fn group_custom_prefix_games(group: &GameGroup) -> Vec<String> {
@@ -732,7 +734,9 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !gio_blocking(move || std::path::Path::new(&p).exists()).await
+                    if !gio_blocking(move || std::path::Path::new(&p).exists())
+                        .await
+                        .unwrap_or(false)
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -776,7 +780,9 @@ pub async fn show_add_library_item_dialog(
 
                 if proton != "Default" {
                     let p = proton.clone();
-                    if !gio_blocking(move || std::path::Path::new(&p).exists()).await
+                    if !gio_blocking(move || std::path::Path::new(&p).exists())
+                        .await
+                        .unwrap_or(false)
                     {
                         overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                         return;
@@ -840,7 +846,7 @@ pub async fn show_add_library_item_dialog(
                 let desktop_game = game.clone();
                 if !insert_game(&mut items, current_group_id.as_deref(), game) {
                     let gid = game_id.clone();
-                    gio_blocking(move || clear_game_icon(&gid)).await;
+                    let _ = gio_blocking(move || clear_game_icon(&gid)).await;
                     overlay_clone
                         .add_toast(adw::Toast::new(&t!("Failed to add game to the selected group")));
                     return;
@@ -1292,7 +1298,9 @@ pub async fn show_edit_group_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !gio_blocking(move || std::path::Path::new(&p).exists()).await
+                if !gio_blocking(move || std::path::Path::new(&p).exists())
+                    .await
+                    .unwrap_or(false)
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
@@ -1578,7 +1586,9 @@ pub async fn show_edit_game_dialog(
         .build();
 
     let lid = game.leyen_id.clone();
-    let exists = gio_blocking(move || desktop_entry_exists(&lid)).await;
+    let exists = gio_blocking(move || desktop_entry_exists(&lid))
+        .await
+        .unwrap_or(false);
     let menu_btn = gtk4::Button::builder()
         .label(if exists {
             t!("Remove from menu")
@@ -1824,7 +1834,9 @@ pub async fn show_edit_game_dialog(
         let group = group_for_menu.clone();
         glib::spawn_future_local(async move {
             let leyen_id = game.leyen_id.clone();
-            let exists = gio_blocking(move || desktop_entry_exists(&leyen_id)).await;
+            let exists = gio_blocking(move || desktop_entry_exists(&leyen_id))
+                .await
+                .unwrap_or(false);
             if exists {
                 match remove_game_desktop_entry(game.leyen_id.clone()).await {
                     Ok(_) => {
@@ -2039,7 +2051,9 @@ pub async fn show_edit_game_dialog(
 
             if proton != "Default" {
                 let p = proton.clone();
-                if !gio_blocking(move || std::path::Path::new(&p).exists()).await
+                if !gio_blocking(move || std::path::Path::new(&p).exists())
+                    .await
+                    .unwrap_or(false)
                 {
                     overlay_clone.add_toast(adw::Toast::new(&t!("Selected Proton path does not exist")));
                     return;
@@ -2201,17 +2215,17 @@ pub async fn show_delete_confirmation(
                 let mut delete_notice = None;
                 let deleted = if let Some(game) = remove_game(&mut items, &item_id) {
                     let gid = game.id.clone();
-                    gio_blocking(move || clear_game_icon(&gid)).await;
+                    let _ = gio_blocking(move || clear_game_icon(&gid)).await;
                     if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                         delete_notice = Some(t!("Failed to remove menu entry: {}").replacen("{}", &err.to_string(), 1));
                     }
                     Some(game.title)
                 } else if let Some(group) = remove_group(&mut items, &item_id) {
                     let gid = group.id.clone();
-                    gio_blocking(move || clear_group_icon(&gid)).await;
+                    let _ = gio_blocking(move || clear_group_icon(&gid)).await;
                     for game in &group.games {
                         let gid = game.id.clone();
-                        gio_blocking(move || clear_game_icon(&gid)).await;
+                        let _ = gio_blocking(move || clear_game_icon(&gid)).await;
                         if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
                             delete_notice = Some(t!("Failed to remove a menu entry: {}").replacen("{}", &err.to_string(), 1));
                         }

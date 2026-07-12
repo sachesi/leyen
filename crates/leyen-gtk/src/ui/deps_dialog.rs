@@ -168,7 +168,9 @@ async fn refresh_dep_rows(
     handles: &[DepRowHandle],
 ) -> std::collections::BTreeSet<String> {
     let prefix_path = prefix_path.to_string();
-    let state = gio_blocking(move || read_prefix_dep_state(&prefix_path)).await;
+    let state = gio_blocking(move || read_prefix_dep_state(&prefix_path))
+        .await
+        .unwrap_or_default();
     let installed = state
         .installed
         .keys()
@@ -233,7 +235,9 @@ pub async fn open_dependencies_page(
     };
 
     let prefix_path_for_state = resolved_prefix.clone();
-    let installed = gio_blocking(move || read_installed_deps(&prefix_path_for_state)).await;
+    let installed = gio_blocking(move || read_installed_deps(&prefix_path_for_state))
+        .await
+        .unwrap_or_default();
 
     let subtitle = installed_subtitle(installed.len());
 
@@ -686,7 +690,10 @@ pub async fn open_dependencies_page(
                                     t!("This removes the dependency from Leyen's tracking.")
                                 })
                         })
-                        .await;
+                        .await
+                        .unwrap_or_else(|| {
+                            t!("This removes the dependency from Leyen's tracking.")
+                        });
 
                         let confirm = confirm_builder.detail(&detail).build();
                         let root3 = dialog3

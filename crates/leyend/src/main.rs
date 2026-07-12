@@ -21,6 +21,11 @@ use leyen_model::library::{find_game_by_leyen_id, flatten_games};
 /// exits. Activation restarts it on the next call.
 const IDLE_EXIT_SECONDS: u64 = 30;
 
+/// Max concurrent dependency jobs (`dep_jobs` entries). Generous for real
+/// multi-prefix use, but stops a buggy/looping client from spawning unbounded
+/// curl/umu-run children by varying `prefix`.
+const MAX_DEP_JOBS: usize = 4;
+
 /// In-flight units of work: D-Bus method bodies, dependency jobs and detached
 /// engine tasks (deferred shared-container launches). The idle-exit requires
 /// zero — a 30s timer must never kill a winetricks install or a launch waiting
@@ -314,6 +319,11 @@ impl Manager {
                     "Cannot install dependencies while a game is running".to_string(),
                 ));
             }
+            if jobs.len() >= MAX_DEP_JOBS {
+                return Err(leyen_ipc::Error::Failed(format!(
+                    "Too many dependency operations in progress (max {MAX_DEP_JOBS})"
+                )));
+            }
             jobs.insert(job_id.clone(), cancel.clone());
         }
         self.spawn_dep_job(conn, job_id.clone(), prefix, dep_id, proton_path, cancel, true);
@@ -344,6 +354,11 @@ impl Manager {
                 return Err(leyen_ipc::Error::Failed(
                     "Cannot uninstall dependencies while a game is running".to_string(),
                 ));
+            }
+            if jobs.len() >= MAX_DEP_JOBS {
+                return Err(leyen_ipc::Error::Failed(format!(
+                    "Too many dependency operations in progress (max {MAX_DEP_JOBS})"
+                )));
             }
             jobs.insert(job_id.clone(), cancel.clone());
         }

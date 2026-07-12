@@ -52,9 +52,20 @@ pub enum LibraryItem {
     Group(GameGroup),
 }
 
+/// Current `settings.toml` schema version. Bump when a change to
+/// `GlobalSettings` needs the reader/writer split below to distinguish
+/// old files from new ones.
+pub const GLOBAL_SETTINGS_VERSION: u32 = 1;
+
+fn default_global_settings_version() -> u32 {
+    GLOBAL_SETTINGS_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalSettings {
+    #[serde(default = "default_global_settings_version")]
+    pub version: u32,
     pub default_prefix_path: String,
     pub default_proton: String,
     pub global_mangohud: bool,
@@ -81,6 +92,7 @@ pub struct GlobalSettings {
 impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
+            version: GLOBAL_SETTINGS_VERSION,
             default_prefix_path: String::new(),
             default_proton: String::new(),
             global_mangohud: false,
@@ -99,8 +111,48 @@ impl Default for GlobalSettings {
     }
 }
 
+/// Current `games.toml` schema version. Bump when a change to `GamesConfig`
+/// needs the reader/writer split below to distinguish old files from new ones.
+pub const GAMES_CONFIG_VERSION: u32 = 1;
+
+fn default_games_config_version() -> u32 {
+    GAMES_CONFIG_VERSION
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct GamesConfig {
+    #[serde(default = "default_games_config_version")]
+    pub version: u32,
     pub items: Vec<LibraryItem>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_version_field_parses_as_one() {
+        let config: GamesConfig = toml::from_str("items = []").unwrap();
+        assert_eq!(config.version, 1);
+
+        let settings: GlobalSettings = toml::from_str("").unwrap();
+        assert_eq!(settings.version, 1);
+    }
+
+    #[test]
+    fn current_version_round_trips() {
+        let config = GamesConfig {
+            version: GAMES_CONFIG_VERSION,
+            items: Vec::new(),
+        };
+        let text = toml::to_string_pretty(&config).unwrap();
+        let parsed: GamesConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.version, GAMES_CONFIG_VERSION);
+
+        let settings = GlobalSettings::default();
+        let text = toml::to_string_pretty(&settings).unwrap();
+        let parsed: GlobalSettings = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.version, GLOBAL_SETTINGS_VERSION);
+    }
 }

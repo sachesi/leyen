@@ -10,7 +10,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::models::{Game, GameGroup, GamesConfig, GroupLaunchDefaults, LibraryItem};
+use crate::models::{GAMES_CONFIG_VERSION, Game, GameGroup, GamesConfig, GroupLaunchDefaults, LibraryItem};
 use crate::paths::get_config_path;
 
 const LEYEN_ID_PREFIX: &str = "ly-";
@@ -23,8 +23,18 @@ pub fn read_library_from_disk() -> Result<Vec<LibraryItem>, String> {
     let path = get_config_path();
     match fs::read_to_string(&path) {
         Ok(data) => toml::from_str::<GamesConfig>(&data)
-            .map(|config| config.items)
-            .map_err(|e| format!("Failed to parse games config: {e}")),
+            .map_err(|e| format!("Failed to parse games config: {e}"))
+            .and_then(|config| {
+                if config.version > GAMES_CONFIG_VERSION {
+                    return Err(format!(
+                        "'{}' was written by a newer version of leyen (file version {}, this build supports {})",
+                        path.display(),
+                        config.version,
+                        GAMES_CONFIG_VERSION
+                    ));
+                }
+                Ok(config.items)
+            }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(format!("Failed to read games config: {e}")),
     }
@@ -33,6 +43,7 @@ pub fn read_library_from_disk() -> Result<Vec<LibraryItem>, String> {
 /// Serializes a library to TOML (the on-disk `games.toml` representation).
 pub fn serialize_library(items: &[LibraryItem]) -> Result<String, String> {
     toml::to_string_pretty(&GamesConfig {
+        version: GAMES_CONFIG_VERSION,
         items: items.to_vec(),
     })
     .map_err(|e| format!("Failed to serialize games config: {e}"))

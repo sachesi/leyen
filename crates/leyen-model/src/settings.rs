@@ -13,7 +13,7 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::models::GlobalSettings;
+use crate::models::{GLOBAL_SETTINGS_VERSION, GlobalSettings};
 use crate::paths::{get_config_dir, get_settings_path};
 use crate::runtime::detect_proton_versions;
 
@@ -69,6 +69,20 @@ pub fn load_settings() -> GlobalSettings {
         .and_then(|data| toml::from_str(&data).ok())
         .unwrap_or_default();
 
+    // No Result channel here — settings are read unconditionally on every
+    // launch. Refusing would mean no settings at all; defaulting the version
+    // back down would risk a later save clobbering a newer-versioned file. So:
+    // warn and keep using the parsed data (unknown future fields are already
+    // dropped by serde, which matches today's additive-only reality).
+    if settings.version > GLOBAL_SETTINGS_VERSION {
+        log::warn!(
+            "Settings file '{}' was written by a newer version of leyen (file version {}, this build supports {}); continuing with the parsed data",
+            path.display(),
+            settings.version,
+            GLOBAL_SETTINGS_VERSION
+        );
+    }
+
     let fresh = detect_proton_versions();
     let merged: HashSet<String> = settings
         .available_proton_versions
@@ -96,6 +110,10 @@ pub fn save_settings(settings: &GlobalSettings) {
         }
     };
     let path = get_settings_path();
+    let settings = &GlobalSettings {
+        version: GLOBAL_SETTINGS_VERSION,
+        ..settings.clone()
+    };
     match toml::to_string_pretty(settings) {
         Ok(data) => {
             if let Err(e) = crate::paths::atomic_write(&path, &data) {

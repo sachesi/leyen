@@ -12,7 +12,8 @@ use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use leyen_model::deps::{
-    InstalledDependency, PrefixDependencyState, get_prefix_deps_dir, get_prefix_deps_state_path,
+    DEP_STATE_VERSION, InstalledDependency, PrefixDependencyState, get_prefix_deps_dir,
+    get_prefix_deps_state_path,
 };
 
 /// RAII guard that acquires `LOCK_EX | LOCK_NB` with retry + timeout.
@@ -78,12 +79,23 @@ fn prefix_deps_lock_path(prefix_path: &str) -> PathBuf {
 pub(crate) fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencyState, String> {
     let path = get_prefix_deps_state_path(prefix_path);
     match fs::read_to_string(&path) {
-        Ok(content) => toml::from_str::<PrefixDependencyState>(&content).map_err(|err| {
-            format!(
-                "Failed to parse dependency state '{}': {err}",
-                path.display()
-            )
-        }),
+        Ok(content) => {
+            let state = toml::from_str::<PrefixDependencyState>(&content).map_err(|err| {
+                format!(
+                    "Failed to parse dependency state '{}': {err}",
+                    path.display()
+                )
+            })?;
+            if state.version > DEP_STATE_VERSION {
+                return Err(format!(
+                    "Dependency state '{}' was written by a newer version of leyen (file version {}, this build supports {})",
+                    path.display(),
+                    state.version,
+                    DEP_STATE_VERSION
+                ));
+            }
+            Ok(state)
+        }
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(PrefixDependencyState::default()),
         Err(err) => Err(format!(
             "Failed to read dependency state '{}': {err}",
@@ -101,6 +113,10 @@ pub fn save_prefix_dep_state(
         fs::create_dir_all(parent)
             .map_err(|err| format!("Failed to create dependency state directory: {err}"))?;
     }
+    let state = &PrefixDependencyState {
+        version: DEP_STATE_VERSION,
+        ..state.clone()
+    };
     let content = toml::to_string_pretty(state)
         .map_err(|err| format!("Failed to serialize dependency state: {err}"))?;
 
@@ -175,8 +191,8 @@ fn unique_sorted_strings(values: Vec<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{save_prefix_dep_state, upsert_installed_dep};
-    use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
+    use super::{read_prefix_dep_state_checked, save_prefix_dep_state, upsert_installed_dep};
+    use leyen_model::deps::{DEP_STATE_VERSION, InstalledDependency, PrefixDependencyState};
     use std::fs;
     use std::path::PathBuf;
 
@@ -190,6 +206,40 @@ mod tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn save_stamps_current_schema_version() {
+        let prefix = temp_prefix();
+        let prefix_str = prefix.to_string_lossy().to_string();
+
+        // Pass a state with a stale version; the writer must stamp current
+        // regardless of what the caller handed it.
+        let stale = PrefixDependencyState {
+            version: 0,
+            ..PrefixDependencyState::default()
+        };
+        save_prefix_dep_state(&prefix_str, &stale).unwrap();
+
+        let state = read_prefix_dep_state_checked(&prefix_str).unwrap();
+        assert_eq!(state.version, DEP_STATE_VERSION);
+
+        let _ = fs::remove_dir_all(prefix);
+    }
+
+    #[test]
+    fn checked_read_refuses_newer_schema_version() {
+        let prefix = temp_prefix();
+        let prefix_str = prefix.to_string_lossy().to_string();
+
+        let state_path = prefix.join(".leyen/deps/state.toml");
+        fs::create_dir_all(state_path.parent().unwrap()).unwrap();
+        fs::write(&state_path, format!("version = {}\n", DEP_STATE_VERSION + 1)).unwrap();
+
+        let err = read_prefix_dep_state_checked(&prefix_str).unwrap_err();
+        assert!(err.contains("newer version of leyen"), "{err}");
+
+        let _ = fs::remove_dir_all(prefix);
     }
 
     #[test]

@@ -419,6 +419,7 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     // Save settings when the dialog is closed
     dialog.connect_closed(move |_| {
         let updated_settings = leyen_model::models::GlobalSettings {
+            version: leyen_model::models::GLOBAL_SETTINGS_VERSION,
             default_prefix_path: prefix_row.text().to_string(),
             default_proton: if (proton_row.selected() as usize) < available_versions.len() {
                 available_versions[proton_row.selected() as usize].clone()

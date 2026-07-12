@@ -21,7 +21,7 @@ async fn preflight(overlay: &adw::ToastOverlay, blocked_msg: &str) -> bool {
         overlay.add_toast(adw::Toast::new(blocked_msg));
         return false;
     }
-    if !gio_blocking(is_umu_run_available).await {
+    if !gio_blocking(is_umu_run_available).await.unwrap_or(false) {
         overlay.add_toast(adw::Toast::new(&t!(
             "umu-launcher is not installed. Please check your internet connection and restart."
         )));
@@ -51,7 +51,9 @@ pub async fn run_winecfg_in_prefix(
         return;
     }
 
-    let result = gio_blocking(move || launch_wine_command("winecfg", &prefix, &proton)).await;
+    let result = gio_blocking(move || launch_wine_command("winecfg", &prefix, &proton))
+        .await
+        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
     match result {
         Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Wine Configuration launched"))),
         Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
@@ -79,7 +81,9 @@ pub async fn run_regedit_in_prefix(
         return;
     }
 
-    let result = gio_blocking(move || launch_wine_command("regedit", &prefix, &proton)).await;
+    let result = gio_blocking(move || launch_wine_command("regedit", &prefix, &proton))
+        .await
+        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
     match result {
         Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Registry Editor launched"))),
         Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
@@ -155,7 +159,8 @@ pub async fn pick_and_run_in_prefix(
         gtk4::glib::spawn_future_local(async move {
             let result =
                 gio_blocking(move || launch_path_in_prefix(&path, &prefix_path, &proton_path))
-                    .await;
+                    .await
+                    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
             match result {
                 Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Launched in prefix"))),
                 Err(err) => {

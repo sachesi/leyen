@@ -44,6 +44,7 @@ pub async fn create_game_desktop_entry(
         Ok(path)
     })
     .await
+    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
 }
 
 pub async fn update_game_desktop_entry_if_present(
@@ -51,7 +52,10 @@ pub async fn update_game_desktop_entry_if_present(
     group: Option<GameGroup>,
 ) -> Result<bool, String> {
     let leyen_id = game.leyen_id.clone();
-    if !gio_blocking(move || desktop_entry_exists(&leyen_id)).await {
+    if !gio_blocking(move || desktop_entry_exists(&leyen_id))
+        .await
+        .unwrap_or(false)
+    {
         return Ok(false);
     }
 
@@ -86,6 +90,7 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
         Ok(had_desktop_file)
     })
     .await
+    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
 }
 
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {

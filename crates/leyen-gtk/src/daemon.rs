@@ -493,12 +493,16 @@ async fn call<T: Send + 'static>(make: impl FnOnce(Reply<T>) -> DaemonCommand) -
 
 /// Reads `games.toml` directly (read-only) off the glib thread.
 pub async fn load_library() -> Result<Vec<LibraryItem>, String> {
-    gio_blocking(read_library_from_disk).await
+    gio_blocking(read_library_from_disk)
+        .await
+        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
 }
 
 /// Reads settings directly (read-only). Settings are client-written.
 pub async fn load_settings() -> GlobalSettings {
-    gio_blocking(leyen_model::settings::load_settings).await
+    gio_blocking(leyen_model::settings::load_settings)
+        .await
+        .unwrap_or_default()
 }
 
 /// Persists settings directly (client owns settings.toml), then tells the
@@ -646,11 +650,10 @@ pub fn run_event_dispatch(evt_rx: async_channel::Receiver<DaemonEvent>) {
 /// for local blocking work (file reads, icon extraction, desktop entries) since
 /// the GTK thread has no tokio runtime. Infrequent, so a per-call thread is fine.
 ///
-/// A panicking `f` is caught and logged rather than left to drop the sender:
-/// the caller's `.await` simply never resolves instead of the panic
-/// resurfacing as a `.expect()` failure on the glib main thread and taking the
-/// whole app down with it.
-pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+/// A panicking `f` is caught and logged rather than left to drop the sender.
+/// On panic this returns `None`; callers must degrade gracefully instead of
+/// unwrapping.
+pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
     let (tx, rx) = async_channel::bounded(1);
     std::thread::spawn(move || {
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
@@ -667,8 +670,5 @@ pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'sta
             }
         }
     });
-    match rx.recv().await {
-        Ok(value) => value,
-        Err(_) => std::future::pending().await,
-    }
+    rx.recv().await.ok()
 }

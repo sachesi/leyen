@@ -73,6 +73,12 @@ struct RunningGameSession {
     /// container.
     #[serde(default)]
     match_args: Option<String>,
+    /// Cgroup directory of the shared pressure-vessel container this session
+    /// joined with `UMU_CONTAINER_NSENTER` (the leader's scope). The game's
+    /// real process lives there, so it must stay in the PID universe even
+    /// after the leader session itself is gone.
+    #[serde(default)]
+    container_cgroup_dir: Option<String>,
     termination_requested: bool,
 }
 
@@ -200,8 +206,22 @@ fn with_running_registry<R>(
 
     let registry_path = running_registry_path();
     let mut registry = match fs::read_to_string(&registry_path) {
-        Ok(data) => toml::from_str::<RunningGamesRegistry>(&data)
-            .map_err(|e| LaunchError::SerializationError(e.to_string()))?,
+        Ok(data) => match toml::from_str::<RunningGamesRegistry>(&data) {
+            Ok(registry) => registry,
+            Err(e) => {
+                // An unparseable registry would otherwise fail every launch and
+                // every monitor tick forever. Set it aside and start empty; any
+                // scope it described keeps running and is simply untracked.
+                let corrupt = registry_path.with_extension("toml.corrupt");
+                warn!(
+                    "Running games registry '{}' is unparseable ({e}); moving it to '{}'",
+                    registry_path.display(),
+                    corrupt.display()
+                );
+                let _ = fs::rename(&registry_path, &corrupt);
+                RunningGamesRegistry::default()
+            }
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => RunningGamesRegistry::default(),
         Err(e) => {
             return Err(LaunchError::ReadError {
@@ -338,7 +358,13 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 }
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
-    let (active_sessions, finished_sessions) = tokio::task::spawn_blocking(|| {
+    synchronize_running_sessions_seq().await.map(|(sessions, _)| sessions)
+}
+
+/// [`synchronize_running_sessions`] plus the registry sequence the returned set
+/// was read at, for [`publish_sessions_seq`].
+async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, u64), LaunchError> {
+    let (active_sessions, finished_sessions, seq) = tokio::task::spawn_blocking(|| {
         let now = current_epoch_seconds();
 
         // Phase 1: snapshot the sessions under the lock (fast), then release it.
@@ -353,7 +379,10 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
         let mut finished_keys: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
         let mut updates: HashMap<(String, u64), (Option<String>, usize)> = HashMap::new();
         for mut session in sessions {
-            let alive = session_is_live(&mut session, &universe);
+            // Unknown liveness (systemd query timed out) keeps the session:
+            // finalizing a live game on a stalled user manager would orphan
+            // it; the next tick retries.
+            let alive = session_is_live(&mut session, &universe).unwrap_or(true);
             let key = (session.game_id.clone(), session.started_at_epoch_seconds);
             if alive || now.saturating_sub(session.started_at_epoch_seconds) < LAUNCH_GRACE_SECONDS {
                 updates.insert(key, (session.cgroup_dir.clone(), session.tracked_pid_count));
@@ -369,27 +398,33 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
         // session record before the playtime is written. Match by (game_id,
         // started_at) so a session relaunched during the unlocked scan — a new
         // instance with a fresh start time — is never wrongly removed or updated.
-        let active_sessions = with_running_registry(|registry| {
-            let before = registry.sessions.clone();
+        let (active_sessions, seq) = with_running_registry(|registry| {
+            // Persist only when a cgroup dir was resolved. `tracked_pid_count`
+            // flutters every tick (Wine spawns and reaps helpers constantly);
+            // rewriting the registry for it meant a temp file, a rename and two
+            // fsyncs every 2s per running game. The in-memory count still
+            // reaches the published snapshot below.
+            let mut dirty = false;
             for s in registry.sessions.iter_mut() {
                 if let Some((dir, count)) = updates.get(&(s.game_id.clone(), s.started_at_epoch_seconds)) {
-                    if s.cgroup_dir.is_none() {
+                    if s.cgroup_dir.is_none() && dir.is_some() {
                         s.cgroup_dir = dir.clone();
+                        dirty = true;
                     }
                     s.tracked_pid_count = *count;
                 }
             }
-            let dirty = registry.sessions != before;
             let active: Vec<RunningGameSession> = registry
                 .sessions
                 .iter()
                 .filter(|s| !finished_keys.contains(&(s.game_id.clone(), s.started_at_epoch_seconds)))
                 .cloned()
                 .collect();
-            (active, dirty)
+            let seq = SYNC_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+            ((active, seq), dirty)
         })?;
 
-        Ok::<_, LaunchError>((active_sessions, finished_sessions))
+        Ok::<_, LaunchError>((active_sessions, finished_sessions, seq))
     })
     .await
     .map_err(|e| LaunchError::Other(join_err(e)))
@@ -433,7 +468,7 @@ async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, Launc
         }
     }
 
-    Ok(active_sessions)
+    Ok((active_sessions, seq))
 }
 
 /// Claims `(game_id, started_at)` for finalization; `false` if already claimed.
@@ -494,22 +529,42 @@ fn finalize_claims() -> std::sync::MutexGuard<'static, FinalizeClaims> {
 /// next background monitor tick. Errors are swallowed — the periodic monitor is
 /// the safety net.
 async fn republish_running_sessions() {
-    match synchronize_running_sessions().await {
-        Ok(sessions) => publish_sessions(&sessions),
+    match synchronize_running_sessions_seq().await {
+        Ok((sessions, seq)) => publish_sessions_seq(&sessions, seq),
         Err(e) => warn!("Immediate session republish failed: {e}"),
     }
 }
 
-async fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
+async fn try_register_running_session(
+    mut session: RunningGameSession,
+    joins_container: bool,
+) -> Result<bool, LaunchError> {
     let _ = synchronize_running_sessions().await;
     tokio::task::spawn_blocking(move || {
         with_running_registry(|registry| {
-            if registry
-                .sessions
-                .iter()
-                .any(|existing| existing.game_id == session.game_id)
-            {
+            // A finished session stays registered until its playtime write
+            // completes; one that is claimed for finalize is dead, not a
+            // duplicate, so a relaunch during that window must not be refused.
+            let pending_finalize = finalize_claims();
+            if registry.sessions.iter().any(|existing| {
+                existing.game_id == session.game_id
+                    && !pending_finalize.contains_key(&(
+                        existing.game_id.clone(),
+                        existing.started_at_epoch_seconds,
+                    ))
+            }) {
                 return (false, false);
+            }
+            drop(pending_finalize);
+
+            if joins_container {
+                // The real process will run in the leader's scope; remember
+                // that cgroup so it stays scanned after the leader exits.
+                session.container_cgroup_dir = registry
+                    .sessions
+                    .iter()
+                    .filter(|s| s.match_prefix_path == session.match_prefix_path)
+                    .find_map(|s| s.container_cgroup_dir.clone().or_else(|| s.cgroup_dir.clone()));
             }
 
             registry.sessions.push(session);
@@ -543,6 +598,11 @@ use std::sync::{OnceLock, RwLock};
 
 static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();
 static RUNNING_SESSIONS_VERSION_CACHE: AtomicU64 = AtomicU64::new(0);
+/// Sequence of registry states, taken under the registry lock by each
+/// synchronize pass; `publish_sessions_seq` drops a publish older than the
+/// last applied so two overlapping passes cannot publish out of order.
+static SYNC_SEQ: AtomicU64 = AtomicU64::new(0);
+static PUBLISHED_SEQ: AtomicU64 = AtomicU64::new(0);
 /// Lock-free mirror of "is any game running", kept in sync with the snapshot
 /// cache by the monitor. Lets the GTK main thread (per-second timer, window
 /// close handler) answer without taking the `RwLock`.
@@ -725,6 +785,16 @@ async fn wait_for_shared_container(prefix_path: &str, game_id: &str) -> bool {
     }
 }
 
+/// [`publish_sessions`] for a set read at registry sequence `seq`: skipped if a
+/// newer set was already published (a slow monitor pass finishing after the
+/// launch fast-path would otherwise briefly publish "nothing running").
+fn publish_sessions_seq(sessions: &[RunningGameSession], seq: u64) {
+    if PUBLISHED_SEQ.fetch_max(seq, Ordering::SeqCst) >= seq {
+        return;
+    }
+    publish_sessions(sessions);
+}
+
 /// Single path that makes a new session set visible: refreshes the snapshot
 /// cache, the `any running` mirror and the version atomic, then notifies the
 /// listener. Called by the monitor and by the launch/stop/exit fast paths.
@@ -754,9 +824,9 @@ pub fn start_running_sessions_monitor() {
     tokio::spawn(async move {
         let mut consecutive_errors: u32 = 0;
         loop {
-            match synchronize_running_sessions().await {
-                Ok(sessions) => {
-                    publish_sessions(&sessions);
+            match synchronize_running_sessions_seq().await {
+                Ok((sessions, seq)) => {
+                    publish_sessions_seq(&sessions, seq);
                     consecutive_errors = 0;
                 }
                 Err(e) => {
@@ -796,7 +866,7 @@ pub async fn reconcile_stale_sessions_on_startup() {
             let mut sessions = std::mem::take(&mut registry.sessions);
             let universe = leyen_pid_cmdlines(&mut sessions);
             for mut session in sessions {
-                if session_is_live(&mut session, &universe) {
+                if session_is_live(&mut session, &universe).unwrap_or(true) {
                     kept.push(session);
                 } else {
                     dropped.push(session.game_id.clone());
@@ -887,7 +957,7 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         // Already gone: no real process for this game and its launcher scope is
         // empty too.
         let mut probe = target.clone();
-        if matched.is_empty() && !scope_alive(&mut probe) {
+        if matched.is_empty() && scope_alive(&mut probe) == Some(false) {
             return Ok(true);
         }
 
@@ -1072,17 +1142,22 @@ fn wait_with_timeout(
 /// Runs `systemctl --user <args>` with a timeout and reports success. Output is
 /// discarded; callers only need the status.
 fn systemctl(args: &[&str]) -> bool {
-    let Ok(mut child) = StdCommand::new("systemctl")
+    systemctl_status(args).unwrap_or(false)
+}
+
+/// Like [`systemctl`] but distinguishes "the command ran and failed"
+/// (`Some(false)`) from "no answer" (`None`: spawn failure or timeout), so a
+/// stalled user manager is not mistaken for an inactive unit.
+fn systemctl_status(args: &[&str]) -> Option<bool> {
+    let mut child = StdCommand::new("systemctl")
         .arg("--user")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-    else {
-        return false;
-    };
-    matches!(wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT), Some(s) if s.success())
+        .ok()?;
+    wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT).map(|s| s.success())
 }
 
 /// Stops a scope and verifies it actually wound down, escalating to SIGKILL if
@@ -1217,13 +1292,14 @@ fn read_cgroup_populated(dir: &Path) -> Option<bool> {
 /// holds any process. Immune to reparenting, `setsid` and PID namespaces —
 /// membership is a kernel property the tree cannot escape. Falls back to an
 /// `is-active` probe only when the cgroup is unresolvable / already collected.
-fn scope_alive(session: &mut RunningGameSession) -> bool {
+/// `None` when neither the cgroup nor systemd could answer (query timed out).
+fn scope_alive(session: &mut RunningGameSession) -> Option<bool> {
     match resolve_cgroup_dir(session) {
         Some(dir) => match read_cgroup_populated(Path::new(&dir)) {
-            Some(populated) => populated,
-            None => systemctl(&["is-active", "--quiet", &session.unit]),
+            Some(populated) => Some(populated),
+            None => systemctl_status(&["is-active", "--quiet", &session.unit]),
         },
-        None => systemctl(&["is-active", "--quiet", &session.unit]),
+        None => systemctl_status(&["is-active", "--quiet", &session.unit]),
     }
 }
 
@@ -1261,6 +1337,11 @@ fn wait_for_session_pids(
 /// cgroup's `cgroup.kill` (kernel ≥5.14, immune to re-forking children); falls
 /// back to `systemctl kill --signal=SIGKILL`. Returns true if either succeeded.
 fn kill_scope_forcibly(session: &RunningGameSession) -> bool {
+    // Sole occupant of a joined container: the leader is gone, so its scope
+    // (where this game's real process runs) is ours to tear down too.
+    if let Some(dir) = &session.container_cgroup_dir {
+        let _ = fs::write(Path::new(dir).join("cgroup.kill"), "1");
+    }
     if let Some(dir) = &session.cgroup_dir
         && fs::write(Path::new(dir).join("cgroup.kill"), "1").is_ok()
     {
@@ -1277,9 +1358,16 @@ fn kill_scope_forcibly(session: &RunningGameSession) -> bool {
 /// PIDs, since the caller reads each PID at most once via its cache).
 fn read_cmdline_timeout(pid: u32) -> Option<String> {
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(read_process_cmdline_blocking(pid));
-    });
+    // `thread::spawn` panics when the OS refuses a thread (EAGAIN under a
+    // process limit); that would take the whole synchronize pass down.
+    if std::thread::Builder::new()
+        .spawn(move || {
+            let _ = tx.send(read_process_cmdline_blocking(pid));
+        })
+        .is_err()
+    {
+        return None;
+    }
     rx.recv_timeout(Duration::from_millis(200)).ok().flatten()
 }
 
@@ -1341,7 +1429,8 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, Strin
 
     let mut pids: std::collections::HashSet<u32> = std::collections::HashSet::new();
     for session in sessions.iter_mut() {
-        if let Some(dir) = resolve_cgroup_dir(session) {
+        let container_dir = session.container_cgroup_dir.clone();
+        for dir in resolve_cgroup_dir(session).into_iter().chain(container_dir) {
             for pid in read_cgroup_pids(&Path::new(&dir).join("cgroup.procs")) {
                 pids.insert(pid);
             }
@@ -1393,11 +1482,16 @@ fn session_matched_pids(session: &RunningGameSession, universe: &HashMap<u32, St
 /// cmdline signature is recorded the game's real processes are matched in the
 /// universe (correct even inside a shared container); otherwise it falls back to
 /// the session's own scope cgroup.
-fn session_is_live(session: &mut RunningGameSession, universe: &HashMap<u32, String>) -> bool {
+/// `None` = could not tell this pass (the session's cgroup is unresolved
+/// because systemd did not answer), so callers should keep the session.
+fn session_is_live(session: &mut RunningGameSession, universe: &HashMap<u32, String>) -> Option<bool> {
     if session.match_exe.is_some() {
         let matched = session_matched_pids(session, universe);
         session.tracked_pid_count = matched.len();
-        !matched.is_empty()
+        if matched.is_empty() && session.cgroup_dir.is_none() {
+            return None;
+        }
+        Some(!matched.is_empty())
     } else {
         let alive = scope_alive(session);
         session.tracked_pid_count = scope_pids(session).len();
@@ -1801,6 +1895,9 @@ async fn finish_launch(
     scoped_args.extend(cmd_args);
     let cmd_args = scoped_args;
 
+    let env_vars_join_container = env_vars
+        .iter()
+        .any(|(key, value)| key == "UMU_CONTAINER_NSENTER" && value == "1");
     // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
     let (mut child, child_pid, child_stdout, child_stderr) =
         tokio::task::spawn_blocking(move || {
@@ -1848,10 +1945,23 @@ async fn finish_launch(
         match_prefix_path: (!prefix_path.is_empty()).then_some(prefix_path.clone()),
         match_exe,
         match_args,
+        container_cgroup_dir: None,
         termination_requested: false,
     };
 
-    let registered = try_register_running_session(session).await?;
+    let joins_container = env_vars_join_container;
+    // The scope is already running: a registry failure here must tear it
+    // down like a duplicate, or it lives on untracked (idle-exit, dependency
+    // jobs and relaunch all believe nothing is running).
+    let registered = match try_register_running_session(session, joins_container).await {
+        Ok(registered) => registered,
+        Err(e) => {
+            let unit = scope_unit.clone();
+            let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
+            let _ = child.wait().await;
+            return Err(e);
+        }
+    };
     if !registered {
         let unit = scope_unit.clone();
         let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;

@@ -79,6 +79,12 @@ struct RunningGameSession {
     /// after the leader session itself is gone.
     #[serde(default)]
     container_cgroup_dir: Option<String>,
+    /// The `GAMEID` this launch was started with. When a matched process's
+    /// environment carries a `GAMEID`, it must be this one — two library
+    /// entries with the same executable and arguments on one prefix are
+    /// otherwise indistinguishable by cmdline.
+    #[serde(default)]
+    match_game_id: Option<String>,
     termination_requested: bool,
 }
 
@@ -1356,13 +1362,17 @@ fn kill_scope_forcibly(session: &RunningGameSession) -> bool {
 /// leak its tokio blocking-pool thread, and enough leaks exhaust the pool so every
 /// launch/stop hangs. Here only a detached thread leaks (bounded by distinct stuck
 /// PIDs, since the caller reads each PID at most once via its cache).
-fn read_cmdline_timeout(pid: u32) -> Option<String> {
+fn read_proc_info_timeout(pid: u32) -> Option<ProcInfo> {
     let (tx, rx) = std::sync::mpsc::channel();
     // `thread::spawn` panics when the OS refuses a thread (EAGAIN under a
     // process limit); that would take the whole synchronize pass down.
     if std::thread::Builder::new()
         .spawn(move || {
-            let _ = tx.send(read_process_cmdline_blocking(pid));
+            let info = read_process_cmdline_blocking(pid).map(|cmdline| ProcInfo {
+                cmdline,
+                game_id: read_process_game_id_blocking(pid),
+            });
+            let _ = tx.send(info);
         })
         .is_err()
     {
@@ -1370,6 +1380,17 @@ fn read_cmdline_timeout(pid: u32) -> Option<String> {
     }
     rx.recv_timeout(Duration::from_millis(200)).ok().flatten()
 }
+
+/// What the PID universe knows about one process.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProcInfo {
+    /// Space-joined, lowercased `/proc/PID/cmdline`.
+    cmdline: String,
+    /// `GAMEID` from `/proc/PID/environ`, if the process carries one.
+    game_id: Option<String>,
+}
+
+type PidUniverse = HashMap<u32, ProcInfo>;
 
 /// Blocking read of `/proc/PID/cmdline` → space-joined, lowercased, collapsed.
 fn read_process_cmdline_blocking(pid: u32) -> Option<String> {
@@ -1380,6 +1401,15 @@ fn read_process_cmdline_blocking(pid: u32) -> Option<String> {
     let joined: Vec<u8> = raw.into_iter().map(|b| if b == 0 { b' ' } else { b }).collect();
     let text = String::from_utf8_lossy(&joined).to_lowercase();
     Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// Blocking read of the `GAMEID` variable from `/proc/PID/environ`.
+fn read_process_game_id_blocking(pid: u32) -> Option<String> {
+    let raw = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    raw.split(|b| *b == 0)
+        .find_map(|entry| entry.strip_prefix(b"GAMEID="))
+        .map(|value| String::from_utf8_lossy(value).into_owned())
+        .filter(|value| !value.is_empty())
 }
 
 
@@ -1415,7 +1445,7 @@ fn process_matches_cmdline(cmdline: &str, match_exe: Option<&str>, match_args: O
 /// so a sibling's real `client.exe` (running in the first game's scope) is
 /// included and can be attributed back to its session by cmdline. Bounded to
 /// leyen cgroups — never a whole-`/proc` scan, never a false positive outside.
-fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, String> {
+fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> PidUniverse {
     // Per-PID cmdline cache. A process's cmdline is fixed for its lifetime, so
     // each PID is read at most once instead of on every sync. Critically, a PID is
     // recorded as `None` BEFORE the inline read and only upgraded to its value on
@@ -1424,7 +1454,11 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, Strin
     // never read again. No per-PID watchdog threads: spawning ~100 of them per
     // fresh container hammered the OS thread limit until tokio's blocking pool
     // could no longer spawn workers and every game action stalled.
-    static CACHE: OnceLock<std::sync::Mutex<HashMap<u32, Option<String>>>> = OnceLock::new();
+    // Each entry is `(info, confirmed)`: a PID first seen between `fork()`
+    // and `exec()` still reports its parent's cmdline, so the first read is
+    // re-checked once on the next pass before it is trusted for good.
+    type ProcCache = HashMap<u32, (Option<ProcInfo>, bool)>;
+    static CACHE: OnceLock<std::sync::Mutex<ProcCache>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()));
 
     let mut pids: std::collections::HashSet<u32> = std::collections::HashSet::new();
@@ -1441,15 +1475,31 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, Strin
     // below hangs the PID is never retried.
     let to_read: Vec<u32> = {
         let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        let fresh: Vec<u32> = pids.iter().copied().filter(|pid| !guard.contains_key(pid)).collect();
+        let fresh: Vec<u32> = pids
+            .iter()
+            .copied()
+            .filter(|pid| !guard.get(pid).is_some_and(|(_, confirmed)| *confirmed))
+            .collect();
         for pid in &fresh {
-            guard.insert(*pid, None);
+            // First sight: pessimistic `None`, marked confirmed only after a
+            // failed read so a hung PID is never retried. A successful first
+            // read stays unconfirmed for exactly one more pass.
+            guard.entry(*pid).or_insert((None, false));
         }
         fresh
     };
     for pid in to_read {
-        if let Some(cmdline) = read_cmdline_timeout(pid) {
-            cache.lock().unwrap_or_else(|e| e.into_inner()).insert(pid, Some(cmdline));
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(entry) = guard.get_mut(&pid) else { continue };
+        let second_read = entry.0.is_some();
+        drop(guard);
+        let read = read_proc_info_timeout(pid);
+        let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = guard.get_mut(&pid) {
+            match read {
+                Some(info) => *entry = (Some(info), second_read),
+                None => entry.1 = true,
+            }
         }
     }
 
@@ -1459,8 +1509,8 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, Strin
     guard.retain(|pid, _| pids.contains(pid));
     let mut map = HashMap::new();
     for pid in &pids {
-        if let Some(Some(cmdline)) = guard.get(pid) {
-            map.insert(*pid, cmdline.clone());
+        if let Some((Some(info), _)) = guard.get(pid) {
+            map.insert(*pid, info.clone());
         }
     }
     map
@@ -1468,11 +1518,16 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> HashMap<u32, Strin
 
 /// PIDs in `universe` that belong to `session` by cmdline signature — the game's
 /// real processes, wherever they actually run (own scope or a shared one).
-fn session_matched_pids(session: &RunningGameSession, universe: &HashMap<u32, String>) -> Vec<u32> {
+fn session_matched_pids(session: &RunningGameSession, universe: &PidUniverse) -> Vec<u32> {
     universe
         .iter()
-        .filter(|(_, cmdline)| {
-            process_matches_cmdline(cmdline, session.match_exe.as_deref(), session.match_args.as_deref())
+        .filter(|(_, info)| {
+            process_matches_cmdline(&info.cmdline, session.match_exe.as_deref(), session.match_args.as_deref())
+                && match (&info.game_id, &session.match_game_id) {
+                    // A process that carries a GAMEID belongs to that launch only.
+                    (Some(process), Some(expected)) => process == expected,
+                    _ => true,
+                }
         })
         .map(|(pid, _)| *pid)
         .collect()
@@ -1484,7 +1539,7 @@ fn session_matched_pids(session: &RunningGameSession, universe: &HashMap<u32, St
 /// the session's own scope cgroup.
 /// `None` = could not tell this pass (the session's cgroup is unresolved
 /// because systemd did not answer), so callers should keep the session.
-fn session_is_live(session: &mut RunningGameSession, universe: &HashMap<u32, String>) -> Option<bool> {
+fn session_is_live(session: &mut RunningGameSession, universe: &PidUniverse) -> Option<bool> {
     if session.match_exe.is_some() {
         let matched = session_matched_pids(session, universe);
         session.tracked_pid_count = matched.len();
@@ -1505,7 +1560,7 @@ fn session_is_live(session: &mut RunningGameSession, universe: &HashMap<u32, Str
 fn prefix_shared_with_other_live(
     session: &RunningGameSession,
     others: &[RunningGameSession],
-    universe: &HashMap<u32, String>,
+    universe: &PidUniverse,
 ) -> bool {
     let Some(prefix) = session.match_prefix_path.as_deref() else {
         return false;
@@ -1898,6 +1953,10 @@ async fn finish_launch(
     let env_vars_join_container = env_vars
         .iter()
         .any(|(key, value)| key == "UMU_CONTAINER_NSENTER" && value == "1");
+    let env_vars_game_id = env_vars
+        .iter()
+        .find(|(key, _)| key == "GAMEID")
+        .map(|(_, value)| value.clone());
     // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
     let (mut child, child_pid, child_stdout, child_stderr) =
         tokio::task::spawn_blocking(move || {
@@ -1946,6 +2005,7 @@ async fn finish_launch(
         match_exe,
         match_args,
         container_cgroup_dir: None,
+        match_game_id: env_vars_game_id,
         termination_requested: false,
     };
 

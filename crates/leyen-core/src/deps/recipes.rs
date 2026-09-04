@@ -19,13 +19,50 @@ pub fn get_dep_steps(id: &str) -> Vec<DepStep> {
     }
 }
 
-fn winetricks_steps(verb: &str) -> Vec<DepStep> {
+fn winetricks_steps(id: &str) -> Vec<DepStep> {
     vec![DepStep {
         description: "Installing dependency via winetricks…",
         action: DepStepAction::RunWinetricks {
-            verb: verb.to_string(),
+            verb: winetricks_verb(id).to_string(),
         },
     }]
+}
+
+/// Maps a catalog profile id to the winetricks verb that installs it. Ids
+/// that already are verbs map to themselves; the rest use a different
+/// spelling upstream (`vcredist2019` vs `vcrun2019`, `arial32` vs `arial`).
+pub fn winetricks_verb(id: &str) -> &str {
+    match id {
+        "vbrun6" => "vb6run",
+        "vcredist6" => "vcrun6",
+        "vcredist6sp6" => "vcrun6sp6",
+        "vcredist2005" => "vcrun2005",
+        "vcredist2012" => "vcrun2012",
+        "vcredist2015" => "vcrun2015",
+        "vcredist2019" => "vcrun2019",
+        "dotnetcoredesktop6" => "dotnetdesktop6",
+        "dotnetcoredesktop7" => "dotnetdesktop7",
+        "dotnetcoredesktop8" => "dotnetdesktop8",
+        "dotnetcoredesktop9" => "dotnetdesktop9",
+        "dotnetcoredesktop10" => "dotnetdesktop10",
+        "mediafoundation" => "mf",
+        "d3dx11" => "d3dx11_43",
+        "cnc-ddraw" => "cnc_ddraw",
+        "lavfilters741" => "lavfilters",
+        "arial32" | "arialb32" => "arial",
+        "andale32" => "andale",
+        "comic32" => "comicsans",
+        "courie32" => "courier",
+        "georgi32" => "georgia",
+        "impact32" => "impact",
+        "times32" => "times",
+        "tahoma32" => "tahoma",
+        "trebuc32" => "trebuchet",
+        "verdan32" => "verdana",
+        "webdin32" => "webdings",
+        "lucon" => "lucida",
+        other => other,
+    }
 }
 
 fn vcredist2022_steps() -> Vec<DepStep> {
@@ -308,4 +345,21 @@ fn xna40_steps() -> Vec<DepStep> {
             },
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn winetricks_verb_maps_catalog_spellings() {
+        assert_eq!(winetricks_verb("vcredist2019"), "vcrun2019");
+        assert_eq!(winetricks_verb("cnc-ddraw"), "cnc_ddraw");
+        assert_eq!(winetricks_verb("arialb32"), "arial");
+        assert_eq!(winetricks_verb("d3dcompiler_47"), "d3dcompiler_47");
+        match get_dep_steps("vcredist2019").first().map(|s| &s.action) {
+            Some(DepStepAction::RunWinetricks { verb }) => assert_eq!(verb, "vcrun2019"),
+            other => panic!("unexpected step: {}", other.is_some()),
+        }
+    }
 }

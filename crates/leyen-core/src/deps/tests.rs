@@ -30,12 +30,19 @@ async fn test_sha256_verification() {
     let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path, &cancel).await;
     assert!(result.is_ok());
 
-    // Corrupt the file
+    // Corrupt the file: a stale cached copy is discarded and re-downloaded
+    // (the download itself fails here — nothing serves that URL).
     fs::write(&test_file, "corrupted").unwrap();
     let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path, &cancel).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Checksum mismatch"));
-    assert!(!test_file.exists()); // Should have been deleted
+    assert!(!test_file.exists()); // Stale copy deleted before the retry
+    // No temp file left behind by the failed download.
+    let leftovers = fs::read_dir(cache_dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+        .count();
+    assert_eq!(leftovers, 0);
 }
 
 #[tokio::test]

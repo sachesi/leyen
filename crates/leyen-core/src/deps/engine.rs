@@ -49,13 +49,22 @@ impl Drop for PrefixOpGuard {
 }
 
 /// Acquires an exclusive lock for dependency operations on `prefix`, or returns
-/// `None` if one is already in progress.
-fn try_lock_prefix_op(prefix: &str) -> Option<PrefixOpGuard> {
+/// `None` if one is already in progress. Keyed by the canonical path so
+/// `/x/pfx`, `/x/pfx/` and a symlink to it share one lock.
+async fn try_lock_prefix_op(prefix: &str) -> Option<PrefixOpGuard> {
+    let raw = prefix.to_string();
+    let key = tokio::task::spawn_blocking(move || {
+        fs::canonicalize(&raw)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(raw)
+    })
+    .await
+    .unwrap_or_else(|_| prefix.to_string());
     let mut set = busy_prefixes().lock().ok()?;
-    if !set.insert(prefix.to_string()) {
+    if !set.insert(key.clone()) {
         return None;
     }
-    Some(PrefixOpGuard(prefix.to_string()))
+    Some(PrefixOpGuard(key))
 }
 
 /// Files currently being downloaded/verified in the shared dependency cache.
@@ -114,7 +123,7 @@ fn join_err(e: tokio::task::JoinError) -> String {
 /// Runs a umu command to completion with a timeout, killing the whole process
 /// group if the operation is cancelled or times out. The command is put in its
 /// own process group via `setpgid` so the entire umu/wine tree is signalled.
-async fn run_umu_command(
+pub(super) async fn run_umu_command(
     mut cmd: AsyncCommand,
     label: String,
     cancel: Arc<AtomicBool>,
@@ -307,130 +316,148 @@ pub async fn execute_dep_step(
             let _cache_claim = claim_cache_file(file_name, cancel).await?;
 
             let dest = Path::new(cache_dir).join(file_name);
-            let d = dest.clone();
-            let exists = tokio::task::spawn_blocking(move || d.exists())
-                .await
-                .unwrap_or(true);
-            if !exists {
-                // Check cancel before starting download
-                if cancel.load(Ordering::Relaxed) {
-                    return Err(t!("Cancelled."));
-                }
+            let expected_sha = sha256.to_string();
 
-                info!("[dep] Downloading {} from {}", file_name, url);
-                let cache_dir_clone = cache_dir.to_string();
-                tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
-                    .await
-                    .map_err(join_err)
-                    .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
-
-                let mut cmd = AsyncCommand::new("curl");
-                cmd.args([
-                    "--proto",
-                    "=https",
-                    "--proto-redir",
-                    "=https",
-                    "--tlsv1.2",
-                    "--silent",
-                    "--show-error",
-                    "--fail",
-                    "--location",
-                    "--connect-timeout",
-                    "15",
-                    "--max-time",
-                    "300",
-                    "--retry",
-                    "3",
-                    "--retry-delay",
-                    "1",
-                    "-o",
-                    dest.to_string_lossy().as_ref(),
-                    url,
-                ]);
-
-                let cancel_clone = cancel.clone();
-                let file_name_clone = file_name.to_string();
-
-                let output = {
-                    let child = cmd
-                        .spawn()
-                        .map_err(|err| format!("Failed to spawn curl: {err}"))?;
-                    let pid = child.id();
-                    let wait_fut = child.wait_with_output();
-                    tokio::pin!(wait_fut);
-
-                    loop {
-                        tokio::select! {
-                            out = &mut wait_fut => {
-                                break out.map_err(|e| format!("Failed to run curl: {e}"))?;
-                            }
-                            _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                                if cancel_clone.load(Ordering::Relaxed) {
-                                    if let Some(pid) = pid {
-                                        unsafe {
-                                            libc::kill(pid as i32, libc::SIGKILL);
-                                        }
-                                    }
-                                    let _ = (&mut wait_fut).await;
-                                    let _ = fs::remove_file(&dest);
-                                    return Err(t!("Cancelled."));
-                                }
-                            }
-                        }
+            // A cached copy is trusted only if its checksum still matches;
+            // a partial file from an interrupted download (or a stale pin)
+            // is deleted and fetched again instead of failing the install.
+            let cached_ok = {
+                let d = dest.clone();
+                let expected = expected_sha.clone();
+                tokio::task::spawn_blocking(move || {
+                    if !d.exists() {
+                        return Ok(false);
                     }
-                };
-
-                if !output.status.success() {
-                    let _ = fs::remove_file(&dest);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("Download failed for {}: {}", file_name_clone, stderr.trim()));
-                }
-                info!("[dep] Downloaded {}", file_name);
-            } else {
-                info!("[dep] {} already cached, skipping download", file_name);
-            }
-
-            { let expected_sha = *sha256;
-                info!("[dep] Verifying SHA256 for {}", file_name);
-                let dest_clone = dest.clone();
-                let expected_sha = expected_sha.to_string();
-                let file_name = *file_name;
-                tokio::task::spawn_blocking(move || -> Result<(), String> {
-                    let mut file = fs::File::open(&dest_clone)
-                        .map_err(|err| format!("Failed to open downloaded file: {err}"))?;
-                    let mut hasher = Sha256::new();
-                    let mut buffer = [0u8; 8192];
-                    loop {
-                        let n = file
-                            .read(&mut buffer)
-                            .map_err(|err| format!("Failed to read downloaded file: {err}"))?;
-                        if n == 0 {
-                            break;
+                    match verify_sha256(&d, &expected) {
+                        Ok(true) => Ok(true),
+                        Ok(false) => {
+                            warn!(
+                                "[dep] cached '{}' has a stale checksum; re-downloading",
+                                d.display()
+                            );
+                            fs::remove_file(&d)
+                                .map_err(|e| format!("Failed to remove stale cached file: {e}"))?;
+                            Ok(false)
                         }
-                        hasher.update(&buffer[..n]);
+                        Err(e) => Err(e),
                     }
-                    let actual_sha = hex::encode(hasher.finalize());
-                    if actual_sha != expected_sha {
-                        match fs::remove_file(&dest_clone) {
-                            Ok(()) => {},
-                            Err(remove_err) => {
-                                return Err(format!(
-                                    "Checksum mismatch for {}: expected {}, got {}; failed to remove corrupted file: {}",
-                                    file_name, expected_sha, actual_sha, remove_err
-                                ));
-                            }
-                        }
-                        return Err(format!(
-                            "Checksum mismatch for {}: expected {}, got {}",
-                            file_name, expected_sha, actual_sha
-                        ));
-                    }
-                    Ok(())
                 })
                 .await
-                .map_err(join_err).and_then(|r| r)?;
-                info!("[dep] SHA256 verified for {}", file_name);
+                .map_err(join_err)
+                .and_then(|r| r)?
+            };
+
+            if cached_ok {
+                info!("[dep] {} already cached, skipping download", file_name);
+                return Ok(StepChanges::default());
             }
+
+            // Check cancel before starting download
+            if cancel.load(Ordering::Relaxed) {
+                return Err(t!("Cancelled."));
+            }
+
+            info!("[dep] Downloading {} from {}", file_name, url);
+            let cache_dir_clone = cache_dir.to_string();
+            tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
+                .await
+                .map_err(join_err)
+                .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
+
+            // Download to a unique temp name and rename into place only after
+            // the checksum matches, so `dest` is either absent or complete.
+            let temp = Path::new(cache_dir).join(format!(
+                "{}.tmp.{}.{}",
+                file_name,
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+
+            let mut cmd = AsyncCommand::new("curl");
+            cmd.args([
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--tlsv1.2",
+                "--silent",
+                "--show-error",
+                "--fail",
+                "--location",
+                "--connect-timeout",
+                "15",
+                "--max-time",
+                "300",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "1",
+                "-o",
+                temp.to_string_lossy().as_ref(),
+                url,
+            ]);
+
+            let output = {
+                let child = cmd
+                    .spawn()
+                    .map_err(|err| format!("Failed to spawn curl: {err}"))?;
+                let pid = child.id();
+                let wait_fut = child.wait_with_output();
+                tokio::pin!(wait_fut);
+
+                loop {
+                    tokio::select! {
+                        out = &mut wait_fut => {
+                            break out.map_err(|e| format!("Failed to run curl: {e}"))?;
+                        }
+                        _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                            if cancel.load(Ordering::Relaxed) {
+                                if let Some(pid) = pid {
+                                    unsafe {
+                                        libc::kill(pid as i32, libc::SIGKILL);
+                                    }
+                                }
+                                let _ = (&mut wait_fut).await;
+                                let _ = tokio::fs::remove_file(&temp).await;
+                                return Err(t!("Cancelled."));
+                            }
+                        }
+                    }
+                }
+            };
+
+            if !output.status.success() {
+                let _ = tokio::fs::remove_file(&temp).await;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Download failed for {}: {}", file_name, stderr.trim()));
+            }
+            info!("[dep] Downloaded {}", file_name);
+
+            info!("[dep] Verifying SHA256 for {}", file_name);
+            let file_name = *file_name;
+            tokio::task::spawn_blocking(move || -> Result<(), String> {
+                match verify_sha256(&temp, &expected_sha) {
+                    Ok(true) => fs::rename(&temp, &dest).map_err(|e| {
+                        let _ = fs::remove_file(&temp);
+                        format!("Failed to move downloaded file into the cache: {e}")
+                    }),
+                    Ok(false) => {
+                        let _ = fs::remove_file(&temp);
+                        Err(format!(
+                            "Checksum mismatch for {}: expected {}; download rejected",
+                            file_name, expected_sha
+                        ))
+                    }
+                    Err(e) => {
+                        let _ = fs::remove_file(&temp);
+                        Err(e)
+                    }
+                }
+            })
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)?;
+            info!("[dep] SHA256 verified for {}", file_name);
 
             Ok(StepChanges::default())
         }
@@ -518,6 +545,15 @@ pub async fn execute_dep_step(
         DepStepAction::OverrideDlls { dlls, .. } => {
             let overrides = split_csv_values(dlls);
             info!("[dep] Applying DLL overrides: {:?}", overrides);
+            write_dll_overrides(
+                prefix_path,
+                proton_path,
+                cache_dir,
+                &overrides,
+                Some("native,builtin"),
+                cancel.clone(),
+            )
+            .await?;
             Ok(StepChanges {
                 dll_overrides: overrides,
                 ..StepChanges::default()
@@ -529,7 +565,9 @@ pub async fn execute_dep_step(
             let output = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-                cmd.args([get_winetricks_path().as_str(), "-q", verb.as_str()]);
+                // `--force`: winetricks skips verbs listed in winetricks.log;
+                // after an uninstall removed the files that log is stale.
+                cmd.args([get_winetricks_path().as_str(), "-q", "--force", verb.as_str()]);
                 run_umu_command(cmd, format!("winetricks {}", verb), cancel.clone()).await?
             };
             if !output.status.success() {
@@ -556,14 +594,13 @@ pub async fn execute_dep_step(
             info!("[dep] Verifying: {}", description);
             let verified = match action {
                 VerifyAction::RegistryKeyExists { path } => {
-                    let prefix_path = prefix_path.to_string();
-                    let proton_path = proton_path.to_string();
-                    let path = path.to_string();
-                    tokio::task::spawn_blocking(move || {
-                        super::verify::check_registry_key_exists(&prefix_path, &proton_path, &path)
-                    })
-                    .await
-                    .map_err(join_err).and_then(|r| r)?
+                    super::verify::check_registry_key_exists(
+                        prefix_path,
+                        proton_path,
+                        path,
+                        cancel.clone(),
+                    )
+                    .await?
                 }
 
             };
@@ -578,7 +615,47 @@ pub async fn execute_dep_step(
     }
 }
 
-fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton_path: &str) {
+/// Streams `path` through SHA-256 and compares with `expected` (hex).
+fn verify_sha256(path: &Path, expected: &str) -> Result<bool, String> {
+    let mut file = fs::File::open(path)
+        .map_err(|err| format!("Failed to open downloaded file: {err}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .map_err(|err| format!("Failed to read downloaded file: {err}"))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()).eq_ignore_ascii_case(expected))
+}
+
+/// Drops `verb` from `$WINEPREFIX/winetricks.log`. winetricks consults that
+/// file before installing and skips a verb it has already logged, so a verb
+/// whose files Leyen removed must be unlogged or a reinstall becomes a no-op.
+fn forget_winetricks_verb(prefix_path: &str, verb: &str) -> Result<(), String> {
+    let path = Path::new(prefix_path).join("winetricks.log");
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("Failed to read winetricks.log: {err}")),
+    };
+    let kept: Vec<&str> = text.lines().filter(|line| line.trim() != verb).collect();
+    if kept.len() == text.lines().count() {
+        return Ok(());
+    }
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    leyen_model::paths::atomic_write(&path, &out)
+        .map_err(|err| format!("Failed to update winetricks.log: {err}"))
+}
+
+pub(super) fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton_path: &str) {
     cmd.env("WINEPREFIX", prefix_path);
     if !proton_path.is_empty() {
         cmd.env("PROTONPATH", proton_path);
@@ -616,7 +693,7 @@ pub async fn install_dep(
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
 
-    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
         return Err(t!(
             "Another dependency operation is already running for this prefix."
         ));
@@ -634,7 +711,7 @@ pub async fn install_dep(
             })
         })?;
 
-    ensure_umu_ready(needs_winetricks, &on_progress).await?;
+    ensure_umu_ready(needs_winetricks, &on_progress, &cancel).await?;
 
     let prefix_path_for_state = prefix_path.clone();
     let state = match tokio::task::spawn_blocking(move || {
@@ -742,15 +819,22 @@ pub async fn install_dep(
             }
         }
 
-        // Diff once after the steps so we know what this attempt created.
+        // Diff once after the steps so we know what this attempt created. A
+        // failed snapshot would record the dependency with no file list, so
+        // nothing could ever be rolled back or uninstalled: treat it as a
+        // failed step instead.
         {
             let p = prefix_path.clone();
-            if let Ok(after) = tokio::task::spawn_blocking(move || snapshot_prefix(&p))
+            match tokio::task::spawn_blocking(move || snapshot_prefix(&p))
                 .await
                 .map_err(join_err)
                 .and_then(|r| r)
             {
-                recorded.merge(diff_snapshots(&snapshot_before, &after));
+                Ok(after) => recorded.merge(diff_snapshots(&snapshot_before, &after)),
+                Err(err) => {
+                    error!("[dep:{}] post-install snapshot failed: {}", profile.id, err);
+                    step_error.get_or_insert(err);
+                }
             }
         }
 
@@ -838,7 +922,7 @@ pub async fn uninstall_dep(
     let proton_path = proton_path.to_string();
     let cache_dir = get_deps_cache_dir();
 
-    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path) else {
+    let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
         return Err(t!(
             "Another dependency operation is already running for this prefix."
         ));
@@ -885,24 +969,20 @@ pub async fn uninstall_dep(
             CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
         )
     });
-    let needs_umu = requires_umu || !winetricks_verbs.is_empty();
-    if needs_umu {
-        ensure_umu_ready(false, &on_progress).await?;
+    if requires_umu {
+        ensure_umu_ready(false, &on_progress, &cancel).await?;
     }
 
-    // Async winetricks uninstall before sync cleanup loop
+    // winetricks has no uninstall command; forgetting the verb in its log is
+    // what lets a later install run again instead of "already installed".
     for verb in &winetricks_verbs {
         on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
         let prefix_path = prefix_path.clone();
-        let proton_path = proton_path.clone();
         let verb = verb.clone();
-        let cancel = cancel.clone();
-        let result: Result<(), String> = {
-            let mut cmd = AsyncCommand::new(get_umu_run_path());
-            configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
-            cmd.args([get_winetricks_path().as_str(), "--uninstall", &verb]);
-            run_umu_command(cmd, format!("winetricks --uninstall {}", verb), cancel.clone()).await.map(|_| ())
-        };
+        let result = tokio::task::spawn_blocking(move || forget_winetricks_verb(&prefix_path, &verb))
+            .await
+            .map_err(join_err)
+            .and_then(|r| r);
         if let Err(e) = result {
             warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
         }
@@ -984,6 +1064,7 @@ pub async fn uninstall_dep(
 async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
     check_winetricks: bool,
     on_progress: &F,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     info!("[dep] Checking umu-launcher availability…");
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
@@ -1044,6 +1125,9 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
                 info!("[dep] Waiting for winetricks download from another caller…");
             }
             while WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(t!("Cancelled."));
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
 
@@ -1177,9 +1261,19 @@ fn collect_snapshot(
             continue;
         }
 
-        let metadata = entry
-            .metadata()
-            .map_err(|err| format!("Failed to read metadata for '{}': {}", path.display(), err))?;
+        // Wine may still be tearing down temp files while we scan: an entry
+        // that vanished between `read_dir` and `stat` is simply not there.
+        let metadata = match entry.metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(format!(
+                    "Failed to read metadata for '{}': {}",
+                    path.display(),
+                    err
+                ));
+            }
+        };
 
         if metadata.is_dir() {
             collect_snapshot(root, &path, snapshot)?;
@@ -1259,7 +1353,7 @@ fn winetricks_known_dll_overrides(verb: &str) -> Vec<String> {
             vec![verb.to_string()]
         }
         "d3dx9" => (24..=43).map(|n| format!("d3dx9_{n}")).collect(),
-        "d3dx11" => (42..=43).map(|n| format!("d3dx11_{n}")).collect(),
+        "d3dx11" | "d3dx11_42" | "d3dx11_43" => (42..=43).map(|n| format!("d3dx11_{n}")).collect(),
         "dx8vb" => vec!["dx8vb".to_string()],
         "amstream" => vec!["amstream".to_string()],
         "devenum" => vec!["devenum".to_string()],
@@ -1320,12 +1414,32 @@ async fn remove_dll_overrides(
     dlls: &[String],
     cancel: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    fs::create_dir_all(cache_dir)
+    write_dll_overrides(prefix_path, proton_path, cache_dir, dlls, None, cancel).await
+}
+
+/// Sets (`Some(value)`) or deletes (`None`) `HKCU\Software\Wine\DllOverrides`
+/// entries for `dlls` through `regedit /S`.
+async fn write_dll_overrides(
+    prefix_path: &str,
+    proton_path: &str,
+    cache_dir: &str,
+    dlls: &[String],
+    value: Option<&str>,
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    if dlls.is_empty() {
+        return Ok(());
+    }
+    tokio::fs::create_dir_all(cache_dir)
+        .await
         .map_err(|err| format!("Failed to create dependency cache directory: {err}"))?;
 
     let reg_lines = dlls
         .iter()
-        .map(|dll| format!("\"{}\"=-", dll))
+        .map(|dll| match value {
+            Some(value) => format!("\"{}\"=\"{}\"", dll, value),
+            None => format!("\"{}\"=-", dll),
+        })
         .collect::<Vec<_>>();
     let reg_content = format!(
         "Windows Registry Editor Version 5.00\r\n\r\n\
@@ -1338,24 +1452,26 @@ async fn remove_dll_overrides(
     // prefix, so a fixed name here would let concurrent uninstalls for
     // different prefixes overwrite each other's file before regedit reads it.
     let reg_path = Path::new(cache_dir).join(format!(
-        "remove_dependency_overrides.{}.{}.reg",
+        "dependency_overrides.{}.{}.reg",
         std::process::id(),
         uuid::Uuid::new_v4()
     ));
-    fs::write(&reg_path, reg_content)
-        .map_err(|err| format!("Failed to write override removal file: {err}"))?;
+    tokio::fs::write(&reg_path, reg_content)
+        .await
+        .map_err(|err| format!("Failed to write DLL override file: {err}"))?;
 
     let mut cmd = AsyncCommand::new(get_umu_run_path());
     configure_umu_command_async(&mut cmd, prefix_path, proton_path);
     cmd.args(["regedit.exe", "/S"]);
     cmd.arg(reg_path.as_os_str());
 
+    let what = if value.is_some() { "apply" } else { "remove" };
     let result = run_umu_command(cmd, "regedit /S".to_string(), cancel).await;
-    let _ = fs::remove_file(&reg_path);
-    let output = result.map_err(|e| format!("Failed to remove DLL overrides: {e}"))?;
+    let _ = tokio::fs::remove_file(&reg_path).await;
+    let output = result.map_err(|e| format!("Failed to {what} DLL overrides: {e}"))?;
     if !output.status.success() {
         return Err(format!(
-            "Failed to remove DLL overrides: regedit exited with status {}",
+            "Failed to {what} DLL overrides: regedit exited with status {}",
             output.status
         ));
     }
@@ -1393,6 +1509,17 @@ fn remove_created_files(prefix_path: &str, files: &[String]) -> Result<(), Strin
     files.sort_by_key(|path| std::cmp::Reverse(path.matches('/').count()));
 
     for relative in &files {
+        // Tracked paths come from a state file inside the prefix; anything but
+        // plain relative components could reach outside it.
+        if !Path::new(relative)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(format!(
+                "Refusing to remove tracked file '{}': path escapes the prefix",
+                relative
+            ));
+        }
         let path = prefix_root.join(relative);
         match fs::remove_file(&path) {
             Ok(()) => prune_empty_parent_dirs(prefix_root, &path),

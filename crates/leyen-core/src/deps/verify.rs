@@ -1,47 +1,24 @@
-use crate::runtime::umu::get_umu_run_path;
-use std::process::Command;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
-pub fn check_registry_key_exists(
+use tokio::process::Command as AsyncCommand;
+
+use super::engine::{configure_umu_command_async, run_umu_command};
+use crate::runtime::umu::get_umu_run_path;
+
+/// Queries `key_path` with `reg.exe` inside the prefix. Runs through the
+/// engine's command runner so Cancel and the timeout kill the whole wine
+/// process group; a timeout is an error, not a missing key.
+pub async fn check_registry_key_exists(
     prefix_path: &str,
     proton_path: &str,
     key_path: &str,
+    cancel: Arc<AtomicBool>,
 ) -> Result<bool, String> {
-    // We use reg.exe query to check for the existence of a key
-    let mut cmd = Command::new(get_umu_run_path());
-    cmd.env("WINEPREFIX", prefix_path);
-    if !proton_path.is_empty() {
-        cmd.env("PROTONPATH", proton_path);
-    }
+    let mut cmd = AsyncCommand::new(get_umu_run_path());
+    configure_umu_command_async(&mut cmd, prefix_path, proton_path);
     cmd.env("GAMEID", "leyen-dep-verify");
     cmd.args(["reg.exe", "query", key_path]);
-
-    // Silence output
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::null());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("Failed to run reg.exe: {err}"))?;
-
-    let timeout = Duration::from_secs(60);
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(100);
-
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(status.success()),
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Ok(false);
-                }
-                std::thread::sleep(poll_interval);
-            }
-            Err(err) => return Err(format!("Failed to wait for reg.exe: {err}")),
-        }
-    }
+    let output = run_umu_command(cmd, "reg.exe query".to_string(), cancel).await?;
+    Ok(output.status.success())
 }
-
-

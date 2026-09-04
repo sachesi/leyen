@@ -874,6 +874,7 @@ pub async fn show_add_library_item_dialog(
             if kind == AddLibraryItemKind::Game && inside_group {
                 ui_clone.stack.set_visible_child_name("group");
                 ui_clone.back_btn.set_visible(true);
+                ui_clone.group_edit_btn.set_visible(true);
             }
             refresh_library_view(&ui_clone, &overlay_clone, &parent_clone).await;
             let success_message = if let Some(icon_notice) = icon_notice {

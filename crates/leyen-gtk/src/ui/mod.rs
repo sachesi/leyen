@@ -20,7 +20,7 @@ use std::rc::Rc;
 pub use self::library::*;
 pub use self::utils::*;
 
-use self::game_dialogs::{AddLibraryItemKind, show_add_library_item_dialog};
+use self::game_dialogs::{AddLibraryItemKind, show_add_library_item_dialog, show_edit_group_dialog};
 use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
@@ -52,6 +52,11 @@ pub fn build_ui(app: &adw::Application) {
         .tooltip_text(t!("Back to Library"))
         .visible(false)
         .build();
+    let group_edit_btn = gtk4::Button::builder()
+        .icon_name("document-edit-symbolic")
+        .tooltip_text(t!("Edit Group"))
+        .visible(false)
+        .build();
     let add_menu_model = gio::Menu::new();
     add_menu_model.append(Some(&t!("Game")), Some("win.add-game"));
     add_menu_model.append(Some(&t!("Group")), Some("win.add-group"));
@@ -73,6 +78,7 @@ pub fn build_ui(app: &adw::Application) {
 
     let header = adw::HeaderBar::builder().title_widget(&title).build();
     header.pack_start(&back_btn);
+    header.pack_start(&group_edit_btn);
     let menu_model = gio::Menu::new();
     menu_model.append(Some(&t!("Running Games")), Some("win.show-running-games"));
     menu_model.append(Some(&t!("Logs")), Some("win.show-logs"));
@@ -283,6 +289,7 @@ pub fn build_ui(app: &adw::Application) {
         stack,
         add_button_stack: add_button_stack.clone(),
         back_btn: back_btn.clone(),
+        group_edit_btn: group_edit_btn.clone(),
         title,
         _search_bar: search_bar.clone(),
         search_entry: search_entry.clone(),
@@ -335,6 +342,26 @@ pub fn build_ui(app: &adw::Application) {
         let window = window_clone.clone();
         glib::spawn_future_local(async move {
             refresh_library_view(&ui, &overlay, &window).await;
+        });
+    });
+
+    let ui_clone = ui.clone();
+    let overlay_clone = toast_overlay.clone();
+    let window_clone = window.clone();
+    group_edit_btn.connect_clicked(move |_| {
+        let group = {
+            let group_id = ui_clone.current_group_id.borrow();
+            let items = ui_clone.library_state.borrow();
+            group_id
+                .as_deref()
+                .and_then(|id| find_group(&items, id).cloned())
+        };
+        let Some(group) = group else { return };
+        let ui = ui_clone.clone();
+        let overlay = overlay_clone.clone();
+        let window = window_clone.clone();
+        glib::spawn_future_local(async move {
+            show_edit_group_dialog(&window, &ui, &overlay, &group).await;
         });
     });
 

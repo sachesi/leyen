@@ -664,6 +664,7 @@ pub async fn show_add_library_item_dialog(
 
     let overlay = adw::ToastOverlay::new();
     let root_page = adw::NavigationPage::builder()
+        .title(title.as_str())
         .child(&toolbar_view)
         .build();
     nav.add(&root_page);
@@ -1183,6 +1184,7 @@ pub async fn show_edit_group_dialog(
 
     let overlay = adw::ToastOverlay::new();
     let root_page = adw::NavigationPage::builder()
+        .title(t!("Edit Group").as_str())
         .child(&toolbar_view)
         .build();
     nav.add(&root_page);
@@ -1996,6 +1998,7 @@ pub async fn show_edit_game_dialog(
 
     let overlay = adw::ToastOverlay::new();
     let root_page = adw::NavigationPage::builder()
+        .title(t!("Edit Game").as_str())
         .child(&toolbar_view)
         .build();
     nav.add(&root_page);

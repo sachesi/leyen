@@ -31,7 +31,6 @@ pub fn check_or_install_protonge() {
     tokio::spawn(async move {
         let _ = tokio::task::spawn_blocking(move || {
             let _ = fs::create_dir_all(&proton_dir);
-            let proton_dir_str = proton_dir.to_string_lossy();
 
             // Resolve the latest release tag via the GitHub redirect
             let tag_output = std::process::Command::new("curl")
@@ -178,34 +177,48 @@ pub fn check_or_install_protonge() {
                 }
                 log::info!("ProtonGE checksum verified for {}", tarball);
 
+                // Extract into a staging directory and rename the version
+                // directory into place: `detect_proton_versions` lists any
+                // directory with `proton` + `version` files, so extracting in
+                // place would offer a half-written Proton while tar runs.
+                let staging = proton_dir.join(format!(
+                    ".extract.{}.{}",
+                    std::process::id(),
+                    uuid::Uuid::new_v4()
+                ));
+                let _ = fs::create_dir_all(&staging);
                 let status = std::process::Command::new("tar")
                     .args([
                         "-xzf",
                         &tarball_path.to_string_lossy(),
                         "-C",
-                        &proton_dir_str,
+                        &staging.to_string_lossy(),
                     ])
                     .status();
 
-                // Only the just-extracted version directory may be removed on
-                // failure — never the shared parent, which holds other installed
-                // Proton versions.
+                // Only the staging directory may be removed on failure — never
+                // the shared parent, which holds other installed Proton versions.
                 let extracted_dir = proton_dir.join(&tag);
                 match status {
                     Ok(s) if s.success() => {
-                        log::info!("Successfully extracted ProtonGE");
+                        match fs::rename(staging.join(&tag), &extracted_dir) {
+                            Ok(()) => log::info!("Successfully extracted ProtonGE"),
+                            Err(e) => {
+                                log::error!("Failed to move extracted ProtonGE into place: {}", e);
+                                PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
+                            }
+                        }
                     }
                     Ok(s) => {
                         log::error!("Failed to extract ProtonGE: tar exited with status {}", s);
-                        let _ = fs::remove_dir_all(&extracted_dir);
                         PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                     }
                     Err(e) => {
                         log::error!("Failed to extract ProtonGE: failed to spawn tar: {}", e);
-                        let _ = fs::remove_dir_all(&extracted_dir);
                         PROTONGE_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
                     }
                 }
+                let _ = fs::remove_dir_all(&staging);
                 if let Err(e) = fs::remove_file(&tarball_path) {
                     log::warn!("failed to remove tarball {}: {e}", tarball_path.display());
                 }

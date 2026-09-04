@@ -15,8 +15,9 @@ use std::io::Read;
 use tokio::process::Command as AsyncCommand;
 
 use crate::runtime::umu::{
-    UMU_DOWNLOADING, WINETRICKS_DOWNLOAD_STARTED, WINETRICKS_DOWNLOADING, download_winetricks,
-    get_umu_run_path, get_winetricks_path, is_umu_run_available, is_winetricks_available,
+    UMU_DOWNLOADING, WINETRICKS_DOWNLOAD_STARTED, WINETRICKS_DOWNLOADING, claim_download,
+    download_winetricks, get_umu_run_path, get_winetricks_path, is_umu_run_available,
+    is_winetricks_available,
 };
 
 use super::recipes::get_dep_steps;
@@ -1101,9 +1102,8 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
             info!("[dep] winetricks not found, triggering download");
             on_progress(0, 0, t!("Downloading winetricks…"));
 
-            if !WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+            if claim_download(&WINETRICKS_DOWNLOAD_STARTED, &WINETRICKS_DOWNLOADING) {
                 info!("[dep] Starting winetricks download…");
-                WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
                 let result = tokio::task::spawn_blocking(download_winetricks)
                     .await
                     .map_err(join_err)

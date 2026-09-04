@@ -26,6 +26,25 @@ pub static WINETRICKS_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 /// `true` while the background winetricks download thread is actively running.
 pub static WINETRICKS_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
+/// Claims a one-shot download: `true` for exactly one caller until the attempt
+/// fails (`started` is then reset so a later start can retry). `downloading`
+/// is the claim itself, so a concurrent caller that loses sees it set at once
+/// — setting `started` first and `downloading` after left a gap in which a
+/// loser saw "started, not downloading" and gave up as "not available".
+pub fn claim_download(started: &AtomicBool, downloading: &AtomicBool) -> bool {
+    if started.load(Ordering::SeqCst) {
+        return false;
+    }
+    if downloading
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return false;
+    }
+    started.store(true, Ordering::SeqCst);
+    true
+}
+
 #[derive(Error, Debug)]
 pub enum UmuError {
     #[error("Failed to create directory: {0}")]
@@ -162,11 +181,9 @@ pub async fn check_or_install_umu() {
         return;
     }
 
-    if UMU_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+    if !claim_download(&UMU_DOWNLOAD_STARTED, &UMU_DOWNLOADING) {
         return;
     }
-
-    UMU_DOWNLOADING.store(true, Ordering::Relaxed);
 
     let umu_core_dir = get_umu_core_dir();
 
@@ -211,11 +228,9 @@ pub async fn check_or_install_winetricks() {
         return;
     }
 
-    if WINETRICKS_DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+    if !claim_download(&WINETRICKS_DOWNLOAD_STARTED, &WINETRICKS_DOWNLOADING) {
         return;
     }
-
-    WINETRICKS_DOWNLOADING.store(true, Ordering::Relaxed);
 
     info!("[dbg] winetricks not found, starting background download");
     tokio::spawn(async move {
@@ -358,44 +373,52 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         )));
     }
     info!("[dbg] download_and_install_umu: checksum verified, extracting");
-    // Extract: the tarball contains an `umu/` directory with `umu-run` inside.
+    // Extract into a staging directory and rename `umu/` into place at the
+    // end: availability is just `Path::exists()` on `umu/umu-run`, so
+    // extracting in place would report "ready" (and let a launch use a
+    // half-written zipapp) while tar is still running.
     let umu_dir = format!("{}/umu", dest_dir);
+    let staging = format!("{}/.extract.{}.{}", dest_dir, std::process::id(), uuid::Uuid::new_v4());
+    fs::create_dir_all(&staging)?;
     let status = std::process::Command::new("tar")
-        .args(["-xf", &tarball_path, "-C", dest_dir])
+        .args(["-xf", &tarball_path, "-C", &staging])
         .status();
 
     let _ = fs::remove_file(&tarball_path);
 
-    // A truncated/partial extraction must not be left behind — availability is
-    // just `Path::exists()`, so a half-extracted `umu/` would count as
-    // installed forever otherwise.
     let extracted = match status {
         Ok(s) => s.success(),
         Err(e) => {
-            let _ = fs::remove_dir_all(&umu_dir);
+            let _ = fs::remove_dir_all(&staging);
             return Err(UmuError::Extraction(e.to_string()));
         }
     };
-
-    if extracted {
-        // Ensure the binary is executable.
-        let umu_run = format!("{}/umu-run", umu_dir);
-        let version_file = format!("{}/version", dest_dir);
-        let _ = fs::write(version_file, version);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = fs::metadata(&umu_run) {
-                let mut perms = meta.permissions();
-                perms.set_mode(0o755);
-                let _ = fs::set_permissions(&umu_run, perms);
-            }
-        }
-        Ok(())
-    } else {
-        let _ = fs::remove_dir_all(&umu_dir);
-        Err(UmuError::Extraction("Extraction failed".to_string()))
+    if !extracted {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(UmuError::Extraction("Extraction failed".to_string()));
     }
+
+    // Ensure the binary is executable before it becomes visible.
+    let staged_umu = format!("{}/umu", staging);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let umu_run = format!("{}/umu-run", staged_umu);
+        if let Ok(meta) = fs::metadata(&umu_run) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&umu_run, perms);
+        }
+    }
+    let _ = fs::remove_dir_all(&umu_dir);
+    if let Err(e) = fs::rename(&staged_umu, &umu_dir) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(UmuError::Extraction(format!("Failed to move extracted umu into place: {e}")));
+    }
+    let _ = fs::remove_dir_all(&staging);
+    let version_file = format!("{}/version", dest_dir);
+    let _ = fs::write(version_file, version);
+    Ok(())
 }
 
 /// Finds the release asset named `file_name` in a GitHub Releases API

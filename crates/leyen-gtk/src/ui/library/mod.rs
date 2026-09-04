@@ -238,6 +238,7 @@ async fn run_library_refresh(
         if is_searching {
             ui_clone.stack.set_visible_child_name("root");
             ui_clone.back_btn.set_visible(false);
+            ui_clone.group_edit_btn.set_visible(false);
             ui_clone.title.set_title(&t!("Leyen"));
             ui_clone.title.set_subtitle("");
         } else {
@@ -250,12 +251,14 @@ async fn run_library_refresh(
                 } else {
                     ui_clone.stack.set_visible_child_name("group");
                     ui_clone.back_btn.set_visible(true);
+                    ui_clone.group_edit_btn.set_visible(true);
                 }
             }
 
             if ui_clone.current_group_id.borrow().is_none() {
                 ui_clone.stack.set_visible_child_name("root");
                 ui_clone.back_btn.set_visible(false);
+                ui_clone.group_edit_btn.set_visible(false);
                 ui_clone.title.set_title(&t!("Leyen"));
                 ui_clone.title.set_subtitle("");
             }

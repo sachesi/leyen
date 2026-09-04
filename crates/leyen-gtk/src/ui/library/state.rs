@@ -29,6 +29,8 @@ pub struct LibraryUi {
     pub stack: gtk4::Stack,
     pub add_button_stack: gtk4::Stack,
     pub back_btn: gtk4::Button,
+    /// Header shortcut to the current group's edit dialog; shown with `back_btn`.
+    pub group_edit_btn: gtk4::Button,
     pub title: adw::WindowTitle,
     pub _search_bar: gtk4::SearchBar,
     pub search_entry: gtk4::SearchEntry,

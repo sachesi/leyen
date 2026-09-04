@@ -947,9 +947,14 @@ pub async fn show_edit_group_dialog(
         proton_row.set_selected(0);
     }
 
-    let existing_group_icon = group_icon_file(&group.id)
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let existing_group_icon = {
+        let group_id = group.id.clone();
+        crate::daemon::gio_blocking(move || group_icon_file(&group_id))
+            .await
+            .flatten()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_default()
+    };
     let custom_group_icon_active = !existing_group_icon.is_empty();
     let group_icon_row = adw::EntryRow::builder()
         .title(t!("Icon File"))
@@ -1497,7 +1502,10 @@ pub async fn show_edit_game_dialog(
     }
 
     let existing_custom_game_icon = if game.custom_icon {
-        game_icon_file(&game.id)
+        let game_id = game.id.clone();
+        crate::daemon::gio_blocking(move || game_icon_file(&game_id))
+            .await
+            .flatten()
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default()
     } else {

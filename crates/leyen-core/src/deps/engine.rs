@@ -28,6 +28,8 @@ use leyen_model::deps::{
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
+/// How long to wait for a killed command's pipes to close before giving up.
+const POST_KILL_WAIT: Duration = Duration::from_secs(5);
 
 /// Prefixes with a dependency install/uninstall in progress. Prevents two
 /// concurrent operations on the same prefix (e.g. the deps page opened from both
@@ -130,7 +132,8 @@ pub(super) async fn run_umu_command(
     cancel: Arc<AtomicBool>,
 ) -> Result<std::process::Output, String> {
     cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
+    // Nothing reads stdout; piping it only buffered installer chatter in memory.
+    cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::piped());
     unsafe {
         cmd.pre_exec(|| {
@@ -179,15 +182,18 @@ async fn run_umu_command_inner(
                 return out.map_err(|e| format!("Failed to run {}: {}", label, e));
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                // After the kill, the wait ends only when every holder of the
+                // stderr pipe exits; a descendant that left the process group
+                // (wineserver calls setsid) could keep it open, so bound it.
                 if cancel.load(Ordering::Relaxed) {
                     kill_group();
-                    let _ = (&mut wait_fut).await;
+                    let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
                     return Err(t!("Cancelled."));
                 }
                 if start.elapsed() >= timeout {
                     warn!("[dep] '{}' timed out after {} seconds", label, COMMAND_TIMEOUT_SECS);
                     kill_group();
-                    let _ = (&mut wait_fut).await;
+                    let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
                     return Err(format!(
                         "'{}' timed out after {} seconds",
                         label, COMMAND_TIMEOUT_SECS
@@ -763,19 +769,63 @@ pub async fn install_dep(
             info!("[dep:{}] {} {}/{}", profile.id, description, completed_steps + 1, total_steps);
             on_progress(completed_steps + 1, total_steps, description.to_string());
 
-            let futures: Vec<_> = download_steps.iter().map(|step| {
-                execute_dep_step(step, &prefix_path, &proton_path, &cache_dir, &cancel)
-            }).collect();
+            // Downloads run in parallel under a shared stop flag: the user's
+            // cancel is mirrored into it, and the first failure sets it, so a
+            // checksum mismatch on one file does not wait out the others'
+            // transfers. Each download cleans its own temp file on stop.
+            let stop = Arc::new(AtomicBool::new(false));
+            let done = Arc::new(AtomicBool::new(false));
+            {
+                let stop = stop.clone();
+                let done = done.clone();
+                let cancel = cancel.clone();
+                tokio::spawn(async move {
+                    while !done.load(Ordering::Relaxed) {
+                        if cancel.load(Ordering::Relaxed) {
+                            stop.store(true, Ordering::Relaxed);
+                        }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                });
+            }
+            let (prefix_ref, proton_ref, cache_ref) =
+                (prefix_path.as_str(), proton_path.as_str(), cache_dir.as_str());
+            let futures: Vec<_> = download_steps
+                .iter()
+                .map(|step| {
+                    let stop = stop.clone();
+                    async move {
+                        let result =
+                            execute_dep_step(step, prefix_ref, proton_ref, cache_ref, &stop).await;
+                        if result.is_err() {
+                            stop.store(true, Ordering::Relaxed);
+                        }
+                        result
+                    }
+                })
+                .collect();
 
             let results = join_all(futures).await;
+            done.store(true, Ordering::Relaxed);
+            let mut first_error: Option<String> = None;
             for result in results {
                 match result {
                     Ok(changes) => recorded.merge(changes),
+                    // Siblings aborted by the flag report "Cancelled."; keep
+                    // the error that actually caused the abort.
                     Err(error) => {
                         error!("[dep:{}] download failed: {}", profile.id, error);
-                        return Err(error);
+                        if first_error.is_none() || (error != t!("Cancelled.") && first_error.as_deref() == Some(t!("Cancelled.").as_str())) {
+                            first_error = Some(error);
+                        }
                     }
                 }
+            }
+            if let Some(error) = first_error {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(t!("Cancelled."));
+                }
+                return Err(error);
             }
             completed_steps += download_steps.len();
         }

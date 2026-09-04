@@ -184,7 +184,7 @@ async fn rebuild_running_games(
 
     content_stack.set_visible_child_name("list");
 }
-pub async fn update_running_duration_labels(
+pub fn update_running_duration_labels(
     running_duration_labels: &Rc<RefCell<HashMap<String, gtk4::Label>>>,
 ) {
     let now = std::time::SystemTime::now()
@@ -192,8 +192,8 @@ pub async fn update_running_duration_labels(
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
 
-    let snapshots: HashMap<String, u64> = running_games_snapshot()
-        .await
+    // Cosmetic per-second tick: the last published set, not a daemon call.
+    let snapshots: HashMap<String, u64> = crate::daemon::cached_running_games()
         .into_iter()
         .map(|s| (s.game_id.clone(), s.started_at_epoch_seconds))
         .collect();
@@ -210,7 +210,6 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     thread_local! {
         static ACTIVE_RUNNING_GAMES_WINDOW: std::cell::RefCell<Option<adw::Window>> = const { std::cell::RefCell::new(None) };
         static SUBSCRIPTION_ACTIVE: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
-        static TIMEOUT_SOURCE_ID: std::cell::RefCell<Option<gtk4::glib::source::SourceId>> = const { std::cell::RefCell::new(None) };
     }
 
     if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone())
@@ -329,24 +328,17 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     // Cosmetic 1s tick to advance the elapsed-time labels while the window is open.
     let running_duration_labels_ref = running_duration_labels.clone();
     let window_ref = window.clone();
-    let source_id = glib::timeout_add_seconds_local(1, move || {
+    // Retires itself once the window is hidden; removing the source by id on
+    // close would panic if the tick had already returned Break.
+    glib::timeout_add_seconds_local(1, move || {
         if !window_ref.is_visible() {
             return glib::ControlFlow::Break;
         }
-        let labels = running_duration_labels_ref.clone();
-        glib::spawn_future_local(async move {
-            update_running_duration_labels(&labels).await;
-        });
+        update_running_duration_labels(&running_duration_labels_ref);
         glib::ControlFlow::Continue
     });
-    TIMEOUT_SOURCE_ID.with(|id| *id.borrow_mut() = Some(source_id));
 
     window.connect_close_request(move |_| {
-        TIMEOUT_SOURCE_ID.with(|id| {
-            if let Some(source_id) = id.borrow_mut().take() {
-                source_id.remove();
-            }
-        });
         SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);
         glib::Propagation::Proceed
     });

@@ -30,9 +30,9 @@ pub async fn create_game_desktop_entry(
             }
         }
         let icon = desktop_icon(&game);
-        fs::write(
+        leyen_model::paths::atomic_write(
             &path,
-            render_game_desktop_entry(&game, group.as_ref(), &icon),
+            &render_game_desktop_entry(&game, group.as_ref(), &icon),
         )
         .map_err(|err| {
             format!(

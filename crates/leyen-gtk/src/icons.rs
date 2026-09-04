@@ -105,8 +105,7 @@ fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
     let normalized = image.resize(MANAGED_ICON_SIZE, MANAGED_ICON_SIZE, FilterType::CatmullRom);
 
-    normalized
-        .save_with_format(target, image::ImageFormat::Png)
+    save_png_atomically(&normalized, target)
         .map_err(|err| {
             format!(
                 "Failed to write managed icon '{}': {}",
@@ -159,10 +158,18 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
         .or_else(|| find_ico_blob(&bytes).and_then(decode_icon_blob))
         .ok_or_else(|| format!("No icon resource found in '{}'", exe_path.display()))?;
 
-    decoded
-        .resize(size, size, FilterType::CatmullRom)
-        .save_with_format(out, image::ImageFormat::Png)
+    save_png_atomically(&decoded.resize(size, size, FilterType::CatmullRom), out)
         .map_err(|err| format!("Failed to save icon '{}': {}", out.display(), err))
+}
+
+/// Encodes to PNG in memory and writes via temp file + rename, so a crash or
+/// full disk mid-write never leaves a truncated icon in place of the live one.
+fn save_png_atomically(image: &image::DynamicImage, out: &std::path::Path) -> Result<(), String> {
+    let mut bytes = Vec::new();
+    image
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .map_err(|err| err.to_string())?;
+    leyen_model::paths::atomic_write_bytes(out, &bytes).map_err(|err| err.to_string())
 }
 
 fn decode_icon_blob(bytes: &[u8]) -> Option<image::DynamicImage> {

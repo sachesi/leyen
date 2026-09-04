@@ -35,7 +35,7 @@ pub const INTERFACE: &str = "com.github.sachesi.leyen.Manager";
 /// `(ssttt)`. `elapsed` is derived client-side from `started_at_epoch_seconds`
 /// to avoid staleness. `game_id` is the internal UUID (used to match library
 /// cards); `leyen_id` is the user-facing `ly-XXXX` (used for `StopGame`).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct RunningGameSnapshot {
     pub game_id: String,
     pub leyen_id: String,

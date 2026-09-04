@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock, RwLock};
 use std::thread::JoinHandle;
 
 use chrono::Local;
-use crossbeam_channel::{Sender, bounded};
+use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use log::{Level, LevelFilter, Metadata, Record};
 use serde::{Deserialize, Serialize};
 
@@ -176,7 +176,22 @@ pub fn init() -> Result<(), log::SetLoggerError> {
         let mut lines_since_check = 0;
         let mut lines_since_sync = 0;
 
-        while let Ok(entry) = rx.recv() {
+        loop {
+            let entry = match rx.recv_timeout(SYNC_QUIESCENCE) {
+                Ok(entry) => entry,
+                Err(RecvTimeoutError::Timeout) => {
+                    // Queue quiet for a moment: make the tail durable now, so a
+                    // crash right after a burst loses nothing.
+                    if lines_since_sync > 0
+                        && let Some(ref mut f) = file
+                    {
+                        let _ = f.sync_all();
+                        lines_since_sync = 0;
+                    }
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
             // Update memory buffer for the log pull API in the background thread
             // so log callers never block.
             if let Some(buf) = UI_LOG_ENTRIES.get()
@@ -226,10 +241,12 @@ pub fn init() -> Result<(), log::SetLoggerError> {
             {
                 let _ = writeln!(f, "{}", json);
                 // Batched durability: fsync every 50 lines under load, and on
-                // queue quiescence so a crash right after a burst loses nothing.
-                // Per-line sync would be too slow for chatty game output.
+                // queue quiescence (the recv timeout above). Syncing whenever
+                // the queue happened to be empty meant one fsync per line for
+                // any trickle of output, which stalled the writer until the
+                // channel filled and lines were dropped.
                 lines_since_sync += 1;
-                if lines_since_sync >= 50 || rx.is_empty() {
+                if lines_since_sync >= 50 {
                     let _ = f.sync_all();
                     lines_since_sync = 0;
                 }
@@ -249,6 +266,8 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 }
 
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+/// How long the writer waits for more lines before fsyncing what it has.
+const SYNC_QUIESCENCE: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub fn apply_log_settings(s: &GlobalSettings) {
     LOG_ERRORS.store(s.log_errors, Ordering::Relaxed);

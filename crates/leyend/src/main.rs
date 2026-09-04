@@ -749,8 +749,15 @@ fn install_listeners(connection: &Connection) {
     });
     let conn = connection.clone();
     spawn_supervised("sessions-relay", async move {
+        // The engine publishes every monitor tick; only forward a snapshot
+        // that differs from the last one sent so idle ticks stay off the bus.
+        let mut last: Option<Vec<leyen_ipc::RunningGameSnapshot>> = None;
         while let Some(core) = sessions_rx.recv().await {
             let mapped = map_snapshots(core).await;
+            if last.as_ref() == Some(&mapped) {
+                continue;
+            }
+            last = Some(mapped.clone());
             if let Err(e) = conn
                 .emit_signal(
                     Option::<&str>::None,

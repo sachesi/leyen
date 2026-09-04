@@ -180,16 +180,18 @@ async fn bridge_main(
         backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
     };
 
+    // Subscribe first, then adopt the version: a LibraryChanged emitted between
+    // the two would otherwise be missed and the next save rejected as stale.
+    spawn_signal_forwarders(&proxy, evt_tx.clone());
+    spawn_restart_watch(&connection, &proxy, evt_tx.clone());
+
     // Adopt the daemon's current library version (best-effort; a failure means
-    // the daemon isn't up yet — the restart watch below resyncs on activation).
+    // the daemon isn't up yet — the restart watch resyncs on activation).
     if let Ok(Ok(version)) =
         tokio::time::timeout(QUERY_TIMEOUT, proxy.get_library_version()).await
     {
         LIBRARY_VERSION.store(version, Ordering::SeqCst);
     }
-
-    spawn_signal_forwarders(&proxy, evt_tx.clone());
-    spawn_restart_watch(&connection, &proxy, evt_tx.clone());
 
     while let Ok(cmd) = cmd_rx.recv().await {
         let proxy = proxy.clone();
@@ -232,6 +234,13 @@ fn spawn_restart_watch(
         while let Some(signal) = stream.next().await {
             let Ok(args) = signal.args() else { continue };
             if args.new_owner().is_none() {
+                // The daemon is gone (idle-exit or crash). It only emits
+                // SessionsChanged while alive, so publish the empty set
+                // ourselves: a hidden main window waiting for "last game
+                // ended" would otherwise never close, and the close-to-tray
+                // gate would keep hiding the window. A crashed daemon's
+                // scopes are re-adopted on activation, which republishes.
+                let _ = evt_tx.send(DaemonEvent::SessionsChanged(Vec::new())).await;
                 continue;
             }
             // The fresh instance may still be starting; retry the version
@@ -344,7 +353,19 @@ async fn save_library_versioned(
     evt_tx: &async_channel::Sender<DaemonEvent>,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
-    let base_version = LIBRARY_VERSION.load(Ordering::SeqCst);
+    // Ask the daemon for its version first. This call is what activates a
+    // daemon that idle-exited, and a fresh instance restarts its counter: a
+    // save built against the old counter would always be rejected as stale.
+    // A version *lower* than ours can only mean a restart, so adopt it; a
+    // higher one means a missed LibraryChanged and the stale path below is
+    // the right answer.
+    let mut base_version = LIBRARY_VERSION.load(Ordering::SeqCst);
+    if let Ok(Ok(current)) = tokio::time::timeout(QUERY_TIMEOUT, proxy.get_library_version()).await
+        && current < base_version
+    {
+        LIBRARY_VERSION.store(current, Ordering::SeqCst);
+        base_version = current;
+    }
     match tokio::time::timeout(ACTION_TIMEOUT, proxy.save_library(bytes, base_version)).await {
         Ok(Ok(new_version)) => {
             LIBRARY_VERSION.store(new_version, Ordering::SeqCst);
@@ -381,11 +402,10 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_sessions_changed().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(args) = sig.args() {
-                        let _ = tx.send(DaemonEvent::SessionsChanged(args.sessions)).await;
-                    }
+            let Some(mut stream) = subscribed("SessionsChanged", proxy.receive_sessions_changed().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(args) = sig.args() {
+                    let _ = tx.send(DaemonEvent::SessionsChanged(args.sessions)).await;
                 }
             }
         });
@@ -395,11 +415,10 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_logs_appended().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(args) = sig.args() {
-                        let _ = tx.send(DaemonEvent::LogsAppended(args.total_offset)).await;
-                    }
+            let Some(mut stream) = subscribed("LogsAppended", proxy.receive_logs_appended().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(args) = sig.args() {
+                    let _ = tx.send(DaemonEvent::LogsAppended(args.total_offset)).await;
                 }
             }
         });
@@ -409,20 +428,19 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_dep_progress().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(a) = sig.args() {
-                        let _ = tx
-                            .send(DaemonEvent::DepProgress {
-                                job_id: a.job_id.to_string(),
-                                prefix: a.prefix.to_string(),
-                                dep_id: a.dep_id.to_string(),
-                                phase: a.phase.to_string(),
-                                fraction: a.fraction,
-                                msg: a.msg.to_string(),
-                            })
-                            .await;
-                    }
+            let Some(mut stream) = subscribed("DepProgress", proxy.receive_dep_progress().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(a) = sig.args() {
+                    let _ = tx
+                        .send(DaemonEvent::DepProgress {
+                            job_id: a.job_id.to_string(),
+                            prefix: a.prefix.to_string(),
+                            dep_id: a.dep_id.to_string(),
+                            phase: a.phase.to_string(),
+                            fraction: a.fraction,
+                            msg: a.msg.to_string(),
+                        })
+                        .await;
                 }
             }
         });
@@ -432,17 +450,16 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_dep_finished().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(a) = sig.args() {
-                        let _ = tx
-                            .send(DaemonEvent::DepFinished {
-                                job_id: a.job_id.to_string(),
-                                success: a.success,
-                                message: a.message.to_string(),
-                            })
-                            .await;
-                    }
+            let Some(mut stream) = subscribed("DepFinished", proxy.receive_dep_finished().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(a) = sig.args() {
+                    let _ = tx
+                        .send(DaemonEvent::DepFinished {
+                            job_id: a.job_id.to_string(),
+                            success: a.success,
+                            message: a.message.to_string(),
+                        })
+                        .await;
                 }
             }
         });
@@ -452,16 +469,15 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_runtime_status().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(a) = sig.args() {
-                        let _ = tx
-                            .send(DaemonEvent::RuntimeStatus {
-                                umu_ready: a.umu_ready,
-                                winetricks_ready: a.winetricks_ready,
-                            })
-                            .await;
-                    }
+            let Some(mut stream) = subscribed("RuntimeStatus", proxy.receive_runtime_status().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(a) = sig.args() {
+                    let _ = tx
+                        .send(DaemonEvent::RuntimeStatus {
+                            umu_ready: a.umu_ready,
+                            winetricks_ready: a.winetricks_ready,
+                        })
+                        .await;
                 }
             }
         });
@@ -471,22 +487,50 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut stream) = proxy.receive_library_changed().await {
-                while let Some(sig) = stream.next().await {
-                    if let Ok(args) = sig.args() {
-                        LIBRARY_VERSION.store(args.version, Ordering::SeqCst);
-                    }
-                    let _ = tx.send(DaemonEvent::LibraryChanged).await;
+            let Some(mut stream) = subscribed("LibraryChanged", proxy.receive_library_changed().await, &tx).await else { return };
+            while let Some(sig) = stream.next().await {
+                if let Ok(args) = sig.args() {
+                    LIBRARY_VERSION.store(args.version, Ordering::SeqCst);
                 }
+                let _ = tx.send(DaemonEvent::LibraryChanged).await;
             }
         });
     }
 }
 
+/// Unwraps a signal subscription, reporting a failure instead of silently
+/// leaving that signal dead for the rest of the process.
+async fn subscribed<S>(
+    signal: &str,
+    result: zbus::Result<S>,
+    tx: &async_channel::Sender<DaemonEvent>,
+) -> Option<S> {
+    match result {
+        Ok(stream) => Some(stream),
+        Err(e) => {
+            log::error!("zbus thread: failed to subscribe to {signal}: {e}");
+            let _ = tx
+                .send(DaemonEvent::Error(format!(
+                    "Lost the daemon's {signal} updates; restart Leyen if the view stops refreshing"
+                )))
+                .await;
+            None
+        }
+    }
+}
+
+/// Upper bound on any bridge round-trip as seen from the UI. The bridge's
+/// own per-call timeouts are shorter; this covers the bridge being mid-
+/// reconnect (commands queue) so a spinner can never wait forever.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+
 async fn call<T: Send + 'static>(make: impl FnOnce(Reply<T>) -> DaemonCommand) -> Option<T> {
     let (tx, rx) = async_channel::bounded(1);
     CMD_TX.get()?.send(make(tx)).await.ok()?;
-    rx.recv().await.ok()
+    glib::future_with_timeout(CALL_TIMEOUT, rx.recv())
+        .await
+        .ok()?
+        .ok()
 }
 
 // ── Glib-side API (drop-in replacements for the old in-process engine) ──────
@@ -612,6 +656,29 @@ pub fn is_any_game_running() -> bool {
     ANY_GAME_RUNNING.load(Ordering::Relaxed)
 }
 
+thread_local! {
+    /// Latest running set from SessionsChanged, for per-second cosmetic ticks
+    /// that must not round-trip the daemon (each call keeps it from idling).
+    static LAST_SESSIONS: RefCell<Vec<RunningGameSnapshot>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The most recently published running set, without a daemon call. Call on
+/// the glib thread. Empty until the first SessionsChanged arrives.
+pub fn cached_running_games() -> Vec<RunningGameSnapshot> {
+    LAST_SESSIONS.with(|s| s.borrow().clone())
+}
+
+/// Identity of a running set for change detection: which games, which
+/// launches. Excludes `tracked_pid_count`, which flutters every monitor tick.
+pub fn sessions_identity(sessions: &[RunningGameSnapshot]) -> Vec<(String, u64, u64)> {
+    let mut key: Vec<_> = sessions
+        .iter()
+        .map(|s| (s.game_id.clone(), s.pid, s.started_at_epoch_seconds))
+        .collect();
+    key.sort();
+    key
+}
+
 // ── Glib-side event fan-out ─────────────────────────────────────────────────
 // `async_channel` receivers steal (not broadcast), so a single bridge receiver
 // is fanned out to per-component subscribers on the (single-threaded) glib loop.
@@ -637,6 +704,7 @@ pub fn run_event_dispatch(evt_rx: async_channel::Receiver<DaemonEvent>) {
         while let Ok(evt) = evt_rx.recv().await {
             if let DaemonEvent::SessionsChanged(sessions) = &evt {
                 ANY_GAME_RUNNING.store(!sessions.is_empty(), Ordering::Relaxed);
+                LAST_SESSIONS.with(|s| *s.borrow_mut() = sessions.clone());
             }
             SUBSCRIBERS.with(|subs| {
                 subs.borrow_mut()

@@ -62,6 +62,11 @@ pub fn get_settings_path() -> PathBuf {
 /// same directory, fsyncs it, renames it over `path`, then fsyncs the directory
 /// so the rename itself survives a crash. The temp file is removed on failure.
 pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
+    atomic_write_bytes(path, contents.as_bytes())
+}
+
+/// [`atomic_write`] for binary content.
+pub fn atomic_write_bytes(path: &Path, contents: &[u8]) -> io::Result<()> {
     let file_name = path.file_name().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "atomic_write: path has no file name")
     })?;
@@ -71,7 +76,7 @@ pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
 
     let result = (|| {
         let mut file = File::create(&temp_path)?;
-        file.write_all(contents.as_bytes())?;
+        file.write_all(contents)?;
         file.sync_all()?;
         fs::rename(&temp_path, path)?;
         if let Some(parent) = path.parent() {

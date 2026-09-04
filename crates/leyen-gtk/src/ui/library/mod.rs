@@ -92,8 +92,13 @@ pub async fn stop_game_guarded(leyen_id: &str, overlay: &adw::ToastOverlay) {
     }
 }
 
-pub async fn update_running_duration_labels(ui: &LibraryUi) {
-    let snapshots = running_game_map().await;
+pub fn update_running_duration_labels(ui: &LibraryUi) {
+    // Cosmetic per-second tick: use the last published set rather than a
+    // daemon round-trip (which also keeps the daemon from idle-exiting).
+    let snapshots: crate::ui::utils::RunningGameMap = crate::daemon::cached_running_games()
+        .into_iter()
+        .map(|snapshot| (snapshot.game_id.clone(), snapshot))
+        .collect();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())

@@ -10,6 +10,9 @@ use crate::daemon::{self, DaemonEvent};
 use leyen_ipc::LogEntry;
 use leyen_model::models::LibraryItem;
 
+/// Upper bound on lines kept in the view (the daemon ring is 1000).
+const MAX_VIEW_LINES: i32 = 5000;
+
 /// Scrolls the view so the end of the buffer is visible.
 fn scroll_to_end(text_view: &gtk4::TextView, buffer: &gtk4::TextBuffer, end_mark: &gtk4::TextMark) {
     buffer.move_mark(end_mark, &buffer.end_iter());
@@ -49,6 +52,15 @@ fn append_entries(
         let line = format!("[{time}] {}\n", entry.line);
         let mut end_iter = buffer.end_iter();
         buffer.insert(&mut end_iter, &line);
+        // The daemon retains a bounded ring; keep the view bounded too so a
+        // chatty game cannot grow the buffer (and every later insert) forever.
+        let excess = buffer.line_count() - MAX_VIEW_LINES;
+        if excess > 0
+            && let Some(mut cut) = buffer.iter_at_line(excess)
+        {
+            let mut start = buffer.start_iter();
+            buffer.delete(&mut start, &mut cut);
+        }
     }
     if appended && autoscroll.get() {
         scroll_to_end(text_view, buffer, end_mark);
@@ -181,13 +193,24 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     window.present();
 
     let selected_filter = Rc::new(RefCell::new(filter_ids[initial_selection as usize].clone()));
-    // Monotonic pull offset shared across the initial render, filter changes and
-    // the LogsAppended-driven incremental appends.
-    let offset = Rc::new(Cell::new(0u64));
 
-    // Rebuilds the whole view for the current filter from the daemon's retained
-    // log buffer.
-    let rebuild = {
+    // Every pull goes through one worker so a full rebuild and an incremental
+    // append can never overlap: two in-flight pulls used to append the same
+    // lines twice and move the offset backwards. The worker owns the offset.
+    #[derive(Clone, Copy)]
+    enum Pull {
+        Full,
+        Incremental,
+    }
+    let (pull_tx, pull_rx) = async_channel::unbounded::<Pull>();
+    let request_pull = {
+        let pull_tx = pull_tx.clone();
+        move |pull: Pull| {
+            let _ = pull_tx.try_send(pull);
+        }
+    };
+
+    {
         let buffer = buffer.clone();
         let scroll = scroll.clone();
         let empty_state = empty_state.clone();
@@ -195,53 +218,75 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
         let end_mark = end_mark.clone();
         let autoscroll = autoscroll.clone();
         let selected_filter = selected_filter.clone();
-        let offset = offset.clone();
-        move || {
-            let buffer = buffer.clone();
-            let scroll = scroll.clone();
-            let empty_state = empty_state.clone();
-            let text_view = text_view.clone();
-            let end_mark = end_mark.clone();
-            let autoscroll = autoscroll.clone();
-            let selected_filter = selected_filter.clone();
-            let offset = offset.clone();
-            glib::spawn_future_local(async move {
-                let (next, entries) = daemon::get_logs(0).await;
-                buffer.set_text("");
+        let window_ref = window.clone();
+        glib::spawn_future_local(async move {
+            // Monotonic pull offset; only this task reads or writes it.
+            let mut offset = 0u64;
+            while let Ok(pull) = pull_rx.recv().await {
+                if !window_ref.is_visible() {
+                    break;
+                }
+                // Collapse a queued burst into its strongest request.
+                let mut pull = pull;
+                while let Ok(next) = pull_rx.try_recv() {
+                    if matches!(next, Pull::Full) {
+                        pull = Pull::Full;
+                    }
+                }
+                let (next, entries) = match pull {
+                    Pull::Full => daemon::get_logs(0).await,
+                    Pull::Incremental => daemon::get_logs(offset).await,
+                };
+                // An offset running backwards means the daemon restarted (its
+                // counter is per instance): start over from its first line.
+                if matches!(pull, Pull::Incremental) && next < offset {
+                    let (next, entries) = daemon::get_logs(0).await;
+                    buffer.set_text("");
+                    let filter = selected_filter.borrow().clone();
+                    append_entries(
+                        &buffer, &filter, &scroll, &empty_state, &entries, &text_view, &end_mark,
+                        &autoscroll,
+                    );
+                    offset = next;
+                    continue;
+                }
+                if matches!(pull, Pull::Full) {
+                    buffer.set_text("");
+                }
                 let filter = selected_filter.borrow().clone();
                 append_entries(
                     &buffer, &filter, &scroll, &empty_state, &entries, &text_view, &end_mark,
                     &autoscroll,
                 );
-                offset.set(next);
-            });
-        }
-    };
+                offset = next;
+            }
+        });
+    }
 
-    rebuild();
+    request_pull(Pull::Full);
 
     {
-        let rebuild = rebuild.clone();
+        let request_pull = request_pull.clone();
         let selected_filter = selected_filter.clone();
         let autoscroll = autoscroll.clone();
         filter_dropdown.connect_selected_notify(move |dropdown| {
             let idx = dropdown.selected() as usize;
             *selected_filter.borrow_mut() = filter_ids.get(idx).cloned().unwrap_or(None);
             autoscroll.set(true);
-            rebuild();
+            request_pull(Pull::Full);
         });
     }
 
     {
-        let rebuild = rebuild.clone();
+        let request_pull = request_pull.clone();
         let autoscroll = autoscroll.clone();
         clear_button.connect_clicked(move |_| {
-            let rebuild = rebuild.clone();
+            let request_pull = request_pull.clone();
             let autoscroll = autoscroll.clone();
             glib::spawn_future_local(async move {
                 daemon::clear_logs().await;
                 autoscroll.set(true);
-                rebuild();
+                request_pull(Pull::Full);
             });
         });
     }
@@ -261,28 +306,17 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
 
     if should_spawn_subscription {
         let events = daemon::subscribe_events();
-        let buffer = buffer.clone();
-        let scroll = scroll.clone();
-        let empty_state = empty_state.clone();
-        let text_view = text_view.clone();
-        let end_mark = end_mark.clone();
-        let autoscroll = autoscroll.clone();
-        let selected_filter = selected_filter.clone();
-        let offset = offset.clone();
+        let request_pull = request_pull.clone();
         let window_ref = window.clone();
         glib::spawn_future_local(async move {
             while let Ok(evt) = events.recv().await {
                 if !window_ref.is_visible() {
                     break;
                 }
-                if matches!(evt, DaemonEvent::LogsAppended(_)) {
-                    let (next, entries) = daemon::get_logs(offset.get()).await;
-                    let filter = selected_filter.borrow().clone();
-                    append_entries(
-                        &buffer, &filter, &scroll, &empty_state, &entries, &text_view, &end_mark,
-                        &autoscroll,
-                    );
-                    offset.set(next);
+                match evt {
+                    DaemonEvent::LogsAppended(_) => request_pull(Pull::Incremental),
+                    DaemonEvent::DaemonRestarted => request_pull(Pull::Full),
+                    _ => {}
                 }
             }
             SUBSCRIPTION_ACTIVE.with(|s| *s.borrow_mut() = false);

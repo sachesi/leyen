@@ -382,22 +382,31 @@ pub fn build_ui(app: &adw::Application) {
         let window_event = window.clone();
         let stale_hidden = stale_while_hidden.clone();
         glib::spawn_future_local(async move {
+            // The daemon publishes SessionsChanged on every monitor tick, not
+            // only on transitions; a full library rebuild every 2s for the
+            // whole play session is not worth it when nothing changed.
+            let mut last_sessions: Option<Vec<(String, u64, u64)>> = None;
             while let Ok(evt) = events.recv().await {
                 match evt {
                     DaemonEvent::SessionsChanged(sessions) => {
+                        let identity = daemon::sessions_identity(&sessions);
+                        let changed = last_sessions.as_ref() != Some(&identity);
+                        last_sessions = Some(identity);
                         // Window hidden while a game ran (close-to-tray): once the
                         // last game ends, close it so the app can exit.
                         if !window_event.is_visible() {
                             if sessions.is_empty() {
                                 window_event.close();
-                            } else {
+                            } else if changed {
                                 // Running set changed while hidden — refresh
                                 // when the window is shown again.
                                 stale_hidden.set(true);
                             }
                             continue;
                         }
-                        refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                        if changed {
+                            refresh_library_view(&ui_event, &overlay_event, &window_event).await;
+                        }
                     }
                     DaemonEvent::LibraryChanged | DaemonEvent::DaemonRestarted => {
                         // Hidden: don't drop the event — remember it and refresh
@@ -440,10 +449,7 @@ pub fn build_ui(app: &adw::Application) {
     let window_refresh = window.clone();
     glib::timeout_add_seconds_local(1, move || {
         if window_refresh.is_visible() && daemon::is_any_game_running() {
-            let ui_refresh = ui_refresh.clone();
-            glib::spawn_future_local(async move {
-                update_running_duration_labels(&ui_refresh).await;
-            });
+            update_running_duration_labels(&ui_refresh);
         }
         glib::ControlFlow::Continue
     });

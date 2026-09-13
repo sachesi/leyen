@@ -48,8 +48,7 @@ template $LeyenWindow: Adw.ApplicationWindow {
   title: _("Leyen");
   default-width: 540;
   default-height: 640;
-  width-request: 360;
-  height-request: 294;
+  resizable: false;
 
   content: Adw.ToastOverlay toast_overlay {
     child: Adw.NavigationView navigation_view {

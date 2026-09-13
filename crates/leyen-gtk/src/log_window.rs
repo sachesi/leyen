@@ -2,6 +2,7 @@
 //! for every game or one, following new lines as they arrive.
 
 use std::cell::{Cell, OnceCell, RefCell};
+use std::fmt::Write as _;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -42,6 +43,8 @@ mod imp {
         pub filter_ids: RefCell<Vec<Option<String>>>,
         /// Follow new lines, unless the view was scrolled up.
         pub follow: Cell<bool>,
+        /// Value, upper bound and page size of the scroll position last seen.
+        pub last_position: Cell<(f64, f64, f64)>,
         pub end_mark: OnceCell<gtk4::TextMark>,
         pub pulls: OnceCell<async_channel::Sender<Pull>>,
         pub tasks: RefCell<Vec<glib::JoinHandle<()>>>,
@@ -151,17 +154,41 @@ impl LogWindow {
             .end_mark
             .set(buffer.create_mark(Some("end"), &buffer.end_iter(), false));
 
-        imp.scrolled_window
-            .vadjustment()
-            .connect_value_changed(glib::clone!(
-                #[weak(rename_to = window)]
-                self,
-                move |adjustment| {
-                    let at_bottom = adjustment.upper() <= adjustment.page_size()
-                        || adjustment.value() + adjustment.page_size() >= adjustment.upper() - 8.0;
-                    window.imp().follow.set(at_bottom);
+        // Reaching the end follows it again; only moving up leaves it. The view also
+        // moves by itself: on its way to the end, which changes nothing, and when it
+        // is resized or drops old lines, which is not the user leaving.
+        let adjustment = imp.scrolled_window.vadjustment();
+        adjustment.connect_value_changed(glib::clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |adjustment| {
+                let imp = window.imp();
+                let (value, upper, page) = (
+                    adjustment.value(),
+                    adjustment.upper(),
+                    adjustment.page_size(),
+                );
+                let (last_value, last_upper, last_page) = imp.last_position.get();
+                imp.last_position.set((value, upper, page));
+                if value + page >= upper - 8.0 {
+                    imp.follow.set(true);
+                } else if value < last_value && upper >= last_upper && page == last_page {
+                    imp.follow.set(false);
                 }
-            ));
+            }
+        ));
+        // New lines are laid out after they are added, a few at a time; each time the
+        // view grows or is resized, the end stays in sight.
+        for property in ["upper", "page-size"] {
+            adjustment.connect_notify_local(
+                Some(property),
+                glib::clone!(
+                    #[weak(rename_to = window)]
+                    self,
+                    move |_, _| window.stick_to_end()
+                ),
+            );
+        }
 
         // Every pull goes through one worker so a full rebuild and an incremental
         // append can never overlap: two in-flight pulls used to append the same
@@ -270,12 +297,13 @@ impl LogWindow {
             .flatten()
     }
 
-    /// Appends the entries of the selected game, keeping the view bounded and
-    /// following the end when it was at the end.
+    /// Appends the entries of the selected game in one insert, keeping the view
+    /// bounded; the end stays in sight through [`Self::stick_to_end`].
     fn append(&self, entries: &[LogEntry]) {
         let imp = self.imp();
         let buffer = imp.text_view.buffer();
         let filter = self.selected_game();
+        let mut text = String::new();
         for entry in entries
             .iter()
             .filter(|entry| filter.as_ref().is_none_or(|id| &entry.game_id == id))
@@ -283,10 +311,10 @@ impl LogWindow {
             // RFC3339 local timestamp → wall-clock "HH:MM:SS"; the date is noise
             // in a live log view.
             let time = entry.timestamp.get(11..19).unwrap_or(&entry.timestamp);
-            buffer.insert(
-                &mut buffer.end_iter(),
-                &format!("[{time}] {}\n", entry.line),
-            );
+            let _ = writeln!(text, "[{time}] {}", entry.line);
+        }
+        if !text.is_empty() {
+            buffer.insert(&mut buffer.end_iter(), &text);
             // The daemon retains a bounded ring; keep the view bounded too so a
             // chatty game cannot grow the buffer (and every later insert) forever.
             let excess = buffer.line_count() - MAX_VIEW_LINES;
@@ -300,12 +328,17 @@ impl LogWindow {
         let empty = buffer.char_count() == 0;
         imp.stack
             .set_visible_child_name(if empty { "empty" } else { "log" });
-        if !empty
-            && imp.follow.get()
-            && let Some(mark) = imp.end_mark.get()
+        self.stick_to_end();
+    }
+
+    /// Scrolls to the end while following it. The text view does it once the new lines
+    /// are laid out, gliding there rather than jumping.
+    fn stick_to_end(&self) {
+        let imp = self.imp();
+        if imp.follow.get()
+            && let Some(end) = imp.end_mark.get()
         {
-            buffer.move_mark(mark, &buffer.end_iter());
-            imp.text_view.scroll_to_mark(mark, 0.0, true, 0.0, 1.0);
+            imp.text_view.scroll_to_mark(end, 0.0, true, 0.0, 1.0);
         }
     }
 }

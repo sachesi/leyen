@@ -17,6 +17,7 @@ path = "src/main.rs"
 leyen-model.workspace = true
 leyen-ipc.workspace = true
 gtk4.workspace = true
+glib.workspace = true
 libadwaita.workspace = true
 zbus.workspace = true
 tokio.workspace = true

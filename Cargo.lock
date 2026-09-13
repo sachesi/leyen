@@ -761,6 +761,7 @@ dependencies = [
  "glib-sys",
  "gobject-sys",
  "libc",
+ "log",
  "memchr",
  "smallvec",
 ]
@@ -1072,6 +1073,7 @@ dependencies = [
  "async-channel",
  "directories",
  "futures-util",
+ "glib",
  "glib-build-tools",
  "gtk4",
  "image",

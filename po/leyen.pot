@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 21:01+0300\n"
+"POT-Creation-Date: 2026-09-13 21:15+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -89,13 +89,13 @@ msgid "Removed from tracking."
 msgstr ""
 
 #: crates/leyen-core/src/deps/engine.rs:1218
-#: crates/leyen-core/src/launch.rs:1662
+#: crates/leyen-core/src/launch.rs:1661
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr ""
 
 #: crates/leyen-core/src/deps/engine.rs:1230
-#: crates/leyen-core/src/launch.rs:1675 crates/leyen-gtk/src/prefix_tools.rs:25
+#: crates/leyen-core/src/launch.rs:1674 crates/leyen-gtk/src/prefix_tools.rs:25
 #, no-c-format
 msgid ""
 "umu-launcher is not installed. Please check your internet connection and "
@@ -117,38 +117,38 @@ msgstr ""
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1686
+#: crates/leyen-core/src/launch.rs:1685
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1699 crates/leyen-core/src/launch.rs:1705
-#: crates/leyen-core/src/launch.rs:2058
+#: crates/leyen-core/src/launch.rs:1698 crates/leyen-core/src/launch.rs:1704
+#: crates/leyen-core/src/launch.rs:2057
 #, no-c-format
 msgid "This game is already running"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1720
+#: crates/leyen-core/src/launch.rs:1719
 #, no-c-format
 msgid "Game executable was not found"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1746
+#: crates/leyen-core/src/launch.rs:1745
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1835
+#: crates/leyen-core/src/launch.rs:1834
 #, no-c-format
 msgid "Prefix is already in use. Launching with shared-container fallback."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1885 crates/leyen-core/src/launch.rs:2112
+#: crates/leyen-core/src/launch.rs:1884 crates/leyen-core/src/launch.rs:2111
 #, no-c-format
 msgid "Launching {}..."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:2014
+#: crates/leyen-core/src/launch.rs:2013
 #, no-c-format
 msgid "Failed to get child PID"
 msgstr ""
@@ -221,7 +221,7 @@ msgid "Installed"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/dependencies.rs:298
-#: crates/leyen-gtk/src/dialogs/dependency_row.rs:125
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:121
 #, no-c-format
 msgid "Required by: {}"
 msgstr ""
@@ -306,17 +306,17 @@ msgstr ""
 msgid "The daemon restarted; the operation's outcome is unknown."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependency_row.rs:114
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:110
 #, no-c-format
 msgid "✓ Integrated"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependency_row.rs:116
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:112
 #, no-c-format
 msgid "✓ Installed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependency_row.rs:123
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:119
 #, no-c-format
 msgid "Remove this managed dependency"
 msgstr ""
@@ -522,7 +522,7 @@ msgid "Supported images"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/mod.rs:145
-#: crates/leyen-gtk/src/dialogs/mod.rs:166 crates/leyen-gtk/src/icons.rs:98
+#: crates/leyen-gtk/src/dialogs/mod.rs:166 crates/leyen-gtk/src/icons.rs:74
 #, no-c-format
 msgid "Custom icon file is required"
 msgstr ""
@@ -553,7 +553,7 @@ msgid ""
 "installations."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/preferences.rs:200 ui/preferences_dialog.ui:129
+#: crates/leyen-gtk/src/dialogs/preferences.rs:200 ui/preferences_dialog.ui:130
 #, no-c-format
 msgid "Reset"
 msgstr ""
@@ -676,12 +676,12 @@ msgid_plural "{} running"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/leyen-gtk/src/icons.rs:102
+#: crates/leyen-gtk/src/icons.rs:78
 #, no-c-format
 msgid "Cannot read the icon “{}”: {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/icons.rs:112 crates/leyen-gtk/src/icons.rs:123
+#: crates/leyen-gtk/src/icons.rs:88 crates/leyen-gtk/src/icons.rs:99
 #, no-c-format
 msgid "Cannot save the icon: {}"
 msgstr ""
@@ -938,7 +938,7 @@ msgid ""
 "Files are read and written away from the thread drawing the window. A "
 "dependency job and a launch no longer run against the same prefix at once, a "
 "session is removed only once its playtime is saved, and \"leyen list\" shows "
-"a running game that is no longer in the library, so it can still be stopped."
+"a running game that is no longer in the library."
 msgstr ""
 
 #: data/io.github.sachesi.leyen.metainfo.xml:50
@@ -1056,31 +1056,31 @@ msgstr ""
 msgid "Environment"
 msgstr ""
 
-#: ui/game_dialog.ui:190 ui/preferences_dialog.ui:51
+#: ui/game_dialog.ui:190 ui/preferences_dialog.ui:52
 msgid "MangoHud"
 msgstr ""
 
-#: ui/game_dialog.ui:195 ui/preferences_dialog.ui:56
+#: ui/game_dialog.ui:195 ui/preferences_dialog.ui:57
 msgid "GameMode"
 msgstr ""
 
-#: ui/game_dialog.ui:200 ui/preferences_dialog.ui:61
+#: ui/game_dialog.ui:200 ui/preferences_dialog.ui:62
 msgid "Wayland"
 msgstr ""
 
-#: ui/game_dialog.ui:205 ui/preferences_dialog.ui:66
+#: ui/game_dialog.ui:205 ui/preferences_dialog.ui:67
 msgid "WoW64"
 msgstr ""
 
-#: ui/game_dialog.ui:210 ui/preferences_dialog.ui:71
+#: ui/game_dialog.ui:210 ui/preferences_dialog.ui:72
 msgid "NTSync"
 msgstr ""
 
-#: ui/game_dialog.ui:215 ui/preferences_dialog.ui:76
+#: ui/game_dialog.ui:215 ui/preferences_dialog.ui:77
 msgid "HDR"
 msgstr ""
 
-#: ui/game_dialog.ui:220 ui/preferences_dialog.ui:81
+#: ui/game_dialog.ui:220 ui/preferences_dialog.ui:82
 msgid "Proton Log"
 msgstr ""
 
@@ -1164,67 +1164,74 @@ msgstr ""
 msgid "Global Environment"
 msgstr ""
 
-#: ui/preferences_dialog.ui:88
-msgid "Logging"
+#: ui/preferences_dialog.ui:49
+msgid ""
+"What a new game starts with. Each game keeps its own switches, in its "
+"settings."
 msgstr ""
 
 #: ui/preferences_dialog.ui:89
-msgid "Select which messages are printed to the terminal."
+msgid "Logging"
 msgstr ""
 
-#: ui/preferences_dialog.ui:92
-msgid "Errors"
+#: ui/preferences_dialog.ui:90
+msgid ""
+"Which of Leyen's own messages the log keeps. What games print is always kept."
 msgstr ""
 
 #: ui/preferences_dialog.ui:93
+msgid "Errors"
+msgstr ""
+
+#: ui/preferences_dialog.ui:94
 msgid "Show error messages from leyen and launched processes"
 msgstr ""
 
-#: ui/preferences_dialog.ui:98
+#: ui/preferences_dialog.ui:99
 msgid "Warnings"
 msgstr ""
 
-#: ui/preferences_dialog.ui:99
+#: ui/preferences_dialog.ui:100
 msgid "Show warning messages (e.g. game not found)"
 msgstr ""
 
-#: ui/preferences_dialog.ui:104
+#: ui/preferences_dialog.ui:105
 msgid "Operations"
 msgstr ""
 
-#: ui/preferences_dialog.ui:105
+#: ui/preferences_dialog.ui:106
 msgid "Show info about background operations"
 msgstr ""
 
-#: ui/preferences_dialog.ui:112
+#: ui/preferences_dialog.ui:113
 msgid "Maintenance"
 msgstr ""
 
-#: ui/preferences_dialog.ui:115
+#: ui/preferences_dialog.ui:116
 msgid "Use Shared Container"
 msgstr ""
 
-#: ui/preferences_dialog.ui:116
+#: ui/preferences_dialog.ui:117
 msgid ""
 "When a game launches while another sharing its Wine prefix is already "
 "running, run it inside the running container. Disable to launch it in its "
 "own container on the same prefix instead."
 msgstr ""
 
-#: ui/preferences_dialog.ui:121
+#: ui/preferences_dialog.ui:122
 msgid "Repair Runtime"
 msgstr ""
 
-#: ui/preferences_dialog.ui:122
+#: ui/preferences_dialog.ui:123
 msgid ""
 "Reset internal umu-launcher components if dependency installation fails."
 msgstr ""
 
-#: ui/preferences_dialog.ui:125
+#: ui/preferences_dialog.ui:126
 msgid "Reset umu Runtime"
 msgstr ""
 
-#: ui/preferences_dialog.ui:126
+#: ui/preferences_dialog.ui:127
 msgid ""
 "Deletes steamrt3 directory. It will be re-downloaded on next dependency "
 "install."

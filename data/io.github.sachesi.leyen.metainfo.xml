@@ -42,7 +42,7 @@
     </release>
     <release version="0.5.2" date="2026-07-07">
       <description>
-        <p>Files are read and written away from the thread drawing the window. A dependency job and a launch no longer run against the same prefix at once, a session is removed only once its playtime is saved, and "leyen list" shows a running game that is no longer in the library, so it can still be stopped.</p>
+        <p>Files are read and written away from the thread drawing the window. A dependency job and a launch no longer run against the same prefix at once, a session is removed only once its playtime is saved, and "leyen list" shows a running game that is no longer in the library.</p>
       </description>
     </release>
     <release version="0.5.1" date="2026-06-09">

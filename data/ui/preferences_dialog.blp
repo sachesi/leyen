@@ -37,6 +37,7 @@ template $LeyenPreferencesDialog: Adw.PreferencesDialog {
 
     Adw.PreferencesGroup {
       title: _("Global Environment");
+      description: _("What a new game starts with. Each game keeps its own switches, in its settings.");
 
       Adw.SwitchRow mangohud_row {
         title: _("MangoHud");
@@ -69,7 +70,7 @@ template $LeyenPreferencesDialog: Adw.PreferencesDialog {
 
     Adw.PreferencesGroup {
       title: _("Logging");
-      description: _("Select which messages are printed to the terminal.");
+      description: _("Which of Leyen's own messages the log keeps. What games print is always kept.");
 
       Adw.SwitchRow log_errors_row {
         title: _("Errors");

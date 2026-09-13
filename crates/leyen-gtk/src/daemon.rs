@@ -583,7 +583,7 @@ async fn call<T: Send + 'static>(make: impl FnOnce(Reply<T>) -> DaemonCommand) -
         .ok()
 }
 
-// ── Glib-side API (drop-in replacements for the old in-process engine) ──────
+// ── Glib-side API ───────────────────────────────────────────────────────────
 
 /// Reads `games.toml` directly (read-only) off the glib thread.
 pub async fn load_library() -> Result<Vec<LibraryItem>, String> {

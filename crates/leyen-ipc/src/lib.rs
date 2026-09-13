@@ -1,8 +1,8 @@
 //! The D-Bus contract for Leyen: shared `zvariant` types + the `zbus` proxy
-//! trait. The daemon implements the matching `#[zbus::interface]`; clients (CLI,
-//! GTK, and future Qt/COSMIC frontends) use the generated `LeyenProxy`.
+//! trait. The daemon implements the matching `#[zbus::interface]`; the command
+//! line and the window use the generated `LeyenProxy`.
 //!
-//! Bus name `io.github.sachesi.leyen`, object path `/io/github/sachesi/leyen`,
+//! Bus name `io.github.sachesi.leyen.Daemon`, object path `/io/github/sachesi/leyen`,
 //! interface `io.github.sachesi.leyen.Manager`, on the **session** bus.
 
 use serde::{Deserialize, Serialize};

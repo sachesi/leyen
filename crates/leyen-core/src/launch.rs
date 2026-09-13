@@ -633,8 +633,7 @@ static ANY_GAME_RUNNING: AtomicBool = AtomicBool::new(false);
 /// Notified (on the tokio runtime) whenever running-session state is
 /// republished. The daemon installs an emitter here to drive `SessionsChanged`;
 /// the listener receives the fresh snapshot set so it can be sent over D-Bus
-/// without re-reading. Replaces the in-process async-channel wake of the old
-/// single-binary GUI.
+/// without re-reading.
 static SESSIONS_LISTENER: OnceLock<Box<dyn Fn(Vec<RunningGameSnapshot>) + Send + Sync>> =
     OnceLock::new();
 

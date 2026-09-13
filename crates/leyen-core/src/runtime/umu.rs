@@ -61,8 +61,7 @@ pub enum UmuError {
 
 /// Streams `path` through `D` a chunk at a time and returns the lowercase hex
 /// digest, so verifying a multi-hundred-MB tarball never loads it into memory
-/// whole. Generic over the hash algorithm so `proton.rs` (SHA-512) can reuse it
-/// alongside umu-launcher's SHA-256 checks.
+/// whole.
 pub(crate) fn hash_file_hex<D: Digest>(path: &Path) -> std::io::Result<String> {
     use std::io::Read;
     let mut file = fs::File::open(path)?;

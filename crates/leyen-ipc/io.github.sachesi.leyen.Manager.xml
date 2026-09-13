@@ -1,10 +1,11 @@
 <!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!-- The interface leyend serves at /io/github/sachesi/leyen on the session bus, as
+      reports it; crates/leyen-ipc/src/lib.rs is its Rust side. -->
 <node>
-<interface name="io.github.sachesi.leyen.Manager">
+  <interface name="io.github.sachesi.leyen.Manager">
     <method name="LaunchGame">
       <arg name="leyen_id" type="s" direction="in"/>
-      <arg type="b" direction="out"/>
     </method>
     <method name="StopGame">
       <arg name="leyen_id" type="s" direction="in"/>
@@ -21,10 +22,16 @@
       <arg type="t" direction="out"/>
       <arg type="a(sss)" direction="out"/>
     </method>
+    <method name="ClearLogs"/>
     <method name="SaveLibrary">
       <arg name="toml_bytes" type="ay" direction="in"/>
-      <arg type="b" direction="out"/>
+      <arg name="base_version" type="t" direction="in"/>
+      <arg type="t" direction="out"/>
     </method>
+    <method name="GetLibraryVersion">
+      <arg type="t" direction="out"/>
+    </method>
+    <method name="ReloadSettings"/>
     <method name="InstallDep">
       <arg name="prefix" type="s" direction="in"/>
       <arg name="dep_id" type="s" direction="in"/>
@@ -69,6 +76,7 @@
       <arg name="winetricks_ready" type="b"/>
     </signal>
     <signal name="LibraryChanged">
+      <arg name="version" type="t"/>
     </signal>
   </interface>
 </node>

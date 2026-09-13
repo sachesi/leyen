@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 21:00+0300\n"
+"POT-Creation-Date: 2026-09-13 21:01+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -904,10 +904,6 @@ msgstr ""
 msgid ""
 "Menu entries that start a game from the desktop, and a command line to list, "
 "run and stop games"
-msgstr ""
-
-#: data/io.github.sachesi.leyen.metainfo.xml:22
-msgid "sachesi"
 msgstr ""
 
 #: data/io.github.sachesi.leyen.metainfo.xml:34

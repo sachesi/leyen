@@ -119,8 +119,9 @@ fn timed_out_message() -> String {
     gettext("Leyen's daemon did not answer in time")
 }
 
-/// Awaits a proxy call with a timeout; failures are logged and returned as the
-/// user-facing message. A wedged daemon must never hang a UI reply forever.
+/// Awaits a proxy call with a timeout; failures are logged as warnings, being about
+/// the session rather than the program, and returned as the user-facing message. A
+/// wedged daemon must never hang a UI reply forever.
 async fn bounded<T>(
     what: &str,
     timeout: std::time::Duration,
@@ -129,11 +130,11 @@ async fn bounded<T>(
     match tokio::time::timeout(timeout, fut).await {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(e)) => {
-            log::error!("{what} failed: {e}");
+            log::warn!("{what} failed: {e}");
             Err(dbus_error_message(&e))
         }
         Err(_) => {
-            log::error!("{what} timed out after {timeout:?}");
+            log::warn!("{what} timed out after {timeout:?}");
             Err(timed_out_message())
         }
     }
@@ -179,9 +180,9 @@ async fn bridge_main(
         match Connection::session().await {
             Ok(connection) => match LeyenProxy::new(&connection).await {
                 Ok(proxy) => break (connection, proxy),
-                Err(e) => log::error!("zbus thread: failed to build proxy: {e}"),
+                Err(e) => log::warn!("zbus thread: failed to build proxy: {e}"),
             },
-            Err(e) => log::error!("zbus thread: failed to connect to session bus: {e}"),
+            Err(e) => log::warn!("zbus thread: failed to connect to session bus: {e}"),
         }
         if !reported {
             reported = true;
@@ -231,7 +232,7 @@ fn spawn_restart_watch(
         let dbus = match zbus::fdo::DBusProxy::new(&connection).await {
             Ok(p) => p,
             Err(e) => {
-                log::error!("zbus thread: failed to build DBus proxy for restart watch: {e}");
+                log::warn!("zbus thread: failed to build DBus proxy for restart watch: {e}");
                 return;
             }
         };
@@ -241,7 +242,7 @@ fn spawn_restart_watch(
         {
             Ok(s) => s,
             Err(e) => {
-                log::error!("zbus thread: failed to watch daemon name owner: {e}");
+                log::warn!("zbus thread: failed to watch daemon name owner: {e}");
                 return;
             }
         };
@@ -388,7 +389,7 @@ async fn save_library_versioned(
             Ok(())
         }
         Ok(Err(e)) => {
-            log::error!("SaveLibrary failed: {e}");
+            log::warn!("SaveLibrary failed: {e}");
             if let zbus::Error::MethodError(name, _, _) = &e
                 && name.as_str() == "io.github.sachesi.leyen.Error.StaleLibraryVersion"
             {
@@ -406,7 +407,7 @@ async fn save_library_versioned(
             Err(dbus_error_message(&e))
         }
         Err(_) => {
-            log::error!("SaveLibrary timed out after {ACTION_TIMEOUT:?}");
+            log::warn!("SaveLibrary timed out after {ACTION_TIMEOUT:?}");
             Err(timed_out_message())
         }
     }
@@ -555,7 +556,7 @@ async fn subscribed<S>(
     match result {
         Ok(stream) => Some(stream),
         Err(e) => {
-            log::error!("zbus thread: failed to subscribe to {signal}: {e}");
+            log::warn!("zbus thread: failed to subscribe to {signal}: {e}");
             let _ = tx
                 .send(DaemonEvent::Error(
                     gettext(
@@ -604,9 +605,8 @@ pub async fn load_settings() -> GlobalSettings {
 /// instead of on its next restart.
 pub async fn save_settings(settings: GlobalSettings) {
     let _ = gio_blocking(move || leyen_model::settings::save_settings(&settings)).await;
-    if let Some(Err(e)) = call(DaemonCommand::ReloadSettings).await {
-        log::error!("save_settings: daemon settings reload failed: {e}");
-    }
+    // A failure is logged by the call itself.
+    let _ = call(DaemonCommand::ReloadSettings).await;
 }
 
 /// Persists the library via the daemon (the only library writer). An `Err`
@@ -693,7 +693,7 @@ pub async fn cancel_dep(job_id: &str) -> bool {
 /// The error every action call collapses to when the bridge itself is gone
 /// (no command channel / reply dropped) rather than the daemon failing.
 fn bridge_down_message() -> String {
-    log::error!("daemon bridge unavailable: command could not be delivered");
+    log::warn!("daemon bridge unavailable: command could not be delivered");
     daemon_unreachable_message()
 }
 

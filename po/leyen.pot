@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: leyen 0.7.0\n"
+"Project-Id-Version: leyen 0.8.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 22:53+0300\n"
+"POT-Creation-Date: 2026-09-13 22:54+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -938,6 +938,39 @@ msgstr ""
 
 #: data/io.github.sachesi.leyen.metainfo.xml:34
 msgid ""
+"The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a "
+"page of its own that the back button, Escape or a swipe leave, and the "
+"library is updated in place, so it no longer flickers or jumps when a game "
+"starts or stops. Icons are larger and centred in their rows, and a logo on a "
+"transparent background is shown whole instead of cropped. Search filters "
+"what is loaded as it is typed and says when nothing matches, Enter launches "
+"the game under the keyboard, and screen readers name every row. The log "
+"follows new lines smoothly while it is at the end and stays where it was "
+"scrolled to."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:35
+msgid ""
+"Adding and editing share one dialog for games and one for groups, which "
+"cannot add the same game twice. The prefix tools are rows, the menu entry of "
+"a game is a switch, and the dependency manager takes typing straight away, "
+"clears it and then goes back on Escape, and says which components need the "
+"one about to be removed. Deleting a group says how many games go with it, "
+"and a game that is running cannot be deleted, nor a group with one running."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:36
+msgid ""
+"The application id is io.github.sachesi.leyen; icons and menu entries "
+"written under the old id are moved over on the first start. Ctrl+Q quits, "
+"Ctrl+W closes a window, and errors from the session bus read as a sentence "
+"about the daemon. Installing no longer stops a daemon that is tracking "
+"games, and the Ukrainian translation covers every new string of the "
+"interface."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:41
+msgid ""
 "Winetricks components install again over an earlier attempt, removing one "
 "takes it out of the prefix's record, catalogue entries run the verbs "
 "winetricks knows them by, and DLL overrides are written to the registry "
@@ -946,14 +979,14 @@ msgid ""
 "runtimes are unpacked beside their destination before they replace it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:35
+#: data/io.github.sachesi.leyen.metainfo.xml:42
 msgid ""
 "The window survives a restart of the daemon and no longer rebuilds the "
 "library every few seconds while a game runs. The add and edit dialogs have a "
 "title, and a group can be edited from the header while it is open."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:40
+#: data/io.github.sachesi.leyen.metainfo.xml:47
 msgid ""
 "Downloaded runtimes are checked against their digests and winetricks is "
 "pinned to a known release. The files Leyen keeps carry a version of their "
@@ -963,7 +996,7 @@ msgid ""
 "task that crashes no longer leaves the window waiting on it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:45
+#: data/io.github.sachesi.leyen.metainfo.xml:52
 msgid ""
 "Files are read and written away from the thread drawing the window. A "
 "dependency job and a launch no longer run against the same prefix at once, a "
@@ -971,11 +1004,11 @@ msgid ""
 "a running game that is no longer in the library."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:50
+#: data/io.github.sachesi.leyen.metainfo.xml:57
 msgid "The library keeps its scroll position when it is refreshed."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:55
+#: data/io.github.sachesi.leyen.metainfo.xml:62
 msgid ""
 "Games are started and tracked by a daemon on the session bus, which the "
 "window and the command line talk to. It exits when it has nothing to do, "

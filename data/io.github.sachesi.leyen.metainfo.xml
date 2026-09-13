@@ -29,6 +29,13 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.8.0" date="2026-09-13">
+      <description>
+        <p>The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a page of its own that the back button, Escape or a swipe leave, and the library is updated in place, so it no longer flickers or jumps when a game starts or stops. Icons are larger and centred in their rows, and a logo on a transparent background is shown whole instead of cropped. Search filters what is loaded as it is typed and says when nothing matches, Enter launches the game under the keyboard, and screen readers name every row. The log follows new lines smoothly while it is at the end and stays where it was scrolled to.</p>
+        <p>Adding and editing share one dialog for games and one for groups, which cannot add the same game twice. The prefix tools are rows, the menu entry of a game is a switch, and the dependency manager takes typing straight away, clears it and then goes back on Escape, and says which components need the one about to be removed. Deleting a group says how many games go with it, and a game that is running cannot be deleted, nor a group with one running.</p>
+        <p>The application id is io.github.sachesi.leyen; icons and menu entries written under the old id are moved over on the first start. Ctrl+Q quits, Ctrl+W closes a window, and errors from the session bus read as a sentence about the daemon. Installing no longer stops a daemon that is tracking games, and the Ukrainian translation covers every new string of the interface.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-09-04">
       <description>
         <p>Winetricks components install again over an earlier attempt, removing one takes it out of the prefix's record, catalogue entries run the verbs winetricks knows them by, and DLL overrides are written to the registry instead of only being noted. A game is told apart from its neighbours by its GAMEID, a download that fails stops the others it was started with, and runtimes are unpacked beside their destination before they replace it.</p>

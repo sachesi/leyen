@@ -341,6 +341,6 @@ mod tests {
     fn opaque_artwork_fills_the_square() {
         let art = RgbaImage::from_pixel(200, 100, Rgba([30, 120, 200, 255]));
         let (_, _, rgba) = square_texture_data(DynamicImage::ImageRgba8(art));
-        assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert!(rgba.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 255));
     }
 }

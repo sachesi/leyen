@@ -1,8 +1,8 @@
 //! Localization (gettext) setup.
 //!
 //! The application picks up the user's system locale at startup (no in-app
-//! language switching). Translatable strings are wrapped with the [`t!`] and
-//! [`tn!`] macros and extracted into `po/leyen.pot`.
+//! language switching). Translatable strings go through [`gettext`] and
+//! [`ngettext`]; `just pot` extracts them into `po/leyen.pot`.
 
 use std::path::PathBuf;
 
@@ -57,22 +57,4 @@ pub fn gettext(msgid: &str) -> String {
 /// Translates a singular/plural message based on `n`.
 pub fn ngettext(singular: &str, plural: &str, n: u32) -> String {
     gettextrs::ngettext(singular, plural, n)
-}
-
-/// Wraps a translatable string literal: `t!("Launch Game")`.
-#[macro_export]
-macro_rules! t {
-    ($msgid:expr) => {
-        $crate::i18n::gettext($msgid)
-    };
-}
-
-/// Plural-aware translation: `tn!("{} file", "{} files", n)`.
-/// The returned string still contains the `{}` placeholder for the caller to
-/// fill in (typically via `.replacen("{}", &n.to_string(), 1)`).
-#[macro_export]
-macro_rules! tn {
-    ($singular:expr, $plural:expr, $n:expr) => {
-        $crate::i18n::ngettext($singular, $plural, $n)
-    };
 }

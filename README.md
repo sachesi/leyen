@@ -24,13 +24,8 @@ GTK4/libadwaita app for running Windows games on Linux via Proton and `umu-run`.
 ```bash
 git clone https://github.com/sachesi/leyen.git
 cd leyen
-cargo build --release
-```
-
-### Install binary
-
-```bash
-sudo make install
+just build
+just install        # or: just prefix=$HOME/.local install
 ```
 
 ## CLI

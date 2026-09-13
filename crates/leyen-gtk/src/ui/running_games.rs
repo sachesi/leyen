@@ -1,5 +1,5 @@
-use leyen_model::t;
-use leyen_model::tn;
+use leyen_model::i18n::gettext;
+use leyen_model::i18n::ngettext;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -106,9 +106,9 @@ async fn rebuild_running_games(
         let pid_label = gtk4::Label::builder()
             .label({
                 let tracked = snapshot.tracked_pid_count as u32;
-                let processes = tn!("{} process", "{} processes", tracked)
+                let processes = ngettext("{} process", "{} processes", tracked)
                     .replacen("{}", &tracked.to_string(), 1);
-                t!("PID {} | tracking {}")
+                gettext("PID {} | tracking {}")
                     .replacen("{}", &snapshot.pid.to_string(), 1)
                     .replacen("{}", &processes, 1)
             })
@@ -123,7 +123,7 @@ async fn rebuild_running_games(
         let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
 
         let runtime_label = gtk4::Label::builder()
-            .label(t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1))
+            .label(gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1))
             .xalign(0.0)
             .css_classes(["caption", "accent"])
             .build();
@@ -143,12 +143,12 @@ async fn rebuild_running_games(
 
         let logs_btn = gtk4::Button::builder()
             .icon_name("utilities-terminal-symbolic")
-            .tooltip_text(t!("View Game Logs"))
+            .tooltip_text(gettext("View Game Logs"))
             .build();
 
         let stop_btn = gtk4::Button::builder()
             .icon_name("media-playback-stop-symbolic")
-            .tooltip_text(t!("Stop Game"))
+            .tooltip_text(gettext("Stop Game"))
             .css_classes(["destructive-action", "circular"])
             .build();
 
@@ -201,7 +201,7 @@ pub fn update_running_duration_labels(
     for (game_id, label) in running_duration_labels.borrow().iter() {
         if let Some(started_at) = snapshots.get(game_id) {
             let elapsed = now.saturating_sub(*started_at);
-            label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+            label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
         }
     }
 }
@@ -219,7 +219,7 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         }
 
     let window = adw::Window::builder()
-        .title(t!("Leyen – Running Games"))
+        .title(gettext("Leyen – Running Games"))
         .default_width(560)
         .default_height(420)
         .transient_for(parent)
@@ -247,8 +247,8 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
         .build();
     let empty_state = adw::StatusPage::builder()
         .icon_name("media-playback-stop-symbolic")
-        .title(t!("No running games"))
-        .description(t!("Games you launch through Leyen will appear here while they are active."))
+        .title(gettext("No running games"))
+        .description(gettext("Games you launch through Leyen will appear here while they are active."))
         .build();
     let content_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)

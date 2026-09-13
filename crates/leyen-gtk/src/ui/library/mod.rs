@@ -2,7 +2,7 @@ pub mod group_view;
 pub mod root_view;
 pub mod state;
 
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -49,12 +49,12 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
     if running {
         match daemon::stop_game(&game.leyen_id).await {
             Ok(true) => overlay.add_toast(adw::Toast::new(
-                &t!("Stopping {}...").replacen("{}", &game.title, 1),
+                &gettext("Stopping {}...").replacen("{}", &game.title, 1),
             )),
-            Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
+            Ok(false) => overlay.add_toast(adw::Toast::new(&gettext("Game is no longer running"))),
             Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
                 "{}: {}",
-                t!("Failed to stop {}").replacen("{}", &game.title, 1),
+                gettext("Failed to stop {}").replacen("{}", &game.title, 1),
                 reason
             ))),
         }
@@ -63,11 +63,11 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
         // can't issue duplicate concurrent launches.
         match daemon::launch_game(&game.leyen_id).await {
             Ok(()) => overlay.add_toast(adw::Toast::new(
-                &t!("Launching {}...").replacen("{}", &game.title, 1),
+                &gettext("Launching {}...").replacen("{}", &game.title, 1),
             )),
             Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
                 "{}: {}",
-                t!("Failed to launch {}").replacen("{}", &game.title, 1),
+                gettext("Failed to launch {}").replacen("{}", &game.title, 1),
                 reason
             ))),
         }
@@ -87,7 +87,7 @@ pub async fn stop_game_guarded(leyen_id: &str, overlay: &adw::ToastOverlay) {
 
     match daemon::stop_game(leyen_id).await {
         Ok(true) => {}
-        Ok(false) => overlay.add_toast(adw::Toast::new(&t!("Game is no longer running"))),
+        Ok(false) => overlay.add_toast(adw::Toast::new(&gettext("Game is no longer running"))),
         Err(reason) => overlay.add_toast(adw::Toast::new(&reason)),
     }
 }
@@ -108,14 +108,14 @@ pub fn update_running_duration_labels(ui: &LibraryUi) {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
     } else {
         for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
 
@@ -129,7 +129,7 @@ pub fn update_running_duration_labels(ui: &LibraryUi) {
                     .get(&group.id)
             {
                 let elapsed = now.saturating_sub(started_at);
-                label.set_label(&t!("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
             }
         }
     }
@@ -239,7 +239,7 @@ async fn run_library_refresh(
             ui_clone.stack.set_visible_child_name("root");
             ui_clone.back_btn.set_visible(false);
             ui_clone.group_edit_btn.set_visible(false);
-            ui_clone.title.set_title(&t!("Leyen"));
+            ui_clone.title.set_title(&gettext("Leyen"));
             ui_clone.title.set_subtitle("");
         } else {
             let group_id = ui_clone.current_group_id.borrow().clone();
@@ -259,7 +259,7 @@ async fn run_library_refresh(
                 ui_clone.stack.set_visible_child_name("root");
                 ui_clone.back_btn.set_visible(false);
                 ui_clone.group_edit_btn.set_visible(false);
-                ui_clone.title.set_title(&t!("Leyen"));
+                ui_clone.title.set_title(&gettext("Leyen"));
                 ui_clone.title.set_subtitle("");
             }
         }

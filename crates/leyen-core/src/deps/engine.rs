@@ -1,4 +1,4 @@
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
@@ -109,7 +109,7 @@ async fn claim_cache_file(file_name: &str, cancel: &Arc<AtomicBool>) -> Result<C
             return Ok(guard);
         }
         if cancel.load(Ordering::Relaxed) {
-            return Err(t!("Cancelled."));
+            return Err(gettext("Cancelled."));
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
@@ -188,7 +188,7 @@ async fn run_umu_command_inner(
                 if cancel.load(Ordering::Relaxed) {
                     kill_group();
                     let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
-                    return Err(t!("Cancelled."));
+                    return Err(gettext("Cancelled."));
                 }
                 if start.elapsed() >= timeout {
                     warn!("[dep] '{}' timed out after {} seconds", label, COMMAND_TIMEOUT_SECS);
@@ -361,7 +361,7 @@ pub async fn execute_dep_step(
 
             // Check cancel before starting download
             if cancel.load(Ordering::Relaxed) {
-                return Err(t!("Cancelled."));
+                return Err(gettext("Cancelled."));
             }
 
             info!("[dep] Downloading {} from {}", file_name, url);
@@ -426,7 +426,7 @@ pub async fn execute_dep_step(
                                 }
                                 let _ = (&mut wait_fut).await;
                                 let _ = tokio::fs::remove_file(&temp).await;
-                                return Err(t!("Cancelled."));
+                                return Err(gettext("Cancelled."));
                             }
                         }
                     }
@@ -701,7 +701,7 @@ pub async fn install_dep(
     let cache_dir = get_deps_cache_dir();
 
     let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
-        return Err(t!(
+        return Err(gettext(
             "Another dependency operation is already running for this prefix."
         ));
     };
@@ -713,7 +713,7 @@ pub async fn install_dep(
         .map_err(join_err)
         .and_then(|r| {
             r.map_err(|e| {
-                t!("Cannot write to the dependency cache directory: {}")
+                gettext("Cannot write to the dependency cache directory: {}")
                     .replacen("{}", &e.to_string(), 1)
             })
         })?;
@@ -730,13 +730,13 @@ pub async fn install_dep(
     {
         Ok(state) => state,
         Err(err) => {
-            return Err(t!("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
+            return Err(gettext("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
         }
     };
 
     let install_plan = match build_install_plan(&dep_id, &state) {
         Ok(plan) if !plan.is_empty() => plan,
-        Ok(_) => return Ok(Some(t!("Dependency is already installed."))),
+        Ok(_) => return Ok(Some(gettext("Dependency is already installed."))),
         Err(message) => return Err(message),
     };
 
@@ -815,7 +815,7 @@ pub async fn install_dep(
                     // the error that actually caused the abort.
                     Err(error) => {
                         error!("[dep:{}] download failed: {}", profile.id, error);
-                        if first_error.is_none() || (error != t!("Cancelled.") && first_error.as_deref() == Some(t!("Cancelled.").as_str())) {
+                        if first_error.is_none() || (error != gettext("Cancelled.") && first_error.as_deref() == Some(gettext("Cancelled.").as_str())) {
                             first_error = Some(error);
                         }
                     }
@@ -823,7 +823,7 @@ pub async fn install_dep(
             }
             if let Some(error) = first_error {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err(t!("Cancelled."));
+                    return Err(gettext("Cancelled."));
                 }
                 return Err(error);
             }
@@ -844,7 +844,7 @@ pub async fn install_dep(
         let mut step_error: Option<String> = None;
         for step in &execution_steps {
             if cancel.load(Ordering::Relaxed) {
-                step_error = Some(t!("Cancelled."));
+                step_error = Some(gettext("Cancelled."));
                 break;
             }
             completed_steps += 1;
@@ -947,7 +947,7 @@ pub async fn install_dep(
             None
         } else {
             Some(
-                t!("Installed prerequisites: {}.")
+                gettext("Installed prerequisites: {}.")
                     .replacen("{}", &prerequisites.join(", "), 1),
             )
         }
@@ -974,7 +974,7 @@ pub async fn uninstall_dep(
     let cache_dir = get_deps_cache_dir();
 
     let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
-        return Err(t!(
+        return Err(gettext(
             "Another dependency operation is already running for this prefix."
         ));
     };
@@ -988,17 +988,17 @@ pub async fn uninstall_dep(
     {
         Ok(state) => state,
         Err(err) => {
-            return Err(t!("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
+            return Err(gettext("Dependency state file is corrupt: {}").replacen("{}", &err, 1));
         }
     };
 
     let installed = match state.installed.get(&dep_id).cloned() {
         Some(installed) => installed,
-        None => return Ok(Some(t!("Dependency is no longer tracked."))),
+        None => return Ok(Some(gettext("Dependency is no longer tracked."))),
     };
     let dependents = find_installed_dependents(&state, &dep_id);
     if !dependents.is_empty() {
-        return Err(t!("Cannot remove '{}': still required by {}.")
+        return Err(gettext("Cannot remove '{}': still required by {}.")
             .replacen("{}", &dep_id, 1)
             .replacen("{}", &dependents.join(", "), 1));
     }
@@ -1048,7 +1048,7 @@ pub async fn uninstall_dep(
     let total_actions = actions.len();
     for (index, (description, action)) in actions.into_iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err(t!("Cancelled."));
+            return Err(gettext("Cancelled."));
         }
         on_progress(index + 1, total_actions, description.clone());
 
@@ -1098,13 +1098,13 @@ pub async fn uninstall_dep(
     }
 
     let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
-        (true, true) => Some(t!(
+        (true, true) => Some(gettext(
             "Some existing prefix files were changed during installation and were not reverted."
         )),
-        (false, true) => Some(t!(
+        (false, true) => Some(gettext(
             "Removed from tracking. Existing prefix files changed during installation were not reverted."
         )),
-        (false, false) => Some(t!("Removed from tracking.")),
+        (false, false) => Some(gettext("Removed from tracking.")),
         (true, false) => None,
     };
 
@@ -1119,7 +1119,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
 ) -> Result<(), String> {
     info!("[dep] Checking umu-launcher availability…");
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        return Err(t!("umu-launcher is still downloading, please wait…"));
+        return Err(gettext("umu-launcher is still downloading, please wait…"));
     }
 
     if !tokio::task::spawn_blocking(is_umu_run_available)
@@ -1130,7 +1130,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
         })
     {
         info!("[dep] umu-launcher not available");
-        return Err(t!(
+        return Err(gettext(
             "umu-launcher is not installed. Please check your internet connection and restart."
         ));
     }
@@ -1139,7 +1139,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
     if check_winetricks {
         info!("[dep] Checking winetricks availability…");
         if WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
-            return Err(t!("winetricks is still downloading, please wait…"));
+            return Err(gettext("winetricks is still downloading, please wait…"));
         }
 
         if !tokio::task::spawn_blocking(is_winetricks_available)
@@ -1150,7 +1150,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
             })
         {
             info!("[dep] winetricks not found, triggering download");
-            on_progress(0, 0, t!("Downloading winetricks…"));
+            on_progress(0, 0, gettext("Downloading winetricks…"));
 
             if claim_download(&WINETRICKS_DOWNLOAD_STARTED, &WINETRICKS_DOWNLOADING) {
                 info!("[dep] Starting winetricks download…");
@@ -1166,7 +1166,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
                 }
                 WINETRICKS_DOWNLOADING.store(false, Ordering::Relaxed);
                 result.map_err(|_| {
-                    t!("Failed to download winetricks. Check your internet connection.")
+                    gettext("Failed to download winetricks. Check your internet connection.")
                 })?;
             }
 
@@ -1176,7 +1176,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
             }
             while WINETRICKS_DOWNLOADING.load(Ordering::Relaxed) {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err(t!("Cancelled."));
+                    return Err(gettext("Cancelled."));
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }

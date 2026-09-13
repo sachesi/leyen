@@ -1,4 +1,4 @@
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -1624,7 +1624,7 @@ async fn launch_game_managed(
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         return Err(LaunchError::Other(
-            t!("umu-launcher is still downloading, please wait…"),
+            gettext("umu-launcher is still downloading, please wait…"),
         ));
     }
 
@@ -1637,7 +1637,7 @@ async fn launch_game_managed(
         })
     {
         return Err(LaunchError::Other(
-            t!("umu-launcher is not installed. Please check your internet connection and restart."),
+            gettext("umu-launcher is not installed. Please check your internet connection and restart."),
         ));
     }
 
@@ -1648,7 +1648,7 @@ async fn launch_game_managed(
         .unwrap_or(false)
     {
         return Err(LaunchError::Other(
-            t!("A systemd user session is required to launch games."),
+            gettext("A systemd user session is required to launch games."),
         ));
     }
 
@@ -1662,7 +1662,7 @@ async fn launch_game_managed(
 
     if is_game_running(&game.id) {
         return Err(LaunchError::Other(
-            t!("This game is already running"),
+            gettext("This game is already running"),
         ));
     }
 
@@ -1670,7 +1670,7 @@ async fn launch_game_managed(
     // whole pre-registration window the running check above can't see.
     let Some(launch_claim) = LaunchClaim::try_claim(&game.id) else {
         return Err(LaunchError::Other(
-            t!("This game is already running"),
+            gettext("This game is already running"),
         ));
     };
 
@@ -1687,7 +1687,7 @@ async fn launch_game_managed(
                 "Executable for '{}' does not exist: {}", game.title, game.exe_path
             );
             return Err(LaunchError::Other(
-                t!("Game executable was not found"),
+                gettext("Game executable was not found"),
             ));
         }
     }
@@ -1714,7 +1714,7 @@ async fn launch_game_managed(
                         "Proton path for '{}' does not exist: {}", game.title, path
                     );
                     return Err(LaunchError::Other(
-                        t!("Selected Proton version was not found"),
+                        gettext("Selected Proton version was not found"),
                     ));
                 }
             }
@@ -1803,7 +1803,7 @@ async fn launch_game_managed(
     let join_shared_container = match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Busy if allow_shared_container => {
             notices.push(
-                t!("Prefix is already in use. Launching with shared-container fallback."),
+                gettext("Prefix is already in use. Launching with shared-container fallback."),
             );
             true
         }
@@ -1853,7 +1853,7 @@ async fn launch_game_managed(
                 );
             }
         });
-        notices.push(t!("Launching {}...").replacen("{}", &game.title, 1));
+        notices.push(gettext("Launching {}...").replacen("{}", &game.title, 1));
         return Ok(LaunchReport { notices });
     }
 
@@ -1982,7 +1982,7 @@ async fn finish_launch(
                 .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
             let pid = child
                 .id()
-                .ok_or_else(|| LaunchError::Other(t!("Failed to get child PID")))?;
+                .ok_or_else(|| LaunchError::Other(gettext("Failed to get child PID")))?;
             let child_stdout = child.stdout.take();
             let child_stderr = child.stderr.take();
             Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
@@ -2027,7 +2027,7 @@ async fn finish_launch(
         let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
         let _ = child.wait().await;
         return Err(LaunchError::Other(
-            t!("This game is already running"),
+            gettext("This game is already running"),
         ));
     }
 
@@ -2079,7 +2079,7 @@ async fn finish_launch(
         target: &format!("game:{}", game.id),
         "Spawned '{}' with pid {}", game.title, child_pid
     );
-    notices.push(t!("Launching {}...").replacen("{}", &game.title, 1));
+    notices.push(gettext("Launching {}...").replacen("{}", &game.title, 1));
     Ok(LaunchReport { notices })
 }
 

@@ -3,7 +3,7 @@
 //! managed games — so they don't go through the daemon's scope tracking. They are
 //! gated on "no game running" (via the daemon) and umu availability.
 
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -22,7 +22,7 @@ async fn preflight(overlay: &adw::ToastOverlay, blocked_msg: &str) -> bool {
         return false;
     }
     if !gio_blocking(is_umu_run_available).await.unwrap_or(false) {
-        overlay.add_toast(adw::Toast::new(&t!(
+        overlay.add_toast(adw::Toast::new(&gettext(
             "umu-launcher is not installed. Please check your internet connection and restart."
         )));
         return false;
@@ -37,7 +37,7 @@ pub async fn run_winecfg_in_prefix(
 ) {
     if !preflight(
         overlay,
-        &t!("Blocked: Cannot run winecfg while games are running."),
+        &gettext("Blocked: Cannot run winecfg while games are running."),
     )
     .await
     {
@@ -47,7 +47,7 @@ pub async fn run_winecfg_in_prefix(
     let proton = proton_path.trim().to_string();
     let prefix = prefix_path.trim().to_string();
     if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required")));
+        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required")));
         return;
     }
 
@@ -55,7 +55,7 @@ pub async fn run_winecfg_in_prefix(
         .await
         .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
     match result {
-        Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Wine Configuration launched"))),
+        Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Wine Configuration launched"))),
         Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
     }
 }
@@ -67,7 +67,7 @@ pub async fn run_regedit_in_prefix(
 ) {
     if !preflight(
         overlay,
-        &t!("Blocked: Cannot run regedit while games are running."),
+        &gettext("Blocked: Cannot run regedit while games are running."),
     )
     .await
     {
@@ -77,7 +77,7 @@ pub async fn run_regedit_in_prefix(
     let proton = proton_path.trim().to_string();
     let prefix = prefix_path.trim().to_string();
     if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required")));
+        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required")));
         return;
     }
 
@@ -85,7 +85,7 @@ pub async fn run_regedit_in_prefix(
         .await
         .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
     match result {
-        Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Registry Editor launched"))),
+        Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Registry Editor launched"))),
         Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
     }
 }
@@ -119,7 +119,7 @@ pub async fn pick_and_run_in_prefix(
 ) {
     if !preflight(
         overlay,
-        &t!("Blocked: Cannot run programs in prefix while games are running."),
+        &gettext("Blocked: Cannot run programs in prefix while games are running."),
     )
     .await
     {
@@ -129,18 +129,18 @@ pub async fn pick_and_run_in_prefix(
     let prefix_path = prefix_path.trim().to_string();
     let proton_path = proton_path.trim().to_string();
     if prefix_path.is_empty() {
-        overlay.add_toast(adw::Toast::new(&t!("Prefix path is required first")));
+        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required first")));
         return;
     }
 
     let filter = gtk4::FileFilter::new();
-    filter.set_name(Some(&t!("Windows programs")));
+    filter.set_name(Some(&gettext("Windows programs")));
     for suffix in ["exe", "msi", "bat", "cmd", "com"] {
         filter.add_suffix(suffix);
     }
 
     let file_dialog = gtk4::FileDialog::builder()
-        .title(t!("Select Program"))
+        .title(gettext("Select Program"))
         .default_filter(&filter)
         .build();
 
@@ -150,7 +150,7 @@ pub async fn pick_and_run_in_prefix(
             return;
         };
         let Some(path) = file.path() else {
-            overlay.add_toast(adw::Toast::new(&t!("Selected file has no local path")));
+            overlay.add_toast(adw::Toast::new(&gettext("Selected file has no local path")));
             return;
         };
 
@@ -162,7 +162,7 @@ pub async fn pick_and_run_in_prefix(
                     .await
                     .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
             match result {
-                Ok(()) => overlay.add_toast(adw::Toast::new(&t!("Launched in prefix"))),
+                Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Launched in prefix"))),
                 Err(err) => {
                     overlay.add_toast(adw::Toast::new(&format!("Failed to run in prefix: {err}")))
                 }

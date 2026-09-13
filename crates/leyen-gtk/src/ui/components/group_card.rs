@@ -1,5 +1,5 @@
-use leyen_model::t;
-use leyen_model::tn;
+use leyen_model::i18n::gettext;
+use leyen_model::i18n::ngettext;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -70,7 +70,7 @@ pub fn build_group_card(
         .build();
     let count_label = gtk4::Label::builder()
         .label(
-            tn!("{} game", "{} games", group.games.len() as u32)
+            ngettext("{} game", "{} games", group.games.len() as u32)
                 .replacen("{}", &group.games.len().to_string(), 1),
         )
         .xalign(0.0)
@@ -80,7 +80,7 @@ pub fn build_group_card(
     if running_count > 0 {
         meta_row.append(
             &gtk4::Label::builder()
-                .label(t!("{} running").replacen("{}", &running_count.to_string(), 1))
+                .label(gettext("{} running").replacen("{}", &running_count.to_string(), 1))
                 .xalign(0.0)
                 .css_classes(["caption", "accent"])
                 .build(),
@@ -89,7 +89,7 @@ pub fn build_group_card(
     let group_running_elapsed = group_running_elapsed_seconds(group, running_games);
     let status_label = gtk4::Label::builder()
         .label(&if let Some(elapsed_seconds) = group_running_elapsed {
-            t!("Running for {}").replacen("{}", &format_duration_brief(elapsed_seconds), 1)
+            gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed_seconds), 1)
         } else {
             format_last_played(group_last_played(group))
         })
@@ -126,16 +126,16 @@ pub fn build_group_card(
 
     let edit_btn = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
-        .tooltip_text(t!("Edit Group"))
+        .tooltip_text(gettext("Edit Group"))
         .build();
     let delete_btn = gtk4::Button::builder()
         .icon_name("user-trash-symbolic")
-        .tooltip_text(t!("Delete Group"))
+        .tooltip_text(gettext("Delete Group"))
         .css_classes(["destructive-action"])
         .build();
     let open_btn = gtk4::Button::builder()
         .icon_name("go-next-symbolic")
-        .tooltip_text(t!("Open Group"))
+        .tooltip_text(gettext("Open Group"))
         .css_classes(["suggested-action", "circular"])
         .build();
 

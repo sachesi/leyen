@@ -1,4 +1,4 @@
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -78,7 +78,7 @@ pub fn build_game_card(
     info_column.append(&{
         let status_label = gtk4::Label::builder()
             .label(&if game_running {
-                t!("Running for {}").replacen("{}", &format_duration_brief(
+                gettext("Running for {}").replacen("{}", &format_duration_brief(
                     running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
                 ), 1)
             } else {
@@ -122,11 +122,11 @@ pub fn build_game_card(
 
     let edit_btn = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
-        .tooltip_text(t!("Edit Game"))
+        .tooltip_text(gettext("Edit Game"))
         .build();
     let delete_btn = gtk4::Button::builder()
         .icon_name("user-trash-symbolic")
-        .tooltip_text(t!("Delete Game"))
+        .tooltip_text(gettext("Delete Game"))
         .css_classes(["destructive-action"])
         .build();
     let play_btn = gtk4::Button::builder()
@@ -141,9 +141,9 @@ pub fn build_game_card(
             ["suggested-action", "circular"]
         })
         .tooltip_text(&if game_running {
-            t!("Stop Game")
+            gettext("Stop Game")
         } else {
-            t!("Launch Game")
+            gettext("Launch Game")
         })
         .build();
 

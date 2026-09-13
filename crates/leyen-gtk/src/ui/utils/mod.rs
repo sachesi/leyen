@@ -1,6 +1,6 @@
 use leyen_ipc::RunningGameSnapshot;
 use leyen_model::models::{Game, GameGroup, LibraryItem};
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use gtk4::prelude::*;
 use std::cmp::Ordering;
 
@@ -109,13 +109,13 @@ pub fn format_playtime(playtime_seconds: u64) -> String {
     let minutes = (playtime_seconds % 3600) / 60;
 
     if hours > 0 {
-        t!("Playtime: {}h {}m")
+        gettext("Playtime: {}h {}m")
             .replacen("{}", &hours.to_string(), 1)
             .replacen("{}", &minutes.to_string(), 1)
     } else if minutes > 0 {
-        t!("Playtime: {}m").replacen("{}", &minutes.to_string(), 1)
+        gettext("Playtime: {}m").replacen("{}", &minutes.to_string(), 1)
     } else {
-        t!("Playtime: {}s").replacen("{}", &playtime_seconds.to_string(), 1)
+        gettext("Playtime: {}s").replacen("{}", &playtime_seconds.to_string(), 1)
     }
 }
 
@@ -135,7 +135,7 @@ pub fn format_duration_brief(total_seconds: u64) -> String {
 
 pub fn format_last_played(epoch_seconds: u64) -> String {
     if epoch_seconds == 0 {
-        return t!("Last played: never");
+        return gettext("Last played: never");
     }
 
     let now = std::time::SystemTime::now()
@@ -145,16 +145,16 @@ pub fn format_last_played(epoch_seconds: u64) -> String {
     let delta = now.saturating_sub(epoch_seconds);
 
     let ago = if delta < 60 {
-        t!("{}s ago").replacen("{}", &delta.to_string(), 1)
+        gettext("{}s ago").replacen("{}", &delta.to_string(), 1)
     } else if delta < 3600 {
-        t!("{}m ago").replacen("{}", &(delta / 60).to_string(), 1)
+        gettext("{}m ago").replacen("{}", &(delta / 60).to_string(), 1)
     } else if delta < 86_400 {
-        t!("{}h ago").replacen("{}", &(delta / 3600).to_string(), 1)
+        gettext("{}h ago").replacen("{}", &(delta / 3600).to_string(), 1)
     } else {
-        t!("{}d ago").replacen("{}", &(delta / 86_400).to_string(), 1)
+        gettext("{}d ago").replacen("{}", &(delta / 86_400).to_string(), 1)
     };
 
-    t!("Last played: {}").replacen("{}", &ago, 1)
+    gettext("Last played: {}").replacen("{}", &ago, 1)
 }
 
 pub fn game_is_running(running_games: &RunningGameMap, game_id: &str) -> bool {

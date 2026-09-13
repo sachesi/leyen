@@ -1,4 +1,4 @@
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
@@ -34,7 +34,7 @@ pub async fn populate_group_view(
     };
 
     ui.title.set_title(&group.title);
-    ui.title.set_subtitle(&t!("Group"));
+    ui.title.set_subtitle(&gettext("Group"));
 
     if group.games.is_empty() {
         ui.group_content_stack.set_visible_child_name("empty");

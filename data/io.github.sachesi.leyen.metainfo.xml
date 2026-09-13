@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sachesi.leyen</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Leyen</name>
+  <summary>Run Windows games with Proton</summary>
+  <description>
+    <p>Leyen keeps a library of Windows games and runs them with Proton through umu-launcher, each in its own Wine prefix or in one shared with its group.</p>
+    <ul>
+      <li>Games in groups, with the playtime and the last session of each</li>
+      <li>A Proton version, a prefix and launch arguments per game, or inherited from the group and the defaults</li>
+      <li>MangoHud, GameMode, Wayland, WoW64, NTSync and HDR switches</li>
+      <li>Winetricks components, the Wine configuration and the registry editor for any prefix</li>
+      <li>Menu entries that start a game from the desktop, and a command line to list, run and stop games</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.sachesi.leyen.desktop</launchable>
+  <url type="homepage">https://github.com/sachesi/leyen</url>
+  <url type="bugtracker">https://github.com/sachesi/leyen/issues</url>
+  <url type="vcs-browser">https://github.com/sachesi/leyen</url>
+  <developer id="io.github.sachesi"><name>sachesi</name></developer>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="0.7.0" date="2026-09-04">
+      <description>
+        <p>Winetricks components install again over an earlier attempt, removing one takes it out of the prefix's record, catalogue entries run the verbs winetricks knows them by, and DLL overrides are written to the registry instead of only being noted. A game is told apart from its neighbours by its GAMEID, a download that fails stops the others it was started with, and runtimes are unpacked beside their destination before they replace it.</p>
+        <p>The window survives a restart of the daemon and no longer rebuilds the library every few seconds while a game runs. The add and edit dialogs have a title, and a group can be edited from the header while it is open.</p>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-07-12">
+      <description>
+        <p>Downloaded runtimes are checked against their digests and winetricks is pinned to a known release. The files Leyen keeps carry a version of their format, no more than four dependency jobs run at once, and a launch can no longer slip in twice while the first is being registered. Menu entries of games with the same name no longer overwrite each other, and a background task that crashes no longer leaves the window waiting on it.</p>
+      </description>
+    </release>
+    <release version="0.5.2" date="2026-07-07">
+      <description>
+        <p>Files are read and written away from the thread drawing the window. A dependency job and a launch no longer run against the same prefix at once, a session is removed only once its playtime is saved, and "leyen list" shows a running game that is no longer in the library, so it can still be stopped.</p>
+      </description>
+    </release>
+    <release version="0.5.1" date="2026-06-09">
+      <description>
+        <p>The library keeps its scroll position when it is refreshed.</p>
+      </description>
+    </release>
+    <release version="0.5.0" date="2026-06-05">
+      <description>
+        <p>Games are started and tracked by a daemon on the session bus, which the window and the command line talk to. It exits when it has nothing to do, writes the library and the settings so that a crash cannot leave them half written, and reports why an operation failed. Dependency downloads can be cancelled, and the log window follows new lines as they come.</p>
+      </description>
+    </release>
+  </releases>
+</component>

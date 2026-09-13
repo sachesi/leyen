@@ -1,9 +1,11 @@
 [Desktop Entry]
 Name=Leyen
-Comment=Wine/Proton game manager using umu-launcher
+GenericName=Game Launcher
+Comment=Run Windows games with Proton
 Exec=leyen-gtk
 Icon=io.github.sachesi.leyen
-StartupWMClass=io.github.sachesi.leyen
 Terminal=false
 Type=Application
 Categories=Game;
+Keywords=wine;proton;umu;windows;
+StartupNotify=true

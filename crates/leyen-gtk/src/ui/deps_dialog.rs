@@ -1,4 +1,4 @@
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -114,9 +114,9 @@ fn redistribute_rows(
 
 fn installed_subtitle(n: usize) -> String {
     match n {
-        0 => t!("No components installed"),
-        1 => t!("1 component installed"),
-        n => t!("{} components installed").replacen("{}", &n.to_string(), 1),
+        0 => gettext("No components installed"),
+        1 => gettext("1 component installed"),
+        n => gettext("{} components installed").replacen("{}", &n.to_string(), 1),
     }
 }
 
@@ -144,11 +144,11 @@ fn sync_dep_row(
     if can_remove {
         handle
             .remove_btn
-            .set_tooltip_text(Some(&t!("Remove this managed dependency")));
+            .set_tooltip_text(Some(&gettext("Remove this managed dependency")));
     } else if is_installed {
         handle
             .remove_btn
-            .set_tooltip_text(Some(&t!("Required by: {}").replacen("{}", &dependents.join(", "), 1)));
+            .set_tooltip_text(Some(&gettext("Required by: {}").replacen("{}", &dependents.join(", "), 1)));
     } else {
         handle.remove_btn.set_tooltip_text(None);
     }
@@ -214,7 +214,7 @@ pub async fn open_dependencies_page(
     let snapshots = crate::daemon::running_games_snapshot().await;
     if !snapshots.is_empty() {
         overlay.add_toast(adw::Toast::new(
-            &t!("Dependency manager is blocked while games are running. Close all games first."),
+            &gettext("Dependency manager is blocked while games are running. Close all games first."),
         ));
         return;
     }
@@ -241,14 +241,14 @@ pub async fn open_dependencies_page(
 
     let subtitle = installed_subtitle(installed.len());
 
-    let title_widget = adw::WindowTitle::new(&t!("Manage Dependencies"), &subtitle);
+    let title_widget = adw::WindowTitle::new(&gettext("Manage Dependencies"), &subtitle);
 
     let header = adw::HeaderBar::builder()
         .title_widget(&title_widget)
         .build();
 
     let search_entry = gtk4::SearchEntry::builder()
-        .placeholder_text(t!("Search dependencies…"))
+        .placeholder_text(gettext("Search dependencies…"))
         .margin_top(8)
         .margin_bottom(4)
         .margin_start(12)
@@ -339,7 +339,7 @@ pub async fn open_dependencies_page(
                 .build();
 
             let install_btn = gtk4::Button::builder()
-                .label(t!("Install"))
+                .label(gettext("Install"))
                 .css_classes(["suggested-action"])
                 .valign(gtk4::Align::Center)
                 .visible(!is_installed)
@@ -347,14 +347,14 @@ pub async fn open_dependencies_page(
 
             let reinstall_btn = gtk4::Button::builder()
                 .icon_name("view-refresh-symbolic")
-                .tooltip_text(t!("Reinstall"))
+                .tooltip_text(gettext("Reinstall"))
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
                 .build();
 
             let remove_btn = gtk4::Button::builder()
                 .icon_name("user-trash-symbolic")
-                .tooltip_text(t!("Remove"))
+                .tooltip_text(gettext("Remove"))
                 .css_classes(["destructive-action"])
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
@@ -362,7 +362,7 @@ pub async fn open_dependencies_page(
 
             let cancel_btn = gtk4::Button::builder()
                 .icon_name("process-stop-symbolic")
-                .tooltip_text(t!("Cancel"))
+                .tooltip_text(gettext("Cancel"))
                 .css_classes(["destructive-action"])
                 .valign(gtk4::Align::Center)
                 .visible(false)
@@ -389,7 +389,7 @@ pub async fn open_dependencies_page(
                 .build();
 
             let badge = gtk4::Label::builder()
-                .label(t!("✓ Installed"))
+                .label(gettext("✓ Installed"))
                 .css_classes(["success", "caption"])
                 .valign(gtk4::Align::Center)
                 .visible(is_installed)
@@ -491,16 +491,16 @@ pub async fn open_dependencies_page(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    t!("'{}' installed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                    gettext("'{}' installed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                 })
-                                .unwrap_or_else(|| t!("'{}' installed successfully.").replacen("{}", dep_id, 1));
+                                .unwrap_or_else(|| gettext("'{}' installed successfully.").replacen("{}", dep_id, 1));
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(true);
                             reinstall_btn3.set_visible(false);
                             remove_btn3.set_visible(false);
                             let msg =
-                                note_or_error.unwrap_or_else(|| t!("Installation failed."));
+                                note_or_error.unwrap_or_else(|| gettext("Installation failed."));
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -599,10 +599,10 @@ pub async fn open_dependencies_page(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    t!("'{}' reinstalled successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                    gettext("'{}' reinstalled successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                 })
                                 .unwrap_or_else(|| {
-                                    t!("'{}' reinstalled successfully.").replacen("{}", dep_id, 1)
+                                    gettext("'{}' reinstalled successfully.").replacen("{}", dep_id, 1)
                                 });
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
@@ -610,7 +610,7 @@ pub async fn open_dependencies_page(
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
                             let msg =
-                                note_or_error.unwrap_or_else(|| t!("Reinstall failed."));
+                                note_or_error.unwrap_or_else(|| gettext("Reinstall failed."));
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -654,8 +654,8 @@ pub async fn open_dependencies_page(
                     let prefix_for_dep = prefix2.clone();
                     let dep_id_for_dep = dep_id.to_string();
                     let confirm_builder = gtk4::AlertDialog::builder()
-                        .message(t!("Remove '{}'?").replacen("{}", dep_id, 1))
-                        .buttons(vec![t!("Cancel"), t!("Remove")])
+                        .message(gettext("Remove '{}'?").replacen("{}", dep_id, 1))
+                        .buttons(vec![gettext("Cancel"), gettext("Remove")])
                         .cancel_button(0)
                         .default_button(0);
 
@@ -687,12 +687,12 @@ pub async fn open_dependencies_page(
                             get_installed_dep(&prefix_for_dep, &dep_id_for_dep)
                                 .map(|installed| installed.removal_detail())
                                 .unwrap_or_else(|| {
-                                    t!("This removes the dependency from Leyen's tracking.")
+                                    gettext("This removes the dependency from Leyen's tracking.")
                                 })
                         })
                         .await
                         .unwrap_or_else(|| {
-                            t!("This removes the dependency from Leyen's tracking.")
+                            gettext("This removes the dependency from Leyen's tracking.")
                         });
 
                         let confirm = confirm_builder.detail(&detail).build();
@@ -771,10 +771,10 @@ pub async fn open_dependencies_page(
                                             remove_btn4.set_visible(false);
                                             let message = note_or_error
                                                 .map(|note| {
-                                                    t!("'{}' removed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                                    gettext("'{}' removed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
                                                 })
                                                 .unwrap_or_else(|| {
-                                                    t!("'{}' removed successfully.").replacen("{}", dep_id, 1)
+                                                    gettext("'{}' removed successfully.").replacen("{}", dep_id, 1)
                                                 });
                                             overlay4.add_toast(adw::Toast::new(&message));
                                         } else {
@@ -782,7 +782,7 @@ pub async fn open_dependencies_page(
                                             reinstall_btn4.set_visible(true);
                                             remove_btn4.set_visible(true);
                                             let msg = note_or_error
-                                                .unwrap_or_else(|| t!("Remove failed."));
+                                                .unwrap_or_else(|| gettext("Remove failed."));
                                             overlay4.add_toast(adw::Toast::new(&msg));
                                         }
                                     };
@@ -838,7 +838,7 @@ pub async fn open_dependencies_page(
     refresh_dep_rows(&resolved_prefix, &title_widget, &initial_snapshot).await;
 
     let nav_page = adw::NavigationPage::builder()
-        .title(t!("Manage Dependencies"))
+        .title(gettext("Manage Dependencies"))
         .child(&overlay)
         .build();
     nav.push(&nav_page);
@@ -899,7 +899,7 @@ fn start_dep_job(
 
             let Some(evt) = evt else {
                 if let Some(cb) = on_finish.take() {
-                    cb(false, Some(t!("Timed out waiting for the daemon.")));
+                    cb(false, Some(gettext("Timed out waiting for the daemon.")));
                 }
                 break;
             };
@@ -926,7 +926,7 @@ fn start_dep_job(
                     if let Some(cb) = on_finish.take() {
                         cb(
                             false,
-                            Some(t!("The daemon restarted; the operation's outcome is unknown.")),
+                            Some(gettext("The daemon restarted; the operation's outcome is unknown.")),
                         );
                     }
                     break;

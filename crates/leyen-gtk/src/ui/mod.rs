@@ -7,7 +7,7 @@ pub mod running_games;
 pub mod settings;
 pub mod utils;
 
-use leyen_model::t;
+use leyen_model::i18n::gettext;
 use libadwaita as adw;
 
 use adw::prelude::*;
@@ -49,25 +49,25 @@ pub fn build_ui(app: &adw::Application) {
     let title = adw::WindowTitle::new("Leyen", "");
     let back_btn = gtk4::Button::builder()
         .icon_name("go-previous-symbolic")
-        .tooltip_text(t!("Back to Library"))
+        .tooltip_text(gettext("Back to Library"))
         .visible(false)
         .build();
     let group_edit_btn = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
-        .tooltip_text(t!("Edit Group"))
+        .tooltip_text(gettext("Edit Group"))
         .visible(false)
         .build();
     let add_menu_model = gio::Menu::new();
-    add_menu_model.append(Some(&t!("Game")), Some("win.add-game"));
-    add_menu_model.append(Some(&t!("Group")), Some("win.add-group"));
+    add_menu_model.append(Some(&gettext("Game")), Some("win.add-game"));
+    add_menu_model.append(Some(&gettext("Group")), Some("win.add-group"));
     let add_menu_btn = gtk4::MenuButton::builder()
         .icon_name("list-add-symbolic")
         .menu_model(&add_menu_model)
-        .tooltip_text(t!("Add"))
+        .tooltip_text(gettext("Add"))
         .build();
     let add_game_btn = gtk4::Button::builder()
         .icon_name("list-add-symbolic")
-        .tooltip_text(t!("Add Game"))
+        .tooltip_text(gettext("Add Game"))
         .build();
     let add_button_stack = gtk4::Stack::new();
     add_button_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
@@ -80,26 +80,26 @@ pub fn build_ui(app: &adw::Application) {
     header.pack_start(&back_btn);
     header.pack_start(&group_edit_btn);
     let menu_model = gio::Menu::new();
-    menu_model.append(Some(&t!("Running Games")), Some("win.show-running-games"));
-    menu_model.append(Some(&t!("Logs")), Some("win.show-logs"));
+    menu_model.append(Some(&gettext("Running Games")), Some("win.show-running-games"));
+    menu_model.append(Some(&gettext("Logs")), Some("win.show-logs"));
     let menu_section = gio::Menu::new();
-    menu_section.append(Some(&t!("Preferences")), Some("win.show-preferences"));
-    menu_section.append(Some(&t!("Keyboard Shortcuts")), Some("win.show-shortcuts"));
-    menu_section.append(Some(&t!("About Leyen")), Some("win.show-about"));
+    menu_section.append(Some(&gettext("Preferences")), Some("win.show-preferences"));
+    menu_section.append(Some(&gettext("Keyboard Shortcuts")), Some("win.show-shortcuts"));
+    menu_section.append(Some(&gettext("About Leyen")), Some("win.show-about"));
     menu_model.append_section(None, &menu_section);
     let menu_btn = gtk4::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu_model)
-        .tooltip_text(t!("Main Menu"))
+        .tooltip_text(gettext("Main Menu"))
         .build();
     let search_btn = gtk4::ToggleButton::builder()
         .icon_name("edit-find-symbolic")
-        .tooltip_text(t!("Search"))
+        .tooltip_text(gettext("Search"))
         .build();
 
     let search_entry = gtk4::SearchEntry::builder()
         .hexpand(true)
-        .placeholder_text(t!("Search games..."))
+        .placeholder_text(gettext("Search games..."))
         .build();
 
     let search_bar = gtk4::SearchBar::builder().child(&search_entry).build();
@@ -158,14 +158,14 @@ pub fn build_ui(app: &adw::Application) {
 
     let root_empty_state = adw::StatusPage::builder()
         .icon_name("applications-games-symbolic")
-        .title(t!("No games added yet"))
-        .description(t!("Add a game or create a group to organize your library."))
+        .title(gettext("No games added yet"))
+        .description(gettext("Add a game or create a group to organize your library."))
         .build();
 
     let group_empty_state = adw::StatusPage::builder()
         .icon_name("folder-symbolic")
-        .title(t!("This group is empty"))
-        .description(t!("Add a game while inside the group to populate it."))
+        .title(gettext("This group is empty"))
+        .description(gettext("Add a game while inside the group to populate it."))
         .build();
 
     let root_content_stack = gtk4::Stack::builder()
@@ -228,7 +228,7 @@ pub fn build_ui(app: &adw::Application) {
     toast_overlay.set_child(Some(&stack));
 
     let download_banner = adw::Banner::builder()
-        .title(t!("Downloading umu-launcher… Please wait before starting games."))
+        .title(gettext("Downloading umu-launcher… Please wait before starting games."))
         .revealed(false)
         .build();
     toolbar_view.add_top_bar(&download_banner);
@@ -514,20 +514,20 @@ pub fn build_ui(app: &adw::Application) {
     shortcuts_action.connect_activate(move |_, _| {
         let win = gtk4::ShortcutsWindow::builder().build();
         let quit_shortcut = gtk4::ShortcutsShortcut::builder()
-            .title(t!("Quit Leyen"))
+            .title(gettext("Quit Leyen"))
             .accelerator("<Ctrl>Q")
             .build();
         let search_shortcut = gtk4::ShortcutsShortcut::builder()
-            .title(t!("Search Games"))
+            .title(gettext("Search Games"))
             .accelerator("<Ctrl>F")
             .build();
         let general_group = gtk4::ShortcutsGroup::builder()
-            .title(t!("General"))
+            .title(gettext("General"))
             .build();
         general_group.append(&quit_shortcut);
         general_group.append(&search_shortcut);
         let general_section = gtk4::ShortcutsSection::builder()
-            .title(t!("General"))
+            .title(gettext("General"))
             .max_height(2)
             .build();
         general_section.append(&general_group);
@@ -579,11 +579,11 @@ fn update_download_banner(banner: &adw::Banner, umu_ready: bool, winetricks_read
     banner.set_revealed(revealed);
     if revealed {
         let title = if !umu_ready && !winetricks_ready {
-            t!("Downloading umu-launcher & winetricks… Please wait before starting games.")
+            gettext("Downloading umu-launcher & winetricks… Please wait before starting games.")
         } else if !umu_ready {
-            t!("Downloading umu-launcher… Please wait before starting games.")
+            gettext("Downloading umu-launcher… Please wait before starting games.")
         } else {
-            t!("Downloading winetricks…")
+            gettext("Downloading winetricks…")
         };
         banner.set_title(&title);
     }

@@ -51,8 +51,8 @@ binary after the games end. An install from before the application id changed to
 `io.github.sachesi.leyen` leaves files under the old id; `install` removes them.
 
 The D-Bus service file gets the real path to `leyend`, so a custom prefix works as long as
-its `share` directory is in `XDG_DATA_DIRS` (`/usr/local/share` and `~/.local/share` are on
-most systems).
+the session bus looks in its `share` directory: `~/.local/share` always, as the data home,
+and any other when it is in `XDG_DATA_DIRS`, as `/usr/local/share` is on most systems.
 
 ## Remove
 

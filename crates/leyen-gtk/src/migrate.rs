@@ -2,7 +2,8 @@
 //! `io.github.sachesi.leyen`. Managed icons carry the id in their file names and
 //! the menu entries Leyen wrote name those icons, or the application icon, in
 //! their `Icon=` line; both are brought over to the new id. Safe to run on every
-//! start: once nothing carries the old id it only lists two directories.
+//! start: once nothing carries the old id it lists the icons and reads the menu
+//! entries Leyen wrote, and changes nothing.
 
 use std::fs;
 

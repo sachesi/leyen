@@ -20,8 +20,8 @@ instead, and Leyen uses the ones in `PATH`.
 ## "Leyen's daemon is not running and could not be started"
 
 The window starts `leyend` through D-Bus activation, which needs the service file
-`just install` puts in `share/dbus-1/services`. With a custom prefix, its `share` directory
-has to be in `XDG_DATA_DIRS`. An uninstalled build can also run `target/debug/leyend` by
+`just install` puts in `share/dbus-1/services`. With a custom prefix other than `~/.local`, its
+`share` directory has to be in `XDG_DATA_DIRS`. An uninstalled build can also run `target/debug/leyend` by
 hand.
 
 ## A game is missing from the Proton list

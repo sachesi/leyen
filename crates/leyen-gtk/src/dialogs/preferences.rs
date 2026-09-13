@@ -181,11 +181,19 @@ impl PreferencesDialog {
         }
     }
 
-    async fn reset_runtime(&self) {
-        if !daemon::running_games_snapshot().await.is_empty() {
+    /// Refuses with a toast while a game runs: the runtime is in use then.
+    async fn refuse_while_games_run(&self) -> bool {
+        let running = !daemon::running_games_snapshot().await.is_empty();
+        if running {
             self.add_toast(adw::Toast::new(&gettext(
                 "Cannot reset runtime while games are running. Close all games first.",
             )));
+        }
+        running
+    }
+
+    async fn reset_runtime(&self) {
+        if self.refuse_while_games_run().await {
             return;
         }
 
@@ -201,7 +209,9 @@ impl PreferencesDialog {
         confirm.set_response_appearance("reset", adw::ResponseAppearance::Destructive);
         confirm.set_default_response(Some("cancel"));
         confirm.set_close_response("cancel");
-        if confirm.choose_future(Some(self)).await != "reset" {
+        // Checked again: a game can be started from its menu entry meanwhile.
+        if confirm.choose_future(Some(self)).await != "reset" || self.refuse_while_games_run().await
+        {
             return;
         }
 

@@ -128,7 +128,7 @@ install:
     if [ -z "{{destdir}}" ]; then
         $sudo update-desktop-database -q {{datadir}}/applications || true
         $sudo gtk4-update-icon-cache -qtf {{datadir}}/icons/hicolor || $sudo gtk-update-icon-cache -qtf {{datadir}}/icons/hicolor || true
-        just _restart-daemon
+        just _stop-idle-daemon
     fi
     echo "installed to {{prefix}}"
 
@@ -139,30 +139,36 @@ uninstall:
     dir="{{destdir}}{{prefix}}"
     while [ ! -e "$dir" ]; do dir=$(dirname "$dir"); done
     sudo=""; [ -w "$dir" ] || sudo=sudo
-    pkill -x leyend 2>/dev/null || true
     $sudo rm -f {{bindir}}/leyen {{bindir}}/leyend {{bindir}}/leyen-gtk
     $sudo rm -f {{datadir}}/applications/{{app_id}}.desktop {{datadir}}/metainfo/{{app_id}}.metainfo.xml
     $sudo rm -f {{datadir}}/dbus-1/services/{{app_id}}.Daemon.service
     $sudo rm -f {{datadir}}/icons/hicolor/scalable/apps/{{app_id}}.svg {{datadir}}/icons/hicolor/symbolic/apps/{{app_id}}-symbolic.svg
     $sudo rm -f {{datadir}}/bash-completion/completions/leyen {{datadir}}/fish/vendor_completions.d/leyen.fish {{datadir}}/zsh/site-functions/_leyen
     for lang in $(cat po/LINGUAS); do $sudo rm -f {{datadir}}/locale/$lang/LC_MESSAGES/leyen.mo; done
-    $sudo update-desktop-database -q {{datadir}}/applications || true
+    if [ -z "{{destdir}}" ]; then
+        $sudo update-desktop-database -q {{datadir}}/applications || true
+        $sudo gtk4-update-icon-cache -qtf {{datadir}}/icons/hicolor || $sudo gtk-update-icon-cache -qtf {{datadir}}/icons/hicolor || true
+        just _stop-idle-daemon
+    fi
     echo "removed from {{prefix}}; ~/.config/leyen and ~/.local/share/leyen are kept"
 
-# Stop the running daemon so the next call starts the new binary, unless it is tracking
-# games: stopping it then loses their final playtime. A daemon of an install from before
-# the id change answers on the old name.
-_restart-daemon:
+# Stop the running daemon, so the next call starts the installed binary, unless it is
+# tracking games or cannot say: stopping it then loses their final playtime. A daemon of
+# an install from before the id change answers on the old name.
+_stop-idle-daemon:
     #!/usr/bin/env bash
     set -euo pipefail
     if ! command -v busctl >/dev/null; then pkill -x leyend || true; exit 0; fi
     for id in {{app_id}} com.github.sachesi.leyen; do
-        busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner s "$id.Daemon" 2>/dev/null | grep -q true || continue
-        games=$(busctl --user call "$id.Daemon" "/${id//.//}" "$id.Manager" GetRunningGames 2>/dev/null || echo "a(ssttt) 0")
+        busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus NameHasOwner s "$id.Daemon" 2>/dev/null | grep -q true || continue
+        if ! games=$(busctl --user call "$id.Daemon" "/${id//.//}" "$id.Manager" GetRunningGames 2>/dev/null); then
+            echo "warning: the daemon did not say what is running; it is left running until it exits by itself" >&2
+            exit 0
+        fi
         # The exact empty reply: a suffix match would take a game whose pid count is 0
         # for no game at all.
         if [ "$games" != "a(ssttt) 0" ]; then
-            echo "warning: games are running; the daemon keeps running the old binary until they end" >&2
+            echo "warning: games are running; the daemon keeps running until they end" >&2
             exit 0
         fi
     done

@@ -2,8 +2,8 @@
 Name=Leyen
 Comment=Wine/Proton game manager using umu-launcher
 Exec=leyen-gtk
-Icon=com.github.sachesi.leyen
-StartupWMClass=com.github.sachesi.leyen
+Icon=io.github.sachesi.leyen
+StartupWMClass=io.github.sachesi.leyen
 Terminal=false
 Type=Application
 Categories=Game;

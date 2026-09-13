@@ -15,4 +15,4 @@ pub mod settings;
 pub mod tools;
 
 /// Application / D-Bus well-known name root and icon/app id.
-pub const APP_ID: &str = "com.github.sachesi.leyen";
+pub const APP_ID: &str = "io.github.sachesi.leyen";

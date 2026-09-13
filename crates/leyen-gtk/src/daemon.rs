@@ -374,7 +374,7 @@ async fn save_library_versioned(
         Ok(Err(e)) => {
             log::error!("SaveLibrary failed: {e}");
             if let zbus::Error::MethodError(name, _, _) = &e
-                && name.as_str() == "com.github.sachesi.leyen.Error.StaleLibraryVersion"
+                && name.as_str() == "io.github.sachesi.leyen.Error.StaleLibraryVersion"
             {
                 match tokio::time::timeout(QUERY_TIMEOUT, proxy.get_library_version()).await {
                     Ok(Ok(version)) => LIBRARY_VERSION.store(version, Ordering::SeqCst),

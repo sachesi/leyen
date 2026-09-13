@@ -540,7 +540,7 @@ pub fn build_ui(app: &adw::Application) {
     about_action.connect_activate(move |_, _| {
         let about = adw::AboutWindow::builder()
             .application_name("Leyen")
-            .application_icon("com.github.sachesi.leyen")
+            .application_icon("io.github.sachesi.leyen")
             .version(env!("CARGO_PKG_VERSION"))
             .developer_name("sachesi")
             .website("https://github.com/sachesi/leyen")

@@ -12,6 +12,7 @@ use libadwaita as adw;
 mod daemon;
 mod desktop;
 mod icons;
+mod migrate;
 mod prefix_tools;
 mod ui;
 
@@ -21,6 +22,8 @@ const APP_ID: &str = leyen_model::APP_ID;
 
 fn main() -> glib::ExitCode {
     leyen_model::i18n::init();
+    // Before the main loop, so the library never looks for an icon mid-rename.
+    migrate::migrate_legacy_app_id();
 
     // Start the D-Bus bridge before the UI so early signals queue rather than drop.
     let evt_rx = Rc::new(RefCell::new(Some(daemon::start())));

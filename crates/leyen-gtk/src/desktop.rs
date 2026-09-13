@@ -198,6 +198,27 @@ fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
     result
 }
 
+/// Every menu entry Leyen wrote, whichever game it launches.
+pub fn owned_desktop_entry_paths() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(applications_dir_path()) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
+                && fs::read_to_string(path).is_ok_and(|content| {
+                    content
+                        .lines()
+                        .any(|line| line.trim().starts_with("Exec=leyen run "))
+                })
+        })
+        .collect()
+}
+
 fn content_owns_leyen_id(content: &str, leyen_id: &str) -> bool {
     let exec_line = format!("Exec=leyen run {}", leyen_id.trim());
     content.lines().any(|line| line.trim() == exec_line)

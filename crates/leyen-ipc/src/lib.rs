@@ -2,18 +2,18 @@
 //! trait. The daemon implements the matching `#[zbus::interface]`; clients (CLI,
 //! GTK, and future Qt/COSMIC frontends) use the generated `LeyenProxy`.
 //!
-//! Bus name `com.github.sachesi.leyen`, object path `/com/github/sachesi/leyen`,
-//! interface `com.github.sachesi.leyen.Manager`, on the **session** bus.
+//! Bus name `io.github.sachesi.leyen`, object path `/io/github/sachesi/leyen`,
+//! interface `io.github.sachesi.leyen.Manager`, on the **session** bus.
 
 use serde::{Deserialize, Serialize};
 use zvariant::Type;
 
 /// Errors the daemon returns from method calls, carried as D-Bus errors
-/// (`com.github.sachesi.leyen.Error.*`) so every client sees the reason instead
+/// (`io.github.sachesi.leyen.Error.*`) so every client sees the reason instead
 /// of a defaulted value. `StaleLibraryVersion` is matched by name on the client
 /// side to drive the reload-and-retry flow.
 #[derive(Debug, zbus::DBusError)]
-#[zbus(prefix = "com.github.sachesi.leyen.Error")]
+#[zbus(prefix = "io.github.sachesi.leyen.Error")]
 pub enum Error {
     #[zbus(error)]
     ZBus(zbus::Error),
@@ -25,11 +25,11 @@ pub enum Error {
 }
 
 /// The daemon's well-known bus name. Distinct from the GUI's GApplication id
-/// (`com.github.sachesi.leyen`), which registers its own session-bus name for
+/// (`io.github.sachesi.leyen`), which registers its own session-bus name for
 /// single-instance — they must not collide.
-pub const BUS_NAME: &str = "com.github.sachesi.leyen.Daemon";
-pub const OBJECT_PATH: &str = "/com/github/sachesi/leyen";
-pub const INTERFACE: &str = "com.github.sachesi.leyen.Manager";
+pub const BUS_NAME: &str = "io.github.sachesi.leyen.Daemon";
+pub const OBJECT_PATH: &str = "/io/github/sachesi/leyen";
+pub const INTERFACE: &str = "io.github.sachesi.leyen.Manager";
 
 /// A running game as seen by the daemon's single monitor. Wire signature
 /// `(ssttt)`. `elapsed` is derived client-side from `started_at_epoch_seconds`
@@ -71,9 +71,9 @@ pub struct DepStatus {
 }
 
 #[zbus::proxy(
-    interface = "com.github.sachesi.leyen.Manager",
-    default_service = "com.github.sachesi.leyen.Daemon",
-    default_path = "/com/github/sachesi/leyen"
+    interface = "io.github.sachesi.leyen.Manager",
+    default_service = "io.github.sachesi.leyen.Daemon",
+    default_path = "/io/github/sachesi/leyen"
 )]
 pub trait Leyen {
     /// Launch a game by its `ly-XXXX` id. Errors carry the failure reason

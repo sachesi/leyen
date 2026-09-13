@@ -14,7 +14,7 @@ use directories::ProjectDirs;
 use uuid::Uuid;
 
 pub fn get_project_dirs() -> Option<ProjectDirs> {
-    ProjectDirs::from("com.github.sachesi", "leyen", "leyen")
+    ProjectDirs::from("io.github.sachesi", "leyen", "leyen")
 }
 
 /// `$HOME`, falling back to `/tmp` when even that isn't set — mirrors

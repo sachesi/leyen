@@ -9,7 +9,7 @@
 prefix := env("PREFIX", "/usr")
 bindir := prefix / "bin"
 sharedir := prefix / "share"
-app_id := "com.github.sachesi.leyen"
+app_id := "io.github.sachesi.leyen"
 sudo := if `id -u` == "0" { "" } else { "sudo" }
 
 default:
@@ -45,7 +45,7 @@ smoke: build
     sleep 1.5
     mgr={{ app_id }}.Manager
     dest={{ app_id }}.Daemon
-    path=/com/github/sachesi/leyen
+    path=/io/github/sachesi/leyen
     gdbus call --session --dest "$dest" --object-path "$path" --method "$mgr.GetRunningGames"
     gdbus call --session --dest "$dest" --object-path "$path" --method "$mgr.GetRuntimeStatus"
     gdbus call --session --dest "$dest" --object-path "$path" --method "$mgr.GetLogs" 0 >/dev/null
@@ -79,25 +79,29 @@ install:
         lang=$(basename "$(dirname "$(dirname "$mo")")")
         {{ sudo }} install -Dm644 "$mo" "{{ sharedir }}/locale/$lang/LC_MESSAGES/leyen.mo"
     done
-    # Stop a running daemon so the next D-Bus call activates the new binary.
-    # Before killing, check if any games are running to avoid orphaning sessions.
+    # Files of installs made under the old com.github application id.
+    {{ sudo }} rm -f "{{ sharedir }}/applications/com.github.sachesi.leyen.desktop" \
+        "{{ sharedir }}/icons/hicolor/scalable/apps/com.github.sachesi.leyen.svg" \
+        "{{ sharedir }}/icons/hicolor/symbolic/apps/com.github.sachesi.leyen-symbolic.svg" \
+        "{{ sharedir }}/dbus-1/services/com.github.sachesi.leyen.Daemon.service"
+    # Stop a running daemon so the next D-Bus call activates the new binary,
+    # unless it is tracking games: killing it then loses their final playtime.
+    # A daemon of an install from before the id change answers on the old name.
     if command -v busctl >/dev/null 2>&1; then
-        daemon_bus_name="com.github.sachesi.leyen.Daemon"
-        if busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner s "$daemon_bus_name" 2>/dev/null | grep -q "true"; then
-            # Daemon is running on D-Bus; query its running games.
-            games_output=$(busctl --user call "$daemon_bus_name" /com/github/sachesi/leyen com.github.sachesi.leyen.Manager GetRunningGames 2>/dev/null || echo "a(ssttt) 0")
-            # Exact empty-array reply only: a suffix match would false-positive on
-            # a running game whose last field (pid count) happens to be 0.
-            if [ "$games_output" = "a(ssttt) 0" ]; then
-                # No games running; safe to kill the daemon.
-                pkill -x leyend 2>/dev/null || true
-            else
-                # Games are running; warn user and skip the kill.
-                echo "warning: active game sessions detected. Daemon will not be killed to avoid losing final playtime updates." >&2
-                echo "Re-run 'just install' after games are closed, or kill/restart manually." >&2
+        busy=0
+        for id in io.github.sachesi.leyen com.github.sachesi.leyen; do
+            path="/${id//.//}"
+            if busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner s "$id.Daemon" 2>/dev/null | grep -q "true"; then
+                games_output=$(busctl --user call "$id.Daemon" "$path" "$id.Manager" GetRunningGames 2>/dev/null || echo "a(ssttt) 0")
+                # Exact empty-array reply only: a suffix match would false-positive on
+                # a running game whose last field (pid count) happens to be 0.
+                [ "$games_output" = "a(ssttt) 0" ] || busy=1
             fi
+        done
+        if [ "$busy" = 1 ]; then
+            echo "warning: active game sessions detected. Daemon will not be killed to avoid losing final playtime updates." >&2
+            echo "Re-run 'just install' after games are closed, or kill/restart manually." >&2
         else
-            # Daemon name has no owner; nothing to kill anyway, but pkill for safety.
             pkill -x leyend 2>/dev/null || true
         fi
     else

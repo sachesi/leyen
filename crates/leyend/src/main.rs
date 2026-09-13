@@ -1,7 +1,7 @@
 //! `leyend` — the Leyen daemon. Sole owner of systemd scopes, the single
 //! running-session monitor, the running-state registry, game-output capture +
 //! log ring buffer, the dependency engine, runtime installation, and library
-//! writes. Exposes `com.github.sachesi.leyen` on the session bus; clients are
+//! writes. Exposes `io.github.sachesi.leyen` on the session bus; clients are
 //! thin. D-Bus-activated, singleton via bus-name ownership, idle-exits when no
 //! game is running and no request has arrived recently.
 
@@ -142,7 +142,7 @@ async fn current_runtime_readiness() -> RuntimeReadiness {
     }
 }
 
-#[zbus::interface(name = "com.github.sachesi.leyen.Manager")]
+#[zbus::interface(name = "io.github.sachesi.leyen.Manager")]
 impl Manager {
     async fn launch_game(&self, leyen_id: &str) -> Result<(), leyen_ipc::Error> {
         let _work = ActivityGuard::new();

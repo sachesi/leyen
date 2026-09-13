@@ -851,7 +851,7 @@ mod tests {
 
         assert!(game_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
         assert!(group_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
-        assert!(game_rendered.ends_with("com.github.sachesi.leyen.game-game-1.png"));
-        assert!(group_rendered.ends_with("com.github.sachesi.leyen.group-group-1.png"));
+        assert!(game_rendered.ends_with("io.github.sachesi.leyen.game-game-1.png"));
+        assert!(group_rendered.ends_with("io.github.sachesi.leyen.group-group-1.png"));
     }
 }

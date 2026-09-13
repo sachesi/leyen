@@ -17,12 +17,12 @@ use thiserror::Error;
 use crate::config::{
     add_game_playtime, load_library, record_game_launch_result, record_game_launch_start,
 };
-use crate::runtime::proton::resolve_proton_path;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
 use crate::tools::{gamemode_available, join_err, mangohud_available};
 use leyen_model::library::{effective_game_id, find_game_and_group};
 use leyen_model::models::{Game, GameGroup};
 use leyen_model::paths::get_config_dir;
+use leyen_model::runtime::resolve_proton_path;
 
 #[derive(Debug, Clone)]
 pub struct LaunchReport {

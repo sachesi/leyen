@@ -3,8 +3,11 @@ name = "leyen-gtk"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Leyen's window, in GTK 4 and libadwaita"
 
 [[bin]]
 name = "leyen-gtk"

@@ -3,8 +3,11 @@ name = "leyend"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Leyen's daemon: launches and tracks games for the window and the command line"
 
 [[bin]]
 name = "leyend"

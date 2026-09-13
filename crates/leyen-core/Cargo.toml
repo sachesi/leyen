@@ -3,8 +3,11 @@ name = "leyen-core"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Leyen's engine: launching and tracking games, the runtimes and winetricks dependencies"
 
 [dependencies]
 leyen-model.workspace = true

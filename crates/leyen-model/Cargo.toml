@@ -3,8 +3,11 @@ name = "leyen-model"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
+description = "Leyen's shared data: the library, the settings, the dependency catalogue and where files live"
 
 [dependencies]
 serde.workspace = true

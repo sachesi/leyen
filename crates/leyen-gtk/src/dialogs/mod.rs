@@ -175,6 +175,39 @@ async fn apply_group_icon(group_id: String, custom_icon: Option<String>) -> Resu
     .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
+/// A managed icon as it was before a save wrote a new one, put back when the save
+/// does not go through: the icon of an edited game or group stays what it was, and a
+/// new one leaves no file behind.
+struct IconBackup {
+    path: PathBuf,
+    bytes: Option<Vec<u8>>,
+}
+
+impl IconBackup {
+    async fn take(path: PathBuf) -> Self {
+        let read = path.clone();
+        let bytes = gio_blocking(move || std::fs::read(read).ok())
+            .await
+            .flatten();
+        Self { path, bytes }
+    }
+
+    async fn restore(self) {
+        let Self { path, bytes } = self;
+        let restored = gio_blocking(move || match bytes {
+            Some(bytes) => leyen_model::paths::atomic_write_bytes(&path, &bytes),
+            None => match std::fs::remove_file(&path) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+                _ => Ok(()),
+            },
+        })
+        .await;
+        if let Some(Err(err)) = restored {
+            log::warn!("Failed to put the previous icon back: {err}");
+        }
+    }
+}
+
 /// Keeps a prefix row in step with its "Custom Prefix" switch and the title:
 /// switching it off remembers what was typed, switching it on brings that back or
 /// suggests a folder named after the title, and a suggestion follows the title
@@ -219,5 +252,42 @@ impl PrefixSuggestion {
             prefix_row.set_text(&suggestion);
         }
         self.suggested = suggestion;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IconBackup;
+    use gtk4::glib;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("leyen-icon-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    #[test]
+    fn a_failed_save_puts_the_previous_icon_back() {
+        let path = scratch("edited.png");
+        std::fs::write(&path, b"old").unwrap();
+        glib::MainContext::new().block_on(async {
+            let backup = IconBackup::take(path.clone()).await;
+            std::fs::write(&path, b"new").unwrap();
+            backup.restore().await;
+        });
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_failed_save_leaves_no_new_icon_behind() {
+        let path = scratch("added.png");
+        let _ = std::fs::remove_file(&path);
+        glib::MainContext::new().block_on(async {
+            let backup = IconBackup::take(path.clone()).await;
+            std::fs::write(&path, b"new").unwrap();
+            backup.restore().await;
+        });
+        assert!(!path.exists());
     }
 }

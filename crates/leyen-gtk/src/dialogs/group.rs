@@ -14,12 +14,12 @@ use libadwaita as adw;
 
 use super::prefix_tools_group::managed_by_preferences;
 use super::{
-    PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_group_icon,
+    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_group_icon,
     choose_file_into, choose_folder_into, image_filter, proton_exists,
 };
 use crate::daemon::{self, gio_blocking};
 use crate::desktop::update_group_desktop_entries_if_present;
-use crate::icons::group_icon_file;
+use crate::icons::{group_icon_file, group_icon_path};
 use crate::window::LeyenWindow;
 
 mod imp {
@@ -308,6 +308,7 @@ impl GroupDialog {
             .custom_icon_row
             .enables_expansion()
             .then(|| imp.icon_row.text().to_string());
+        let icon_backup = IconBackup::take(group_icon_path(&group_id)).await;
         if let Err(err) = apply_group_icon(group_id.clone(), custom_icon).await {
             self.toast(&err);
             return None;
@@ -323,6 +324,7 @@ impl GroupDialog {
         };
         if original.is_some() {
             if !replace_group(&mut items, &group_id, title, defaults) {
+                icon_backup.restore().await;
                 self.toast(&gettext("Error: Group not found"));
                 return None;
             }
@@ -337,6 +339,7 @@ impl GroupDialog {
 
         let updated = find_group(&items, &group_id).cloned();
         if let Err(reason) = daemon::save_library(items).await {
+            icon_backup.restore().await;
             self.toast(&reason);
             if let Some(window) = imp.window.upgrade() {
                 window.refresh();

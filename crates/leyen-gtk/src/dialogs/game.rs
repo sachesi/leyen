@@ -17,7 +17,7 @@ use libadwaita as adw;
 
 use super::prefix_tools_group::managed_by_preferences;
 use super::{
-    PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_game_icon,
+    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_game_icon,
     choose_file_into, choose_folder_into, image_filter, proton_exists, windows_programs_filter,
 };
 use crate::daemon::{self, gio_blocking};
@@ -25,7 +25,7 @@ use crate::desktop::{
     create_game_desktop_entry, desktop_entry_exists, remove_game_desktop_entry,
     update_game_desktop_entry_if_present,
 };
-use crate::icons::{clear_game_icon, game_icon_file};
+use crate::icons::{game_icon_file, game_icon_path};
 use crate::window::LeyenWindow;
 
 mod imp {
@@ -555,6 +555,7 @@ impl GameDialog {
             .map_or_else(|| uuid::Uuid::new_v4().to_string(), |game| game.id.clone());
 
         let custom_icon = imp.custom_icon_row.enables_expansion();
+        let icon_backup = IconBackup::take(game_icon_path(&game_id)).await;
         let icon_notice = match apply_game_icon(
             game_id.clone(),
             exe.clone(),
@@ -614,19 +615,21 @@ impl GameDialog {
         let mut notices: Vec<String> = icon_notice.into_iter().collect();
         if original.is_some() {
             if !replace_game(&mut items, &game) {
+                icon_backup.restore().await;
                 self.toast(&gettext("Error: Game not found"));
                 return None;
             }
         } else {
             let group_id = group.as_ref().map(|group| group.id.as_str());
             if !insert_game(&mut items, group_id, game.clone()) {
-                let _ = gio_blocking(move || clear_game_icon(&game_id)).await;
+                icon_backup.restore().await;
                 self.toast(&gettext("Failed to add game to the selected group"));
                 return None;
             }
         }
 
         if let Err(reason) = daemon::save_library(items).await {
+            icon_backup.restore().await;
             self.toast(&reason);
             if let Some(window) = imp.window.upgrade() {
                 window.refresh();

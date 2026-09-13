@@ -47,7 +47,8 @@ it or adds it again; the entry runs `leyen run <Leyen ID>` and is named after th
 after its group and the game. Renaming a game or its group updates the entry.
 
 Deleting a game deletes its playtime with it. Deleting a group deletes its games too, and
-the alert says how many.
+the alert says how many. A game that is running cannot be deleted, nor a group with a game
+running: stop it first.
 
 ## Groups
 

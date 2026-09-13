@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 22:01+0300\n"
+"POT-Creation-Date: 2026-09-13 22:02+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -292,7 +292,7 @@ msgstr "Вилучити «{}»?"
 
 #: crates/leyen-gtk/src/dialogs/dependencies.rs:357
 #: crates/leyen-gtk/src/dialogs/preferences.rs:200
-#: crates/leyen-gtk/src/window.rs:679 ui/dependency_row.ui:41
+#: crates/leyen-gtk/src/window.rs:728 ui/dependency_row.ui:41
 #: ui/game_dialog.ui:28 ui/group_dialog.ui:28
 #, no-c-format
 msgid "Cancel"
@@ -407,7 +407,7 @@ msgstr "Не вдалося створити пункт меню: {}"
 msgid "Removed from menu"
 msgstr "Вилучено з меню"
 
-#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:701
+#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:753
 #, no-c-format
 msgid "Failed to remove menu entry: {}"
 msgstr "Не вдалося вилучити пункт меню: {}"
@@ -826,12 +826,44 @@ msgstr ""
 msgid "Downloading umu-launcher… Please wait before starting games."
 msgstr "Завантаження umu-launcher… Зачекайте, перш ніж запускати ігри."
 
-#: crates/leyen-gtk/src/window.rs:654
+#. Translators: the title of the game.
+#: crates/leyen-gtk/src/window.rs:660
+#, no-c-format
+msgid "“{}” Is Running"
+msgstr "«{}» запущено"
+
+#: crates/leyen-gtk/src/window.rs:661
+#, no-c-format
+msgid "Stop the game before deleting it."
+msgstr "Зупиніть гру, перш ніж її видаляти."
+
+#: crates/leyen-gtk/src/window.rs:675
+#, no-c-format
+msgid "A Game in “{}” Is Running"
+msgid_plural "Games in “{}” Are Running"
+msgstr[0] "У групі «{}» запущено гру"
+msgstr[1] "У групі «{}» запущено ігри"
+msgstr[2] "У групі «{}» запущено ігри"
+
+#: crates/leyen-gtk/src/window.rs:681
+#, no-c-format
+msgid "Stop it before deleting the group."
+msgid_plural "Stop them before deleting the group."
+msgstr[0] "Зупиніть її, перш ніж видаляти групу."
+msgstr[1] "Зупиніть їх, перш ніж видаляти групу."
+msgstr[2] "Зупиніть їх, перш ніж видаляти групу."
+
+#: crates/leyen-gtk/src/window.rs:690
+#, no-c-format
+msgid "OK"
+msgstr "Гаразд"
+
+#: crates/leyen-gtk/src/window.rs:703
 #, no-c-format
 msgid "Its playtime goes with it."
 msgstr "Разом із нею буде видалено й ігровий час."
 
-#: crates/leyen-gtk/src/window.rs:660
+#: crates/leyen-gtk/src/window.rs:709
 #, no-c-format
 msgid "Its {} game and their playtime go with it."
 msgid_plural "Its {} games and their playtime go with it."
@@ -839,33 +871,33 @@ msgstr[0] "Разом із нею буде видалено {} гру та її 
 msgstr[1] "Разом із нею буде видалено {} гри та їхній ігровий час."
 msgstr[2] "Разом із нею буде видалено {} ігор та їхній ігровий час."
 
-#: crates/leyen-gtk/src/window.rs:670
+#: crates/leyen-gtk/src/window.rs:719
 #, no-c-format
 msgid "This cannot be undone."
 msgstr "Цю дію не можна скасувати."
 
 #. Translators: the title of the game or group about to be deleted.
-#: crates/leyen-gtk/src/window.rs:676
+#: crates/leyen-gtk/src/window.rs:725
 #, no-c-format
 msgid "Delete “{}”?"
 msgstr "Видалити «{}»?"
 
-#: crates/leyen-gtk/src/window.rs:680
+#: crates/leyen-gtk/src/window.rs:729
 #, no-c-format
 msgid "Delete"
 msgstr "Видалити"
 
-#: crates/leyen-gtk/src/window.rs:712
+#: crates/leyen-gtk/src/window.rs:764
 #, no-c-format
 msgid "Failed to remove a menu entry: {}"
 msgstr "Не вдалося вилучити пункт меню: {}"
 
-#: crates/leyen-gtk/src/window.rs:730
+#: crates/leyen-gtk/src/window.rs:782
 #, no-c-format
 msgid "'{}' deleted successfully. {}"
 msgstr "«{}» успішно видалено. {}"
 
-#: crates/leyen-gtk/src/window.rs:733
+#: crates/leyen-gtk/src/window.rs:785
 #, no-c-format
 msgid "'{}' deleted successfully"
 msgstr "«{}» успішно видалено"

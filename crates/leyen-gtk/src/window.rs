@@ -646,7 +646,56 @@ impl LeyenWindow {
             })
     }
 
+    /// Refuses to delete a running game, or a group with one, with a dialog saying so:
+    /// once gone from the library a game could no longer be stopped.
+    async fn refuse_delete_if_running(&self, item_id: &str) -> bool {
+        let running = daemon::running_games_snapshot().await;
+        let is_running = |id: &str| running.iter().any(|snapshot| snapshot.game_id == id);
+        let (heading, body) = if let Some((game, _)) = self.find_game(item_id) {
+            if !is_running(&game.id) {
+                return false;
+            }
+            (
+                // Translators: the title of the game.
+                gettext("“{}” Is Running").replacen("{}", &game.title, 1),
+                gettext("Stop the game before deleting it."),
+            )
+        } else if let Some(group) = find_group(&self.imp().library.borrow(), item_id) {
+            let count = group
+                .games
+                .iter()
+                .filter(|game| is_running(&game.id))
+                .count() as u32;
+            if count == 0 {
+                return false;
+            }
+            (
+                // Translators: the title of the group.
+                ngettext(
+                    "A Game in “{}” Is Running",
+                    "Games in “{}” Are Running",
+                    count,
+                )
+                .replacen("{}", &group.title, 1),
+                ngettext(
+                    "Stop it before deleting the group.",
+                    "Stop them before deleting the group.",
+                    count,
+                ),
+            )
+        } else {
+            return false;
+        };
+        let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
+        dialog.add_response("close", &gettext("OK"));
+        dialog.choose_future(Some(self)).await;
+        true
+    }
+
     async fn confirm_delete(&self, item_id: &str) {
+        if self.refuse_delete_if_running(item_id).await {
+            return;
+        }
         let (title, body) = match (
             self.find_game(item_id),
             find_group(&self.imp().library.borrow(), item_id),
@@ -682,7 +731,10 @@ impl LeyenWindow {
         dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
         dialog.set_default_response(Some("cancel"));
         dialog.set_close_response("cancel");
-        if dialog.choose_future(Some(self)).await != "delete" {
+        // Checked again: the game can be started from its menu entry meanwhile.
+        if dialog.choose_future(Some(self)).await != "delete"
+            || self.refuse_delete_if_running(item_id).await
+        {
             return;
         }
 

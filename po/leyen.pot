@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 22:01+0300\n"
+"POT-Creation-Date: 2026-09-13 22:02+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -284,7 +284,7 @@ msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/dependencies.rs:357
 #: crates/leyen-gtk/src/dialogs/preferences.rs:200
-#: crates/leyen-gtk/src/window.rs:679 ui/dependency_row.ui:41
+#: crates/leyen-gtk/src/window.rs:728 ui/dependency_row.ui:41
 #: ui/game_dialog.ui:28 ui/group_dialog.ui:28
 #, no-c-format
 msgid "Cancel"
@@ -397,7 +397,7 @@ msgstr ""
 msgid "Removed from menu"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:701
+#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:753
 #, no-c-format
 msgid "Failed to remove menu entry: {}"
 msgstr ""
@@ -799,45 +799,75 @@ msgstr ""
 msgid "Downloading umu-launcher… Please wait before starting games."
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:654
+#. Translators: the title of the game.
+#: crates/leyen-gtk/src/window.rs:660
+#, no-c-format
+msgid "“{}” Is Running"
+msgstr ""
+
+#: crates/leyen-gtk/src/window.rs:661
+#, no-c-format
+msgid "Stop the game before deleting it."
+msgstr ""
+
+#: crates/leyen-gtk/src/window.rs:675
+#, no-c-format
+msgid "A Game in “{}” Is Running"
+msgid_plural "Games in “{}” Are Running"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/leyen-gtk/src/window.rs:681
+#, no-c-format
+msgid "Stop it before deleting the group."
+msgid_plural "Stop them before deleting the group."
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/leyen-gtk/src/window.rs:690
+#, no-c-format
+msgid "OK"
+msgstr ""
+
+#: crates/leyen-gtk/src/window.rs:703
 #, no-c-format
 msgid "Its playtime goes with it."
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:660
+#: crates/leyen-gtk/src/window.rs:709
 #, no-c-format
 msgid "Its {} game and their playtime go with it."
 msgid_plural "Its {} games and their playtime go with it."
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/leyen-gtk/src/window.rs:670
+#: crates/leyen-gtk/src/window.rs:719
 #, no-c-format
 msgid "This cannot be undone."
 msgstr ""
 
 #. Translators: the title of the game or group about to be deleted.
-#: crates/leyen-gtk/src/window.rs:676
+#: crates/leyen-gtk/src/window.rs:725
 #, no-c-format
 msgid "Delete “{}”?"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:680
+#: crates/leyen-gtk/src/window.rs:729
 #, no-c-format
 msgid "Delete"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:712
+#: crates/leyen-gtk/src/window.rs:764
 #, no-c-format
 msgid "Failed to remove a menu entry: {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:730
+#: crates/leyen-gtk/src/window.rs:782
 #, no-c-format
 msgid "'{}' deleted successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:733
+#: crates/leyen-gtk/src/window.rs:785
 #, no-c-format
 msgid "'{}' deleted successfully"
 msgstr ""

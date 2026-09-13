@@ -1,3 +1,4 @@
+use leyen_model::i18n::gettext;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -94,22 +95,24 @@ fn icon_decode_limits() -> image::Limits {
 
 fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
     if source.as_os_str().is_empty() {
-        return Err("Custom icon path is required".to_string());
+        return Err(gettext("Custom icon file is required"));
     }
 
-    let mut reader = image::ImageReader::open(source)
-        .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
+    let unreadable = |err: &dyn std::fmt::Display| {
+        gettext("Cannot read the icon “{}”: {}")
+            .replacen("{}", &source.display().to_string(), 1)
+            .replacen("{}", &err.to_string(), 1)
+    };
+    let mut reader = image::ImageReader::open(source).map_err(|err| unreadable(&err))?;
     reader.limits(icon_decode_limits());
-    let image = reader
-        .decode()
-        .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
+    let image = reader.decode().map_err(|err| unreadable(&err))?;
     let normalized = image.resize(MANAGED_ICON_SIZE, MANAGED_ICON_SIZE, FilterType::CatmullRom);
 
     save_png_atomically(&normalized, target).map_err(|err| {
-        format!(
-            "Failed to write managed icon '{}': {}",
-            target.display(),
-            err
+        gettext("Cannot save the icon: {}").replacen(
+            "{}",
+            &format!("{}: {err}", target.display()),
+            1,
         )
     })
 }
@@ -117,11 +120,7 @@ fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
 fn ensure_icons_dir() -> Result<PathBuf, String> {
     let path = managed_icons_dir_path();
     fs::create_dir_all(&path).map_err(|err| {
-        format!(
-            "Failed to create managed icon directory '{}': {}",
-            path.display(),
-            err
-        )
+        gettext("Cannot save the icon: {}").replacen("{}", &format!("{}: {err}", path.display()), 1)
     })?;
     Ok(path)
 }

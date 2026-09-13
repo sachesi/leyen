@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 20:53+0300\n"
+"POT-Creation-Date: 2026-09-13 21:00+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -107,7 +107,7 @@ msgstr ""
 msgid "winetricks is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1249 crates/leyen-gtk/src/window.rs:472
+#: crates/leyen-core/src/deps/engine.rs:1249 crates/leyen-gtk/src/window.rs:473
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr ""
@@ -144,7 +144,6 @@ msgid "Prefix is already in use. Launching with shared-container fallback."
 msgstr ""
 
 #: crates/leyen-core/src/launch.rs:1885 crates/leyen-core/src/launch.rs:2112
-#: crates/leyen-gtk/src/playback.rs:54
 #, no-c-format
 msgid "Launching {}..."
 msgstr ""
@@ -167,6 +166,37 @@ msgstr ""
 msgid "translator-credits"
 msgstr ""
 
+#: crates/leyen-gtk/src/daemon.rs:115
+#, no-c-format
+msgid "Leyen's daemon is not running and could not be started"
+msgstr ""
+
+#: crates/leyen-gtk/src/daemon.rs:119
+#, no-c-format
+msgid "Leyen's daemon did not answer in time"
+msgstr ""
+
+#: crates/leyen-gtk/src/daemon.rs:190
+#, no-c-format
+msgid ""
+"Cannot reach the session bus; daemon features unavailable until it returns"
+msgstr ""
+
+#: crates/leyen-gtk/src/daemon.rs:562
+#, no-c-format
+msgid ""
+"Lost the daemon's {} updates; restart Leyen if the view stops refreshing"
+msgstr ""
+
+#: crates/leyen-gtk/src/daemon.rs:592 crates/leyen-gtk/src/desktop.rs:37
+#: crates/leyen-gtk/src/desktop.rs:77 crates/leyen-gtk/src/dialogs/mod.rs:159
+#: crates/leyen-gtk/src/dialogs/mod.rs:175
+#: crates/leyen-gtk/src/prefix_tools.rs:70
+#: crates/leyen-gtk/src/prefix_tools.rs:131
+#, no-c-format
+msgid "Internal error: background task failed"
+msgstr ""
+
 #: crates/leyen-gtk/src/dialogs/dependencies.rs:139
 #, no-c-format
 msgid ""
@@ -178,102 +208,100 @@ msgstr ""
 msgid "No components installed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:184
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:186
 #, no-c-format
-msgid "1 component installed"
-msgstr ""
+msgid "{} component installed"
+msgid_plural "{} components installed"
+msgstr[0] ""
+msgstr[1] ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:185
-#, no-c-format
-msgid "{} components installed"
-msgstr ""
-
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:222
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:227
 #, no-c-format
 msgid "Installed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:293
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:298
 #: crates/leyen-gtk/src/dialogs/dependency_row.rs:125
 #, no-c-format
 msgid "Required by: {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:310
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:315
 #, no-c-format
 msgid "'{}' installed successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:314
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:319
 #, no-c-format
 msgid "'{}' installed successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:317
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:322
 #, no-c-format
 msgid "'{}' reinstalled successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:322
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:327
 #, no-c-format
 msgid "'{}' reinstalled successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:324
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:329
 #, no-c-format
 msgid "'{}' removed successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:328
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:333
 #, no-c-format
 msgid "'{}' removed successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:331
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:336
 #, no-c-format
 msgid "Installation failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:332
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:337
 #, no-c-format
 msgid "Reinstall failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:333
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:338
 #, no-c-format
 msgid "Remove failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:345
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:350
+#: crates/leyen-model/src/deps/state.rs:71
 #, no-c-format
 msgid "This removes the dependency from Leyen's tracking."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:348
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:353
 #, no-c-format
 msgid "Remove '{}'?"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:352
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:357
 #: crates/leyen-gtk/src/dialogs/preferences.rs:200
-#: crates/leyen-gtk/src/window.rs:665 ui/dependency_row.ui:41
+#: crates/leyen-gtk/src/window.rs:679 ui/dependency_row.ui:41
 #: ui/game_dialog.ui:28 ui/group_dialog.ui:28
 #, no-c-format
 msgid "Cancel"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:353 ui/dependency_row.ui:75
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:358 ui/dependency_row.ui:75
 #, no-c-format
 msgid "Remove"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:389
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:399
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:394
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:404
 #, no-c-format
 msgid "Timed out waiting for the daemon."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:420
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:425
 #, no-c-format
 msgid "The daemon restarted; the operation's outcome is unknown."
 msgstr ""
@@ -369,7 +397,7 @@ msgstr ""
 msgid "Removed from menu"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:687
+#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:701
 #, no-c-format
 msgid "Failed to remove menu entry: {}"
 msgstr ""
@@ -494,7 +522,7 @@ msgid "Supported images"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/mod.rs:145
-#: crates/leyen-gtk/src/dialogs/mod.rs:166
+#: crates/leyen-gtk/src/dialogs/mod.rs:166 crates/leyen-gtk/src/icons.rs:98
 #, no-c-format
 msgid "Custom icon file is required"
 msgstr ""
@@ -503,14 +531,6 @@ msgstr ""
 #, no-c-format
 msgid ""
 "No icon could be extracted from the executable; using the default symbol."
-msgstr ""
-
-#: crates/leyen-gtk/src/dialogs/mod.rs:159
-#: crates/leyen-gtk/src/dialogs/mod.rs:175
-#: crates/leyen-gtk/src/prefix_tools.rs:70
-#: crates/leyen-gtk/src/prefix_tools.rs:131
-#, no-c-format
-msgid "Internal error: background task failed"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/preferences.rs:187
@@ -648,9 +668,22 @@ msgid_plural "{} games"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/leyen-gtk/src/group_row.rs:102
+#. Translators: how many games of a group are running.
+#: crates/leyen-gtk/src/group_row.rs:105
 #, no-c-format
 msgid "{} running"
+msgid_plural "{} running"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/leyen-gtk/src/icons.rs:102
+#, no-c-format
+msgid "Cannot read the icon “{}”: {}"
+msgstr ""
+
+#: crates/leyen-gtk/src/icons.rs:112 crates/leyen-gtk/src/icons.rs:123
+#, no-c-format
+msgid "Cannot save the icon: {}"
 msgstr ""
 
 #: crates/leyen-gtk/src/log_window.rs:223
@@ -660,7 +693,7 @@ msgstr ""
 
 #: crates/leyen-gtk/src/playback.rs:45
 #, no-c-format
-msgid "Stopping {}..."
+msgid "Stopping {}…"
 msgstr ""
 
 #: crates/leyen-gtk/src/playback.rs:46 crates/leyen-gtk/src/playback.rs:69
@@ -671,6 +704,11 @@ msgstr ""
 #: crates/leyen-gtk/src/playback.rs:49
 #, no-c-format
 msgid "Failed to stop {}"
+msgstr ""
+
+#: crates/leyen-gtk/src/playback.rs:54
+#, no-c-format
+msgid "Launching {}…"
 msgstr ""
 
 #: crates/leyen-gtk/src/playback.rs:57
@@ -703,6 +741,11 @@ msgstr ""
 msgid "Registry Editor launched"
 msgstr ""
 
+#: crates/leyen-gtk/src/prefix_tools.rs:73
+#, no-c-format
+msgid "Failed to run {}: {}"
+msgstr ""
+
 #: crates/leyen-gtk/src/prefix_tools.rs:108
 #, no-c-format
 msgid "Blocked: Cannot run programs in prefix while games are running."
@@ -723,6 +766,16 @@ msgstr ""
 msgid "Launched in prefix"
 msgstr ""
 
+#: crates/leyen-gtk/src/prefix_tools.rs:134
+#, no-c-format
+msgid "Failed to run in prefix: {}"
+msgstr ""
+
+#: crates/leyen-gtk/src/prefix_tools.rs:140
+#, no-c-format
+msgid "“{}” is not a file"
+msgstr ""
+
 #: crates/leyen-gtk/src/running_games.rs:79
 #, no-c-format
 msgid "{} process"
@@ -735,63 +788,77 @@ msgstr[1] ""
 msgid "PID {} | tracking {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:467
+#: crates/leyen-gtk/src/window.rs:468
 #, no-c-format
 msgid ""
 "Downloading umu-launcher & winetricks… Please wait before starting games."
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:470
+#: crates/leyen-gtk/src/window.rs:471
 #, no-c-format
 msgid "Downloading umu-launcher… Please wait before starting games."
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:653
-#, no-c-format
-msgid "game '{}'"
-msgstr ""
-
 #: crates/leyen-gtk/src/window.rs:654
 #, no-c-format
-msgid "group '{}'"
-msgstr ""
-
-#: crates/leyen-gtk/src/window.rs:655
-#, no-c-format
-msgid "item"
-msgstr ""
-
-#: crates/leyen-gtk/src/window.rs:658
-#, no-c-format
-msgid "Delete Item?"
+msgid "Its playtime goes with it."
 msgstr ""
 
 #: crates/leyen-gtk/src/window.rs:660
 #, no-c-format
-msgid ""
-"Are you sure you want to delete {}?\n"
-"\n"
-"This action cannot be undone."
+msgid "Its {} game and their playtime go with it."
+msgid_plural "Its {} games and their playtime go with it."
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/leyen-gtk/src/window.rs:670
+#, no-c-format
+msgid "This cannot be undone."
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:666
+#. Translators: the title of the game or group about to be deleted.
+#: crates/leyen-gtk/src/window.rs:676
+#, no-c-format
+msgid "Delete “{}”?"
+msgstr ""
+
+#: crates/leyen-gtk/src/window.rs:680
 #, no-c-format
 msgid "Delete"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:698
+#: crates/leyen-gtk/src/window.rs:712
 #, no-c-format
 msgid "Failed to remove a menu entry: {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:716
+#: crates/leyen-gtk/src/window.rs:730
 #, no-c-format
 msgid "'{}' deleted successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:719
+#: crates/leyen-gtk/src/window.rs:733
 #, no-c-format
 msgid "'{}' deleted successfully"
+msgstr ""
+
+#: crates/leyen-model/src/deps/state.rs:63
+#, no-c-format
+msgid ""
+"This will remove Leyen-tracked files and overrides from the prefix. Some "
+"existing prefix files were changed during installation and may remain."
+msgstr ""
+
+#: crates/leyen-model/src/deps/state.rs:66
+#, no-c-format
+msgid "This will remove Leyen-tracked files and overrides from the prefix."
+msgstr ""
+
+#: crates/leyen-model/src/deps/state.rs:69
+#, no-c-format
+msgid ""
+"Leyen can remove this dependency from tracking, but it cannot undo registry "
+"changes. This component is integrated into the Wine prefix."
 msgstr ""
 
 #: data/io.github.sachesi.leyen.desktop:2
@@ -1074,7 +1141,7 @@ msgid "Clear logs"
 msgstr ""
 
 #: ui/log_window.ui:42
-msgid "No log lines to show"
+msgid "No Logs"
 msgstr ""
 
 #: ui/log_window.ui:43
@@ -1138,7 +1205,7 @@ msgid "Maintenance"
 msgstr ""
 
 #: ui/preferences_dialog.ui:115
-msgid "Use shared container"
+msgid "Use Shared Container"
 msgstr ""
 
 #: ui/preferences_dialog.ui:116
@@ -1180,7 +1247,7 @@ msgid "Registry Editor"
 msgstr ""
 
 #: ui/prefix_tools_group.ui:48
-msgid "Run in prefix"
+msgid "Run a Program…"
 msgstr ""
 
 #: ui/running_game_row.ui:67
@@ -1192,7 +1259,7 @@ msgid "Leyen – Running Games"
 msgstr ""
 
 #: ui/running_games_window.ui:31
-msgid "No running games"
+msgid "No Running Games"
 msgstr ""
 
 #: ui/running_games_window.ui:32
@@ -1264,7 +1331,7 @@ msgid "Search games…"
 msgstr ""
 
 #: ui/window.ui:120
-msgid "No games added yet"
+msgid "No Games Yet"
 msgstr ""
 
 #: ui/window.ui:121
@@ -1280,7 +1347,7 @@ msgid "No game or group matches the search."
 msgstr ""
 
 #: ui/window.ui:236
-msgid "This group is empty"
+msgid "No Games in This Group"
 msgstr ""
 
 #: ui/window.ui:237

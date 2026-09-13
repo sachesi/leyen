@@ -12,7 +12,7 @@ use leyen_model::deps::{
     DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
     get_installed_dep, read_prefix_dep_state,
 };
-use leyen_model::i18n::gettext;
+use leyen_model::i18n::{gettext, ngettext};
 use leyen_model::paths::get_data_dir;
 use libadwaita as adw;
 
@@ -179,10 +179,15 @@ impl DependenciesPage {
             .await
             .unwrap_or_default();
         let installed = state.installed.len();
-        imp.window_title.set_subtitle(&match installed {
-            0 => gettext("No components installed"),
-            1 => gettext("1 component installed"),
-            n => gettext("{} components installed").replacen("{}", &n.to_string(), 1),
+        imp.window_title.set_subtitle(&if installed == 0 {
+            gettext("No components installed")
+        } else {
+            ngettext(
+                "{} component installed",
+                "{} components installed",
+                installed as u32,
+            )
+            .replacen("{}", &installed.to_string(), 1)
         });
         for row in imp.rows.borrow().iter() {
             let id = row.profile().id;

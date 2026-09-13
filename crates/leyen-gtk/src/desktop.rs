@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::daemon::gio_blocking;
+use leyen_model::i18n::gettext;
 use leyen_model::icons::game_icon_file;
 use leyen_model::library::effective_game_id;
 use leyen_model::models::{Game, GameGroup};
@@ -20,13 +21,8 @@ pub async fn create_game_desktop_entry(
         ensure_applications_dir()?;
         for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
             if existing != path && existing.exists() {
-                fs::remove_file(&existing).map_err(|err| {
-                    format!(
-                        "Failed to remove desktop entry '{}': {}",
-                        existing.display(),
-                        err
-                    )
-                })?;
+                fs::remove_file(&existing)
+                    .map_err(|err| format!("{}: {err}", existing.display()))?;
             }
         }
         let icon = desktop_icon(&game);
@@ -34,17 +30,11 @@ pub async fn create_game_desktop_entry(
             &path,
             &render_game_desktop_entry(&game, group.as_ref(), &icon),
         )
-        .map_err(|err| {
-            format!(
-                "Failed to write desktop entry '{}': {}",
-                path.display(),
-                err
-            )
-        })?;
+        .map_err(|err| format!("{}: {err}", path.display()))?;
         Ok(path)
     })
     .await
-    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
+    .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
 pub async fn update_game_desktop_entry_if_present(
@@ -79,18 +69,12 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
         let had_desktop_file = !paths.is_empty();
 
         for path in paths {
-            fs::remove_file(&path).map_err(|err| {
-                format!(
-                    "Failed to remove desktop entry '{}': {}",
-                    path.display(),
-                    err
-                )
-            })?;
+            fs::remove_file(&path).map_err(|err| format!("{}: {err}", path.display()))?;
         }
         Ok(had_desktop_file)
     })
     .await
-    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
+    .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {
@@ -158,13 +142,7 @@ fn desktop_entry_file_name(game: &Game, group: Option<&GameGroup>) -> String {
 
 fn ensure_applications_dir() -> Result<PathBuf, String> {
     let path = applications_dir_path();
-    fs::create_dir_all(&path).map_err(|err| {
-        format!(
-            "Failed to create applications directory '{}': {}",
-            path.display(),
-            err
-        )
-    })?;
+    fs::create_dir_all(&path).map_err(|err| format!("{}: {err}", path.display()))?;
     Ok(path)
 }
 

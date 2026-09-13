@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use adw::subclass::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
-use leyen_model::i18n::{gettext, ngettext};
+use leyen_model::i18n::ngettext;
 use leyen_model::icons::group_icon_path;
 use leyen_model::models::GameGroup;
 use libadwaita as adw;
@@ -99,11 +99,15 @@ impl GroupRow {
             .map(|snapshot| snapshot.started_at_epoch_seconds)
             .collect();
         imp.running_label.set_visible(!running_games.is_empty());
-        imp.running_label.set_label(&gettext("{} running").replacen(
-            "{}",
-            &running_games.len().to_string(),
-            1,
-        ));
+        let running_count = running_games.len() as u32;
+        imp.running_label.set_label(
+            // Translators: how many games of a group are running.
+            &ngettext("{} running", "{} running", running_count).replacen(
+                "{}",
+                &running_count.to_string(),
+                1,
+            ),
+        );
         imp.running_since.set(running_games.iter().copied().min());
         imp.last_played.set(
             group

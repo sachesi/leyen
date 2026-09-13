@@ -70,7 +70,9 @@ async fn run_wine_tool(
         .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
     match result {
         Ok(()) => launched_msg,
-        Err(err) => format!("Failed to run {name}: {err}"),
+        Err(err) => gettext("Failed to run {}: {}")
+            .replacen("{}", name, 1)
+            .replacen("{}", &err, 1),
     }
 }
 
@@ -88,9 +90,7 @@ fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Resu
     );
     cmd.env("WINEDEBUG", "fixme-all");
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("Failed to launch {}: {}", name, err))?;
+    let mut child = cmd.spawn().map_err(|err| err.to_string())?;
     std::thread::spawn(move || {
         let _ = child.wait();
     });
@@ -131,13 +131,13 @@ pub async fn pick_and_run(
         .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
     Some(match result {
         Ok(()) => gettext("Launched in prefix"),
-        Err(err) => format!("Failed to run in prefix: {err}"),
+        Err(err) => gettext("Failed to run in prefix: {}").replacen("{}", &err, 1),
     })
 }
 
 fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> Result<(), String> {
     if !path.is_file() {
-        return Err(format!("'{}' is not a file", path.display()));
+        return Err(gettext("“{}” is not a file").replacen("{}", &path.display().to_string(), 1));
     }
 
     let mut cmd = Command::new(get_umu_run_path());
@@ -159,9 +159,7 @@ fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> R
     }
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|err| format!("Failed to launch '{}': {}", path.display(), err))?;
+    let mut child = cmd.spawn().map_err(|err| err.to_string())?;
     std::thread::spawn(move || {
         let _ = child.wait();
     });

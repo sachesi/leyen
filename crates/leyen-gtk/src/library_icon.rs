@@ -47,6 +47,11 @@ mod imp {
         const NAME: &'static str = "LeyenLibraryIcon";
         type Type = super::LibraryIcon;
         type ParentType = gtk4::Widget;
+
+        /// Decoration: the row it sits in carries the title.
+        fn class_init(klass: &mut Self::Class) {
+            klass.set_accessible_role(gtk4::AccessibleRole::Presentation);
+        }
     }
 
     #[glib::derived_properties]
@@ -169,6 +174,7 @@ impl LibraryIcon {
         let child: gtk4::Widget = match themed_folder_picture(&name) {
             Some(picture) => picture.upcast(),
             None => gtk4::Image::builder()
+                .accessible_role(gtk4::AccessibleRole::Presentation)
                 .icon_name(name)
                 .pixel_size(ICON_SIZE)
                 .build()
@@ -180,6 +186,7 @@ impl LibraryIcon {
 
 fn picture(paintable: &impl IsA<gdk::Paintable>) -> gtk4::Picture {
     gtk4::Picture::builder()
+        .accessible_role(gtk4::AccessibleRole::Presentation)
         .paintable(paintable)
         .content_fit(gtk4::ContentFit::Cover)
         .can_shrink(true)

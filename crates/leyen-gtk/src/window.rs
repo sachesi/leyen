@@ -12,7 +12,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk4::glib;
 use leyen_ipc::RunningGameSnapshot;
-use leyen_model::i18n::gettext;
+use leyen_model::i18n::{gettext, ngettext};
 use leyen_model::library::find_group;
 use leyen_model::models::{Game, GameGroup, LibraryItem};
 use libadwaita as adw;
@@ -454,8 +454,9 @@ impl LeyenWindow {
             #[weak(rename_to = win)]
             self,
             async move {
-                let status = daemon::get_runtime_status().await;
-                win.show_runtime_status(status.umu_ready, status.winetricks_ready);
+                if let Some(status) = daemon::get_runtime_status().await {
+                    win.show_runtime_status(status.umu_ready, status.winetricks_ready);
+                }
             }
         ));
     }
@@ -646,21 +647,34 @@ impl LeyenWindow {
     }
 
     async fn confirm_delete(&self, item_id: &str) {
-        let label = match (
+        let (title, body) = match (
             self.find_game(item_id),
             find_group(&self.imp().library.borrow(), item_id),
         ) {
-            (Some((game, _)), _) => gettext("game '{}'").replacen("{}", &game.title, 1),
-            (None, Some(group)) => gettext("group '{}'").replacen("{}", &group.title, 1),
-            (None, None) => gettext("item"),
+            (Some((game, _)), _) => (game.title, gettext("Its playtime goes with it.")),
+            (None, Some(group)) if !group.games.is_empty() => {
+                let count = group.games.len() as u32;
+                (
+                    group.title.clone(),
+                    ngettext(
+                        "Its {} game and their playtime go with it.",
+                        "Its {} games and their playtime go with it.",
+                        count,
+                    )
+                    .replacen("{}", &count.to_string(), 1),
+                )
+            }
+            (None, Some(group)) => (group.title.clone(), String::new()),
+            (None, None) => return,
         };
-        let dialog = adw::AlertDialog::new(
-            Some(&gettext("Delete Item?")),
-            Some(
-                &gettext("Are you sure you want to delete {}?\n\nThis action cannot be undone.")
-                    .replacen("{}", &label, 1),
-            ),
-        );
+        let body = [body, gettext("This cannot be undone.")]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Translators: the title of the game or group about to be deleted.
+        let heading = gettext("Delete “{}”?").replacen("{}", &title, 1);
+        let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
         dialog.add_responses(&[
             ("cancel", &gettext("Cancel")),
             ("delete", &gettext("Delete")),

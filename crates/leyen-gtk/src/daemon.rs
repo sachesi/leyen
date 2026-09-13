@@ -15,6 +15,7 @@ use gtk4::glib;
 use zbus::Connection;
 
 use leyen_ipc::{LeyenProxy, LogEntry, RunningGameSnapshot, RuntimeReadiness};
+use leyen_model::i18n::gettext;
 use leyen_model::library::read_library_from_disk;
 use leyen_model::models::{GlobalSettings, LibraryItem};
 
@@ -95,12 +96,27 @@ const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const ACTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The daemon's error message from a failed method call, without the D-Bus
-/// error-name noise.
+/// error-name noise. The bus's own errors all mean the daemon is out of reach.
 fn dbus_error_message(err: &zbus::Error) -> String {
     match err {
+        zbus::Error::MethodError(name, _, _)
+            if name.as_str().starts_with("org.freedesktop.DBus.Error.") =>
+        {
+            daemon_unreachable_message()
+        }
         zbus::Error::MethodError(_, Some(msg), _) => msg.clone(),
-        other => other.to_string(),
+        // Connection and protocol failures: the details go to the log, which the
+        // callers write before this.
+        _ => daemon_unreachable_message(),
     }
+}
+
+fn daemon_unreachable_message() -> String {
+    gettext("Leyen's daemon is not running and could not be started")
+}
+
+fn timed_out_message() -> String {
+    gettext("Leyen's daemon did not answer in time")
 }
 
 /// Awaits a proxy call with a timeout; failures are logged and returned as the
@@ -118,7 +134,7 @@ async fn bounded<T>(
         }
         Err(_) => {
             log::error!("{what} timed out after {timeout:?}");
-            Err(format!("{what} timed out"))
+            Err(timed_out_message())
         }
     }
 }
@@ -170,10 +186,9 @@ async fn bridge_main(
         if !reported {
             reported = true;
             let _ = evt_tx
-                .send(DaemonEvent::Error(
-                    "Cannot reach the session bus; daemon features unavailable until it returns"
-                        .to_string(),
-                ))
+                .send(DaemonEvent::Error(gettext(
+                    "Cannot reach the session bus; daemon features unavailable until it returns",
+                )))
                 .await;
         }
         tokio::time::sleep(backoff).await;
@@ -392,7 +407,7 @@ async fn save_library_versioned(
         }
         Err(_) => {
             log::error!("SaveLibrary timed out after {ACTION_TIMEOUT:?}");
-            Err("SaveLibrary timed out".to_string())
+            Err(timed_out_message())
         }
     }
 }
@@ -542,9 +557,12 @@ async fn subscribed<S>(
         Err(e) => {
             log::error!("zbus thread: failed to subscribe to {signal}: {e}");
             let _ = tx
-                .send(DaemonEvent::Error(format!(
-                    "Lost the daemon's {signal} updates; restart Leyen if the view stops refreshing"
-                )))
+                .send(DaemonEvent::Error(
+                    gettext(
+                        "Lost the daemon's {} updates; restart Leyen if the view stops refreshing",
+                    )
+                    .replacen("{}", signal, 1),
+                ))
                 .await;
             None
         }
@@ -571,7 +589,7 @@ async fn call<T: Send + 'static>(make: impl FnOnce(Reply<T>) -> DaemonCommand) -
 pub async fn load_library() -> Result<Vec<LibraryItem>, String> {
     gio_blocking(read_library_from_disk)
         .await
-        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()))
+        .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
 /// Reads settings directly (read-only). Settings are client-written.
@@ -626,14 +644,10 @@ pub async fn running_games_snapshot() -> Vec<RunningGameSnapshot> {
         .unwrap_or_default()
 }
 
-pub async fn get_runtime_status() -> RuntimeReadiness {
-    call(DaemonCommand::GetRuntime)
-        .await
-        .and_then(Result::ok)
-        .unwrap_or(RuntimeReadiness {
-            umu_ready: false,
-            winetricks_ready: false,
-        })
+/// What the daemon says about umu-launcher and winetricks, or `None` when it does not
+/// answer: that is not the same as "still downloading".
+pub async fn get_runtime_status() -> Option<RuntimeReadiness> {
+    call(DaemonCommand::GetRuntime).await.and_then(Result::ok)
 }
 
 pub async fn get_logs(since_offset: u64) -> (u64, Vec<LogEntry>) {
@@ -680,7 +694,7 @@ pub async fn cancel_dep(job_id: &str) -> bool {
 /// (no command channel / reply dropped) rather than the daemon failing.
 fn bridge_down_message() -> String {
     log::error!("daemon bridge unavailable: command could not be delivered");
-    "The daemon connection is unavailable".to_string()
+    daemon_unreachable_message()
 }
 
 /// Lock-free "is any game running", updated by the SessionsChanged handler.

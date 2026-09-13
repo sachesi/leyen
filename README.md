@@ -1,51 +1,39 @@
 # Leyen
 
-GTK4/libadwaita app for running Windows games on Linux via Proton and `umu-run`.
+Leyen keeps a library of Windows games and runs them with Proton through umu-launcher,
+written in Rust with GTK 4 and libadwaita. Each game gets its own Wine prefix or shares one
+with its group, and a daemon on the session bus launches, tracks and stops them, so the
+window, the applications menu and the command line see the same running games.
 
-## Features
+You need GTK 4.22, libadwaita 1.9, a session bus and a systemd user session.
 
-- Launch Windows games with `umu-run`.
-- Organize games into groups, track playtime.
-- Per-game Proton version, Wine prefix, and launch arguments.
-- Toggle MangoHud, GameMode, Wayland, WOW64, NTSYNC.
-- Create `.desktop` entries — launch games from your DE.
-- CLI: list, run, and kill games from a terminal.
+Groups with a prefix and a Proton their games inherit, playtime and the last session of
+every game, per-game launch arguments with `%command%`, MangoHud, GameMode, Wayland, WoW64,
+NTSync and HDR switches, winetricks components managed per prefix with dependencies between
+them, the Wine configuration and the registry editor for any prefix, a live log for every
+game, menu entries that start a game from the desktop, and `leyen list`, `run`, `kill` and
+`logs` for the terminal. umu-launcher and winetricks are fetched when they are not
+installed.
 
-## Installation
+## Building and installing
 
-### Dependencies
+    just build
+    just install        # or: just prefix=$HOME/.local install
 
-- `umu-run` (from [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher))
-- GTK4
-- libadwaita
-
-### Build from source
-
-```bash
-git clone https://github.com/sachesi/leyen.git
-cd leyen
-just build
-just install        # or: just prefix=$HOME/.local install
-```
-
-## CLI
-
-```
-leyen list
-leyen run <id>
-leyen logs
-leyen kill <id>
-```
+Build needs Rust 1.92, `blueprint-compiler`, `just`, gettext and the development packages for
+GTK 4.22 and libadwaita 1.9. Details, other prefixes and removal are in
+[docs/installing.md](docs/installing.md).
 
 ## Documentation
 
-- [Installation](docs/installation.md)
-- [Usage](docs/usage.md)
-- [Configuration](docs/configuration.md)
-- [Shell completions](docs/shell-completions.md)
+- [Installing](docs/installing.md)
+- [Using Leyen](docs/usage.md), including [keyboard shortcuts](docs/keyboard-shortcuts.md)
+- [Settings and files](docs/settings.md)
+- [The command line](docs/command-line.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Contributing](CONTRIBUTING.md), including where things are in the code, and
+  [reporting a vulnerability](SECURITY.md)
 
-## Config and data
+The interface is available in English and Ukrainian.
 
-- Config: `~/.config/leyen/`
-- Data: `~/.local/share/leyen/`
+GPL-3.0-or-later.

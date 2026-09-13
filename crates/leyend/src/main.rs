@@ -590,9 +590,16 @@ async fn emit_dep_finished(
     .await
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    leyen_model::i18n::init();
+fn main() -> anyhow::Result<()> {
+    // SAFETY: before the runtime below starts its worker threads.
+    unsafe { leyen_model::i18n::init() };
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run())
+}
+
+async fn run() -> anyhow::Result<()> {
     if let Err(e) = leyen_core::logging::init() {
         eprintln!("Failed to initialize logging: {e}");
     }

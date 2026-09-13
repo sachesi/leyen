@@ -32,10 +32,16 @@ fn locale_dir() -> PathBuf {
     PathBuf::from("/usr/share/locale")
 }
 
-/// Initializes gettext from the system locale. Call once, early in `main`.
-pub fn init() {
+/// Initializes gettext from the system locale.
+///
+/// # Safety
+///
+/// Call it first in `main`, before any thread is started: it sets the locale, which
+/// reads the environment and changes state other threads may be reading.
+pub unsafe fn init() {
     // Empty string means "use the environment" (LANG / LC_* / LC_ALL).
-    setlocale(LocaleCategory::LcAll, "");
+    // SAFETY: the caller has started no thread yet.
+    unsafe { setlocale(LocaleCategory::LcAll, "") };
 
     let dir = locale_dir();
     if let Err(err) = bindtextdomain(TEXT_DOMAIN, &dir) {

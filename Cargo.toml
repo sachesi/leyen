@@ -56,7 +56,7 @@ sha2 = "0.10.8"
 hex = "0.4.3"
 md-5 = "0.10"
 chrono = "0.4"
-gettext-rs = { version = "0.7", features = ["gettext-system"] }
+gettext-rs = { version = "0.8", features = ["gettext-system"] }
 
 # Icon extraction (GUI only)
 image = { version = "0.25", default-features = false, features = ["ico", "jpeg", "png"] }

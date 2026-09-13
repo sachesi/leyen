@@ -22,7 +22,8 @@ mod running_games;
 mod window;
 
 fn main() -> glib::ExitCode {
-    leyen_model::i18n::init();
+    // SAFETY: the first thing the program does; no thread has been started.
+    unsafe { leyen_model::i18n::init() };
     // Before the main loop, so the library never looks for an icon mid-rename.
     migrate::migrate_legacy_app_id();
     gio::resources_register_include!("leyen.gresource").expect("the resources are compiled in");

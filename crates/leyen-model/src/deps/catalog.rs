@@ -2,7 +2,6 @@
 pub struct DepProfile {
     pub id: &'static str,
     pub name: &'static str,
-    pub description: &'static str,
     pub category: &'static str,
     pub dependencies: &'static [&'static str],
     pub provides: &'static [&'static str],
@@ -13,7 +12,6 @@ macro_rules! dep {
         DepProfile {
             id: $id,
             name: $name,
-            description: $name,
             category: $category,
             dependencies: &[],
             provides: &[],
@@ -23,7 +21,6 @@ macro_rules! dep {
         DepProfile {
             id: $id,
             name: $name,
-            description: $name,
             category: $category,
             dependencies: &[$($dependency),*],
             provides: &[],
@@ -33,7 +30,6 @@ macro_rules! dep {
         DepProfile {
             id: $id,
             name: $name,
-            description: $name,
             category: $category,
             dependencies: &[$($dependency),*],
             provides: &[$($provides),*],

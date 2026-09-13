@@ -1,4 +1,6 @@
 use leyen_model::i18n::gettext;
+use leyen_model::icons::managed_icons_dir_path;
+pub use leyen_model::icons::{game_icon_file, game_icon_path, group_icon_file, group_icon_path};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,32 +27,6 @@ const RT_ICON: u32 = 3;
 const RT_GROUP_ICON: u32 = 14;
 const MAX_GROUP_ICON_ENTRIES: usize = 256;
 const MAX_ICON_DECODE_DIMENSION: u32 = 4096;
-
-pub fn game_icon_path(game_id: &str) -> PathBuf {
-    managed_icons_dir_path().join(format!("{}.png", game_icon_name(game_id)))
-}
-
-pub fn group_icon_path(group_id: &str) -> PathBuf {
-    managed_icons_dir_path().join(format!("{}.png", group_icon_name(group_id)))
-}
-
-pub fn game_icon_name(game_id: &str) -> String {
-    format!("{}.game-{}", leyen_model::APP_ID, game_id)
-}
-
-pub fn group_icon_name(group_id: &str) -> String {
-    format!("{}.group-{}", leyen_model::APP_ID, group_id)
-}
-
-pub fn game_icon_file(game_id: &str) -> Option<PathBuf> {
-    let path = game_icon_path(game_id);
-    path.is_file().then_some(path)
-}
-
-pub fn group_icon_file(group_id: &str) -> Option<PathBuf> {
-    let path = group_icon_path(group_id);
-    path.is_file().then_some(path)
-}
 
 pub fn extract_game_icon(game_id: &str, exe_path: &str) -> Result<(), String> {
     let exe_path = Path::new(exe_path.trim());
@@ -123,11 +99,6 @@ fn ensure_icons_dir() -> Result<PathBuf, String> {
         gettext("Cannot save the icon: {}").replacen("{}", &format!("{}: {err}", path.display()), 1)
     })?;
     Ok(path)
-}
-
-fn managed_icons_dir_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".local/share/icons/hicolor/256x256/apps")
 }
 
 fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<(), String> {
@@ -736,10 +707,7 @@ fn find_ico_blob(bytes: &[u8]) -> Option<&[u8]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_ico_from_group, decode_icon_blob, find_best_png_icon, find_ico_blob, game_icon_path,
-        group_icon_path,
-    };
+    use super::{build_ico_from_group, decode_icon_blob, find_best_png_icon, find_ico_blob};
     use image::{ImageBuffer, Rgba};
     use std::collections::BTreeMap;
 
@@ -850,18 +818,5 @@ mod tests {
         assert!(rebuilt.is_some());
         let decoded = decode_icon_blob(&rebuilt.unwrap_or_default());
         assert!(decoded.is_some());
-    }
-
-    #[test]
-    fn managed_icon_paths_use_hicolor_app_directory() {
-        let game_path = game_icon_path("game-1");
-        let group_path = group_icon_path("group-1");
-        let game_rendered = game_path.to_string_lossy();
-        let group_rendered = group_path.to_string_lossy();
-
-        assert!(game_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
-        assert!(group_rendered.contains(".local/share/icons/hicolor/256x256/apps"));
-        assert!(game_rendered.ends_with("io.github.sachesi.leyen.game-game-1.png"));
-        assert!(group_rendered.ends_with("io.github.sachesi.leyen.group-group-1.png"));
     }
 }

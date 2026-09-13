@@ -70,10 +70,6 @@ impl DependencyRow {
         let row: Self = glib::Object::builder()
             .property("title", profile.name)
             .build();
-        // Most catalogue entries describe themselves by their name alone.
-        if profile.description != profile.name {
-            row.set_subtitle(profile.description);
-        }
         let imp = row.imp();
         imp.profile.set(Some(profile));
         let target = profile.id.to_variant();
@@ -154,7 +150,6 @@ impl DependencyRow {
         let profile = self.profile();
         query.is_empty()
             || profile.name.to_lowercase().contains(query)
-            || profile.description.to_lowercase().contains(query)
             || profile.id.contains(query)
     }
 }

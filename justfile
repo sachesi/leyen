@@ -66,8 +66,7 @@ smoke: build-debug
     call GetLogs 0 >/dev/null
     echo "smoke OK"
 
-# Regenerate po/leyen.pot from the Rust sources, the Blueprint files, the desktop entry
-# and the metainfo.
+# Regenerate po/leyen.pot from the sources, Blueprint files, desktop entry and metainfo.
 pot:
     rm -rf {{pot_dir}} && mkdir -p {{pot_dir}}/ui
     blueprint-compiler batch-compile {{pot_dir}}/ui data/ui data/ui/*.blp >/dev/null
@@ -84,9 +83,10 @@ pot:
     xgettext -j --from-code=UTF-8 --package-name=leyen --package-version={{version}} --msgid-bugs-address=https://github.com/sachesi/leyen/issues --language=Desktop --sort-by-file -o po/leyen.pot data/{{app_id}}.desktop
     xgettext -j --from-code=UTF-8 --package-name=leyen --package-version={{version}} --msgid-bugs-address=https://github.com/sachesi/leyen/issues --sort-by-file -o po/leyen.pot data/{{app_id}}.metainfo.xml
 
-# Merge the current template into every po/<lang>.po.
+# Merge the current template into every po/<lang>.po, dropping messages no longer used.
 po: pot
     for lang in $(cat po/LINGUAS); do msgmerge --update --backup=none --quiet po/$lang.po po/leyen.pot; done
+    for lang in $(cat po/LINGUAS); do msgattrib --no-obsolete -o po/$lang.po po/$lang.po; done
     for lang in $(cat po/LINGUAS); do msgfmt --statistics -o /dev/null po/$lang.po; done
 
 # Install the release build, building it first when it is missing.

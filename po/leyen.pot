@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.7.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 21:15+0300\n"
+"POT-Creation-Date: 2026-09-13 22:01+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -343,14 +343,14 @@ msgstr ""
 msgid "Add Game to Group"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/game.rs:237 ui/window.ui:124 ui/window.ui:215
-#: ui/window.ui:240
+#: crates/leyen-gtk/src/dialogs/game.rs:237 ui/window.ui:123 ui/window.ui:214
+#: ui/window.ui:239
 #, no-c-format
 msgid "Add Game"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/game.rs:239
-#: crates/leyen-gtk/src/dialogs/group.rs:139 ui/window.ui:76
+#: crates/leyen-gtk/src/dialogs/group.rs:139 ui/window.ui:75
 #, no-c-format
 msgid "Add"
 msgstr ""
@@ -466,7 +466,7 @@ msgid "Add Group"
 msgstr ""
 
 #: crates/leyen-gtk/src/dialogs/group.rs:146 ui/group_row.ui:80
-#: ui/window.ui:199
+#: ui/window.ui:198
 #, no-c-format
 msgid "Edit Group"
 msgstr ""
@@ -862,7 +862,7 @@ msgid ""
 msgstr ""
 
 #: data/io.github.sachesi.leyen.desktop:2
-#: data/io.github.sachesi.leyen.metainfo.xml:6 ui/window.ui:46 ui/window.ui:58
+#: data/io.github.sachesi.leyen.metainfo.xml:6 ui/window.ui:46 ui/window.ui:57
 msgid "Leyen"
 msgstr ""
 
@@ -987,7 +987,7 @@ msgstr ""
 msgid "Browse for executable"
 msgstr ""
 
-#: ui/game_dialog.ui:71 ui/group_dialog.ui:46 ui/window.ui:193
+#: ui/game_dialog.ui:71 ui/group_dialog.ui:46 ui/window.ui:192
 msgid "Group"
 msgstr ""
 
@@ -1321,38 +1321,38 @@ msgstr ""
 msgid "G_roup"
 msgstr ""
 
-#: ui/window.ui:69 ui/window.ui:209
+#: ui/window.ui:68 ui/window.ui:208
 msgid "Main Menu"
 msgstr ""
 
-#: ui/window.ui:82
+#: ui/window.ui:81
 msgid "Search"
 msgstr ""
 
-#: ui/window.ui:97
+#: ui/window.ui:96
 msgid "Search games…"
 msgstr ""
 
-#: ui/window.ui:120
+#: ui/window.ui:119
 msgid "No Games Yet"
 msgstr ""
 
-#: ui/window.ui:121
+#: ui/window.ui:120
 msgid "Add a game or create a group to organize your library."
 msgstr ""
 
-#: ui/window.ui:143
+#: ui/window.ui:142
 msgid "No Results Found"
 msgstr ""
 
-#: ui/window.ui:144
+#: ui/window.ui:143
 msgid "No game or group matches the search."
 msgstr ""
 
-#: ui/window.ui:236
+#: ui/window.ui:235
 msgid "No Games in This Group"
 msgstr ""
 
-#: ui/window.ui:237
+#: ui/window.ui:236
 msgid "Add a game while inside the group to populate it."
 msgstr ""

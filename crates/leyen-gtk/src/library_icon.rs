@@ -14,7 +14,7 @@ use image::imageops::FilterType;
 
 use crate::daemon::gio_blocking;
 
-pub const ICON_SIZE: i32 = 48;
+pub const ICON_SIZE: i32 = 56;
 const ICON_CACHE_CAP: usize = 256;
 
 /// `(mtime, len)` of an icon file, enough to notice that it was replaced.

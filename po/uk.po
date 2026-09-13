@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 21:15+0300\n"
+"POT-Creation-Date: 2026-09-13 22:01+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -351,14 +351,14 @@ msgstr "Виберіть теку префікса"
 msgid "Add Game to Group"
 msgstr "Додати гру до групи"
 
-#: crates/leyen-gtk/src/dialogs/game.rs:237 ui/window.ui:124 ui/window.ui:215
-#: ui/window.ui:240
+#: crates/leyen-gtk/src/dialogs/game.rs:237 ui/window.ui:123 ui/window.ui:214
+#: ui/window.ui:239
 #, no-c-format
 msgid "Add Game"
 msgstr "Додати гру"
 
 #: crates/leyen-gtk/src/dialogs/game.rs:239
-#: crates/leyen-gtk/src/dialogs/group.rs:139 ui/window.ui:76
+#: crates/leyen-gtk/src/dialogs/group.rs:139 ui/window.ui:75
 #, no-c-format
 msgid "Add"
 msgstr "Додати"
@@ -476,7 +476,7 @@ msgid "Add Group"
 msgstr "Додати групу"
 
 #: crates/leyen-gtk/src/dialogs/group.rs:146 ui/group_row.ui:80
-#: ui/window.ui:199
+#: ui/window.ui:198
 #, no-c-format
 msgid "Edit Group"
 msgstr "Редагувати групу"
@@ -894,7 +894,7 @@ msgstr ""
 "зміни в реєстрі. Цей компонент інтегровано в префікс Wine."
 
 #: data/io.github.sachesi.leyen.desktop:2
-#: data/io.github.sachesi.leyen.metainfo.xml:6 ui/window.ui:46 ui/window.ui:58
+#: data/io.github.sachesi.leyen.metainfo.xml:6 ui/window.ui:46 ui/window.ui:57
 msgid "Leyen"
 msgstr "Leyen"
 
@@ -1028,7 +1028,7 @@ msgstr "Виконуваний файл"
 msgid "Browse for executable"
 msgstr "Вибрати виконуваний файл"
 
-#: ui/game_dialog.ui:71 ui/group_dialog.ui:46 ui/window.ui:193
+#: ui/game_dialog.ui:71 ui/group_dialog.ui:46 ui/window.ui:192
 msgid "Group"
 msgstr "Група"
 
@@ -1217,7 +1217,9 @@ msgstr "Глобальне середовище"
 msgid ""
 "What a new game starts with. Each game keeps its own switches, in its "
 "settings."
-msgstr "З цими перемикачами починає нова гра. Кожна гра зберігає власні перемикачі у своїх налаштуваннях."
+msgstr ""
+"З цими перемикачами починає нова гра. Кожна гра зберігає власні перемикачі у "
+"своїх налаштуваннях."
 
 #: ui/preferences_dialog.ui:89
 msgid "Logging"
@@ -1226,7 +1228,9 @@ msgstr "Журналювання"
 #: ui/preferences_dialog.ui:90
 msgid ""
 "Which of Leyen's own messages the log keeps. What games print is always kept."
-msgstr "Які власні повідомлення Leyen зберігає журнал. Виведення ігор зберігається завжди."
+msgstr ""
+"Які власні повідомлення Leyen зберігає журнал. Виведення ігор зберігається "
+"завжди."
 
 #: ui/preferences_dialog.ui:93
 msgid "Errors"
@@ -1386,42 +1390,42 @@ msgstr "_Гра"
 msgid "G_roup"
 msgstr "Г_рупа"
 
-#: ui/window.ui:69 ui/window.ui:209
+#: ui/window.ui:68 ui/window.ui:208
 msgid "Main Menu"
 msgstr "Головне меню"
 
-#: ui/window.ui:82
+#: ui/window.ui:81
 msgid "Search"
 msgstr "Пошук"
 
 #
-#: ui/window.ui:97
+#: ui/window.ui:96
 msgid "Search games…"
 msgstr "Пошук ігор…"
 
 #
-#: ui/window.ui:120
+#: ui/window.ui:119
 msgid "No Games Yet"
 msgstr "Ще немає ігор"
 
-#: ui/window.ui:121
+#: ui/window.ui:120
 msgid "Add a game or create a group to organize your library."
 msgstr "Додайте гру або створіть групу, щоб упорядкувати бібліотеку."
 
-#: ui/window.ui:143
+#: ui/window.ui:142
 msgid "No Results Found"
 msgstr "Нічого не знайдено"
 
-#: ui/window.ui:144
+#: ui/window.ui:143
 msgid "No game or group matches the search."
 msgstr "Жодна гра чи група не відповідає пошуку."
 
 #
-#: ui/window.ui:236
+#: ui/window.ui:235
 msgid "No Games in This Group"
 msgstr "У цій групі немає ігор"
 
-#: ui/window.ui:237
+#: ui/window.ui:236
 msgid "Add a game while inside the group to populate it."
 msgstr "Додайте гру, перебуваючи в групі, щоб наповнити її."
 

@@ -2,46 +2,30 @@
 //! in `leyend`, reached over D-Bus via the zbus↔glib bridge (`daemon`). No tokio
 //! runtime on the GTK thread; signals drive the UI, method calls drive actions.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use gtk4::glib;
 use gtk4::prelude::*;
-use libadwaita as adw;
+use gtk4::{gio, glib};
 
+mod application;
 mod daemon;
 mod desktop;
+mod dialogs;
+mod format;
+mod game_row;
+mod group_row;
 mod icons;
+mod library_icon;
+mod log_window;
 mod migrate;
+mod playback;
 mod prefix_tools;
-mod ui;
-
-// The GUI's GApplication id (drives single-instance + desktop/icon matching).
-// Distinct from the daemon's bus name (`leyen_ipc::BUS_NAME`).
-const APP_ID: &str = leyen_model::APP_ID;
+mod running_games;
+mod window;
 
 fn main() -> glib::ExitCode {
     leyen_model::i18n::init();
     // Before the main loop, so the library never looks for an icon mid-rename.
     migrate::migrate_legacy_app_id();
-
-    // Start the D-Bus bridge before the UI so early signals queue rather than drop.
-    let evt_rx = Rc::new(RefCell::new(Some(daemon::start())));
-
-    let app = adw::Application::builder().application_id(APP_ID).build();
-
-    app.connect_activate(move |app| {
-        // gio uniqueness: a second invocation re-activates the primary instance;
-        // just present the existing window.
-        if let Some(window) = app.active_window() {
-            window.present();
-            return;
-        }
-        if let Some(rx) = evt_rx.borrow_mut().take() {
-            daemon::run_event_dispatch(rx);
-        }
-        ui::build_ui(app);
-    });
-
-    app.run()
+    gio::resources_register_include!("leyen.gresource").expect("the resources are compiled in");
+    glib::set_application_name("Leyen");
+    application::LeyenApplication::default().run()
 }

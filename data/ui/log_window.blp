@@ -1,0 +1,59 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenLogWindow: Adw.Window {
+  title: _("Leyen – Logs");
+  default-width: 820;
+  default-height: 440;
+  width-request: 360;
+  height-request: 294;
+
+  content: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [start]
+      DropDown filter_dropdown {
+        tooltip-text: _("Filter logs by game");
+        notify::selected => $on_filter_changed() swapped;
+      }
+
+      [end]
+      Button {
+        icon-name: "edit-clear-all-symbolic";
+        tooltip-text: _("Clear logs");
+        clicked => $on_clear() swapped;
+      }
+    }
+
+    content: Stack stack {
+      StackPage {
+        name: "empty";
+
+        child: Adw.StatusPage {
+          icon-name: "utilities-terminal-symbolic";
+          title: _("No log lines to show");
+          description: _("New logs will appear here automatically, or choose another filter.");
+        };
+      }
+
+      StackPage {
+        name: "log";
+
+        child: ScrolledWindow scrolled_window {
+          hscrollbar-policy: never;
+
+          child: TextView text_view {
+            editable: false;
+            cursor-visible: false;
+            monospace: true;
+            wrap-mode: word_char;
+            top-margin: 4;
+            bottom-margin: 4;
+            left-margin: 20;
+            right-margin: 12;
+          };
+        };
+      }
+    };
+  };
+}

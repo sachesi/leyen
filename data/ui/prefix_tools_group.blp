@@ -1,0 +1,43 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenPrefixToolsGroup: Adw.PreferencesGroup {
+  title: _("Tools");
+
+  Adw.ActionRow notice_row {
+    visible: false;
+
+    [prefix]
+    Image notice_icon {}
+  }
+
+  Adw.ActionRow winecfg_row {
+    title: _("Wine Configuration");
+    activatable: true;
+    activated => $on_winecfg() swapped;
+  }
+
+  Adw.ActionRow regedit_row {
+    title: _("Registry Editor");
+    activatable: true;
+    activated => $on_regedit() swapped;
+  }
+
+  Adw.ActionRow dependencies_row {
+    title: _("Manage Dependencies");
+    activatable: true;
+    activated => $on_dependencies() swapped;
+
+    [suffix]
+    Image {
+      icon-name: "go-next-symbolic";
+      accessible-role: presentation;
+    }
+  }
+
+  Adw.ActionRow run_row {
+    title: _("Run in prefix");
+    activatable: true;
+    activated => $on_run() swapped;
+  }
+}

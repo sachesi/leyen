@@ -1,0 +1,85 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenDependencyRow: Adw.ActionRow {
+  use-markup: false;
+
+  [suffix]
+  Label badge {
+    valign: center;
+    visible: false;
+
+    styles [
+      "success",
+      "caption",
+    ]
+  }
+
+  [suffix]
+  Adw.Spinner spinner {
+    visible: false;
+  }
+
+  [suffix]
+  Label progress_label {
+    valign: center;
+    visible: false;
+    max-width-chars: 24;
+    ellipsize: end;
+
+    styles [
+      "caption",
+      "dim-label",
+    ]
+  }
+
+  [suffix]
+  Button cancel_button {
+    icon-name: "process-stop-symbolic";
+    tooltip-text: _("Cancel");
+    valign: center;
+    visible: false;
+    action-name: "deps.cancel";
+    action-target: "''";
+
+    styles [
+      "destructive-action",
+    ]
+  }
+
+  [suffix]
+  Button install_button {
+    label: _("Install");
+    valign: center;
+    action-name: "deps.install";
+    action-target: "''";
+
+    styles [
+      "suggested-action",
+    ]
+  }
+
+  [suffix]
+  Button reinstall_button {
+    icon-name: "view-refresh-symbolic";
+    tooltip-text: _("Reinstall");
+    valign: center;
+    visible: false;
+    action-name: "deps.reinstall";
+    action-target: "''";
+  }
+
+  [suffix]
+  Button remove_button {
+    icon-name: "user-trash-symbolic";
+    tooltip-text: _("Remove");
+    valign: center;
+    visible: false;
+    action-name: "deps.remove";
+    action-target: "''";
+
+    styles [
+      "destructive-action",
+    ]
+  }
+}

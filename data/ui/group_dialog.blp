@@ -1,0 +1,110 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenGroupDialog: Adw.Dialog {
+  content-width: 520;
+  content-height: 620;
+  default-widget: save_button;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.NavigationView navigation_view {
+      Adw.NavigationPage main_page {
+        tag: "group";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            show-start-title-buttons: false;
+            show-end-title-buttons: false;
+
+            [start]
+            Button {
+              label: _("Cancel");
+              clicked => $on_cancel() swapped;
+            }
+
+            [end]
+            Button save_button {
+              clicked => $on_save() swapped;
+
+              styles [
+                "suggested-action",
+              ]
+            }
+          }
+
+          content: Adw.PreferencesPage {
+            Adw.PreferencesGroup {
+              title: _("Group");
+
+              Adw.EntryRow title_row {
+                title: _("Title");
+                changed => $on_title_changed() swapped;
+              }
+            }
+
+            Adw.PreferencesGroup {
+              title: _("Group Defaults");
+              description: _("Leave prefix empty or Proton on Default to inherit global settings.");
+
+              Adw.ExpanderRow custom_icon_row {
+                title: _("Custom Icon");
+                subtitle: _("Set an optional custom icon for this group.");
+                show-enable-switch: true;
+                enable-expansion: false;
+
+                Adw.EntryRow icon_row {
+                  title: _("Icon File");
+
+                  [suffix]
+                  Button {
+                    icon-name: "folder-open-symbolic";
+                    tooltip-text: _("Browse for group icon");
+                    valign: center;
+                    clicked => $on_browse_icon() swapped;
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                }
+              }
+
+              Adw.ExpanderRow custom_prefix_row {
+                title: _("Custom Prefix");
+                subtitle: _("Use a group-specific prefix instead of the global default.");
+                show-enable-switch: true;
+                enable-expansion: false;
+                notify::enable-expansion => $on_custom_prefix_toggled() swapped;
+
+                Adw.EntryRow prefix_row {
+                  title: _("Prefix");
+
+                  [suffix]
+                  Button {
+                    icon-name: "folder-open-symbolic";
+                    tooltip-text: _("Browse for prefix folder");
+                    valign: center;
+                    clicked => $on_browse_prefix() swapped;
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                }
+              }
+
+              Adw.ComboRow proton_row {
+                title: _("Proton");
+              }
+            }
+
+            $LeyenPrefixToolsGroup tools_group {
+              visible: false;
+            }
+          };
+        };
+      }
+    };
+  };
+}

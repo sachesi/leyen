@@ -1,0 +1,219 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenGameDialog: Adw.Dialog {
+  content-width: 520;
+  content-height: 620;
+  default-widget: save_button;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.NavigationView navigation_view {
+      Adw.NavigationPage main_page {
+        tag: "game";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            show-start-title-buttons: false;
+            show-end-title-buttons: false;
+
+            [start]
+            Button {
+              label: _("Cancel");
+              clicked => $on_cancel() swapped;
+            }
+
+            [end]
+            Button save_button {
+              clicked => $on_save() swapped;
+
+              styles [
+                "suggested-action",
+              ]
+            }
+          }
+
+          content: Adw.PreferencesPage {
+            Adw.PreferencesGroup {
+              title: _("Game");
+
+              Adw.EntryRow title_row {
+                title: _("Title");
+                changed => $on_title_changed() swapped;
+              }
+
+              Adw.EntryRow exe_row {
+                title: _("Executable");
+
+                [suffix]
+                Button {
+                  icon-name: "folder-open-symbolic";
+                  tooltip-text: _("Browse for executable");
+                  valign: center;
+                  clicked => $on_browse_exe() swapped;
+
+                  styles [
+                    "flat",
+                  ]
+                }
+              }
+
+              Adw.ActionRow group_row {
+                title: _("Group");
+                visible: false;
+
+                styles [
+                  "property",
+                ]
+              }
+            }
+
+            Adw.PreferencesGroup {
+              title: _("Settings");
+
+              Adw.ActionRow leyen_id_row {
+                title: _("Leyen ID");
+                subtitle-selectable: true;
+
+                styles [
+                  "property",
+                ]
+              }
+
+              Adw.ActionRow game_id_row {
+                title: _("Game ID");
+                subtitle-selectable: true;
+
+                styles [
+                  "property",
+                ]
+              }
+
+              Adw.ExpanderRow custom_icon_row {
+                title: _("Custom Icon");
+                subtitle: _("Use a custom icon instead of extracting one from the executable.");
+                show-enable-switch: true;
+                enable-expansion: false;
+
+                Adw.EntryRow icon_row {
+                  title: _("Icon File");
+
+                  [suffix]
+                  Button {
+                    icon-name: "folder-open-symbolic";
+                    tooltip-text: _("Browse for custom icon");
+                    valign: center;
+                    clicked => $on_browse_icon() swapped;
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                }
+              }
+
+              Adw.ExpanderRow custom_prefix_row {
+                title: _("Custom Prefix");
+                subtitle: _("Use a per-game prefix instead of the inherited group and global defaults.");
+                show-enable-switch: true;
+                enable-expansion: false;
+                notify::enable-expansion => $on_custom_prefix_toggled() swapped;
+
+                Adw.EntryRow prefix_row {
+                  title: _("Prefix");
+
+                  [suffix]
+                  Button {
+                    icon-name: "folder-open-symbolic";
+                    tooltip-text: _("Browse for prefix folder");
+                    valign: center;
+                    clicked => $on_browse_prefix() swapped;
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                }
+              }
+
+              Adw.ComboRow proton_row {
+                title: _("Proton");
+              }
+
+              Adw.ExpanderRow custom_proton_row {
+                title: _("Custom Proton");
+                subtitle: _("Use a per-game Proton version instead of the inherited default.");
+                show-enable-switch: true;
+                enable-expansion: false;
+                visible: false;
+                notify::enable-expansion => $on_custom_proton_toggled() swapped;
+
+                Adw.ComboRow grouped_proton_row {
+                  title: _("Proton");
+                }
+              }
+
+              Adw.ActionRow {
+                title: _("Launch Arguments");
+                activatable-widget: args_entry;
+
+                [suffix]
+                Entry args_entry {
+                  placeholder-text: "%command%";
+                  hexpand: true;
+                  valign: center;
+                }
+              }
+            }
+
+            Adw.PreferencesGroup {
+              title: _("Environment");
+
+              Adw.SwitchRow mangohud_row {
+                title: _("MangoHud");
+              }
+
+              Adw.SwitchRow gamemode_row {
+                title: _("GameMode");
+              }
+
+              Adw.SwitchRow wayland_row {
+                title: _("Wayland");
+              }
+
+              Adw.SwitchRow wow64_row {
+                title: _("WoW64");
+              }
+
+              Adw.SwitchRow ntsync_row {
+                title: _("NTSync");
+              }
+
+              Adw.SwitchRow hdr_row {
+                title: _("HDR");
+              }
+
+              Adw.SwitchRow proton_log_row {
+                title: _("Proton Log");
+              }
+            }
+
+            $LeyenPrefixToolsGroup tools_group {
+              visible: false;
+            }
+
+            Adw.PreferencesGroup menu_group {
+              visible: false;
+
+              Adw.SwitchRow menu_entry_row {
+                title: _("Menu Entry");
+                subtitle: _("Start the game from the applications menu");
+                notify::active => $on_menu_entry_toggled() swapped;
+              }
+            }
+          };
+        };
+      }
+    };
+  };
+}

@@ -1,0 +1,77 @@
+using Gtk 4.0;
+
+template $LeyenRunningGameRow: ListBoxRow {
+  activatable: false;
+
+  child: Box {
+    spacing: 12;
+    margin-top: 12;
+    margin-bottom: 12;
+    margin-start: 12;
+    margin-end: 12;
+
+    $LeyenLibraryIcon icon {
+      fallback-icon-name: "application-x-executable-symbolic";
+      valign: center;
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 4;
+      hexpand: true;
+      valign: center;
+
+      Label title_label {
+        xalign: 0;
+        wrap: true;
+        wrap-mode: word_char;
+
+        styles [
+          "title-4",
+        ]
+      }
+
+      Label process_label {
+        xalign: 0;
+
+        styles [
+          "caption",
+          "dim-label",
+        ]
+      }
+
+      Label duration_label {
+        xalign: 0;
+
+        styles [
+          "caption",
+          "accent",
+        ]
+      }
+    }
+
+    Box {
+      spacing: 6;
+      valign: center;
+
+      Button logs_button {
+        icon-name: "utilities-terminal-symbolic";
+        tooltip-text: _("View Game Logs");
+        action-name: "running.show-logs";
+        action-target: "''";
+      }
+
+      Button stop_button {
+        icon-name: "media-playback-stop-symbolic";
+        tooltip-text: _("Stop Game");
+        action-name: "running.stop";
+        action-target: "''";
+
+        styles [
+          "destructive-action",
+          "circular",
+        ]
+      }
+    }
+  };
+}

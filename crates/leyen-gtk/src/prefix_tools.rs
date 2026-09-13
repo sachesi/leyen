@@ -1,92 +1,76 @@
 //! Untracked "run something in this prefix" helpers (winecfg / regedit / pick a
 //! program). These are fire-and-forget umu-run invocations from the client — not
 //! managed games — so they don't go through the daemon's scope tracking. They are
-//! gated on "no game running" (via the daemon) and umu availability.
+//! gated on "no game running" (via the daemon) and umu availability. Each returns
+//! the message to show, whether it worked or not.
 
-use leyen_model::i18n::gettext;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use libadwaita as adw;
+use gtk4::prelude::*;
+use leyen_model::i18n::gettext;
+use leyen_model::runtime::{get_umu_run_path, is_umu_run_available};
 use log::info;
 
-use adw::prelude::*;
-use gtk4::gio;
-
 use crate::daemon::{gio_blocking, running_games_snapshot};
-use leyen_model::runtime::{get_umu_run_path, is_umu_run_available};
+use crate::dialogs::windows_programs_filter;
 
-async fn preflight(overlay: &adw::ToastOverlay, blocked_msg: &str) -> bool {
+/// Why a tool cannot run now, if it cannot.
+async fn preflight(blocked_msg: String, prefix_path: &str) -> Option<String> {
     if !running_games_snapshot().await.is_empty() {
-        overlay.add_toast(adw::Toast::new(blocked_msg));
-        return false;
+        return Some(blocked_msg);
     }
     if !gio_blocking(is_umu_run_available).await.unwrap_or(false) {
-        overlay.add_toast(adw::Toast::new(&gettext(
+        return Some(gettext(
             "umu-launcher is not installed. Please check your internet connection and restart.",
-        )));
-        return false;
+        ));
     }
-    true
+    if prefix_path.trim().is_empty() {
+        return Some(gettext("Prefix path is required"));
+    }
+    None
 }
 
-pub async fn run_winecfg_in_prefix(
-    overlay: &adw::ToastOverlay,
-    prefix_path: &str,
-    proton_path: &str,
-) {
-    if !preflight(
-        overlay,
-        &gettext("Blocked: Cannot run winecfg while games are running."),
+pub async fn run_winecfg(prefix_path: &str, proton_path: &str) -> String {
+    run_wine_tool(
+        "winecfg",
+        gettext("Blocked: Cannot run winecfg while games are running."),
+        gettext("Wine Configuration launched"),
+        prefix_path,
+        proton_path,
     )
     .await
-    {
-        return;
-    }
-
-    let proton = proton_path.trim().to_string();
-    let prefix = prefix_path.trim().to_string();
-    if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required")));
-        return;
-    }
-
-    let result = gio_blocking(move || launch_wine_command("winecfg", &prefix, &proton))
-        .await
-        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
-    match result {
-        Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Wine Configuration launched"))),
-        Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run winecfg: {err}"))),
-    }
 }
 
-pub async fn run_regedit_in_prefix(
-    overlay: &adw::ToastOverlay,
-    prefix_path: &str,
-    proton_path: &str,
-) {
-    if !preflight(
-        overlay,
-        &gettext("Blocked: Cannot run regedit while games are running."),
+pub async fn run_regedit(prefix_path: &str, proton_path: &str) -> String {
+    run_wine_tool(
+        "regedit",
+        gettext("Blocked: Cannot run regedit while games are running."),
+        gettext("Registry Editor launched"),
+        prefix_path,
+        proton_path,
     )
     .await
-    {
-        return;
-    }
+}
 
-    let proton = proton_path.trim().to_string();
+async fn run_wine_tool(
+    name: &'static str,
+    blocked_msg: String,
+    launched_msg: String,
+    prefix_path: &str,
+    proton_path: &str,
+) -> String {
+    if let Some(reason) = preflight(blocked_msg, prefix_path).await {
+        return reason;
+    }
     let prefix = prefix_path.trim().to_string();
-    if prefix.is_empty() {
-        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required")));
-        return;
-    }
-
-    let result = gio_blocking(move || launch_wine_command("regedit", &prefix, &proton))
+    let proton = proton_path.trim().to_string();
+    let result = gio_blocking(move || launch_wine_command(name, &prefix, &proton))
         .await
-        .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
+        .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
     match result {
-        Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Registry Editor launched"))),
-        Err(err) => overlay.add_toast(adw::Toast::new(&format!("Failed to run regedit: {err}"))),
+        Ok(()) => launched_msg,
+        Err(err) => format!("Failed to run {name}: {err}"),
     }
 }
 
@@ -114,64 +98,41 @@ fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Resu
     Ok(())
 }
 
-pub async fn pick_and_run_in_prefix(
-    parent: &adw::ApplicationWindow,
-    overlay: &adw::ToastOverlay,
+/// Asks for a program and runs it in the prefix. `None` when the choice was cancelled.
+pub async fn pick_and_run(
+    parent: Option<&gtk4::Window>,
     prefix_path: &str,
     proton_path: &str,
-) {
-    if !preflight(
-        overlay,
-        &gettext("Blocked: Cannot run programs in prefix while games are running."),
+) -> Option<String> {
+    if let Some(reason) = preflight(
+        gettext("Blocked: Cannot run programs in prefix while games are running."),
+        prefix_path,
     )
     .await
     {
-        return;
+        return Some(reason);
     }
 
-    let prefix_path = prefix_path.trim().to_string();
-    let proton_path = proton_path.trim().to_string();
-    if prefix_path.is_empty() {
-        overlay.add_toast(adw::Toast::new(&gettext("Prefix path is required first")));
-        return;
-    }
-
-    let filter = gtk4::FileFilter::new();
-    filter.set_name(Some(&gettext("Windows programs")));
-    for suffix in ["exe", "msi", "bat", "cmd", "com"] {
-        filter.add_suffix(suffix);
-    }
-
-    let file_dialog = gtk4::FileDialog::builder()
+    let file = gtk4::FileDialog::builder()
         .title(gettext("Select Program"))
-        .default_filter(&filter)
-        .build();
+        .default_filter(&windows_programs_filter())
+        .build()
+        .open_future(parent)
+        .await
+        .ok()?;
+    let Some(path) = file.path() else {
+        return Some(gettext("Selected file has no local path"));
+    };
 
-    let overlay = overlay.clone();
-    file_dialog.open(Some(parent), gio::Cancellable::NONE, move |result| {
-        let Ok(file) = result else {
-            return;
-        };
-        let Some(path) = file.path() else {
-            overlay.add_toast(adw::Toast::new(&gettext("Selected file has no local path")));
-            return;
-        };
-
-        let prefix_path = prefix_path.clone();
-        let proton_path = proton_path.clone();
-        gtk4::glib::spawn_future_local(async move {
-            let result =
-                gio_blocking(move || launch_path_in_prefix(&path, &prefix_path, &proton_path))
-                    .await
-                    .unwrap_or_else(|| Err("Internal error: background task failed".to_string()));
-            match result {
-                Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Launched in prefix"))),
-                Err(err) => {
-                    overlay.add_toast(adw::Toast::new(&format!("Failed to run in prefix: {err}")))
-                }
-            }
-        });
-    });
+    let prefix = prefix_path.trim().to_string();
+    let proton = proton_path.trim().to_string();
+    let result = gio_blocking(move || launch_path_in_prefix(&path, &prefix, &proton))
+        .await
+        .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
+    Some(match result {
+        Ok(()) => gettext("Launched in prefix"),
+        Err(err) => format!("Failed to run in prefix: {err}"),
+    })
 }
 
 fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> Result<(), String> {

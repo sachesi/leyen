@@ -1,0 +1,38 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenDependenciesPage: Adw.NavigationPage {
+  title: _("Manage Dependencies");
+  tag: "dependencies";
+  shown => $on_shown() swapped;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        title-widget: Adw.WindowTitle window_title {
+          title: _("Manage Dependencies");
+        };
+      }
+
+      [top]
+      SearchBar search_bar {
+        key-capture-widget: template;
+        search-mode-enabled: true;
+        show-close-button: false;
+
+        child: Adw.Clamp {
+          maximum-size: 400;
+
+          child: SearchEntry search_entry {
+            hexpand: true;
+            placeholder-text: _("Search dependencies…");
+            search-changed => $on_search_changed() swapped;
+          };
+        };
+      }
+
+      content: Adw.PreferencesPage page {};
+    };
+  };
+}

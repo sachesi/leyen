@@ -1,0 +1,82 @@
+using Gtk 4.0;
+
+template $LeyenGameRow: ListBoxRow {
+  child: Box {
+    spacing: 12;
+    margin-top: 12;
+    margin-bottom: 12;
+    margin-start: 12;
+    margin-end: 12;
+
+    $LeyenLibraryIcon icon {
+      fallback-icon-name: "application-x-executable-symbolic";
+      valign: start;
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 4;
+      hexpand: true;
+      valign: center;
+
+      Label title_label {
+        xalign: 0;
+        wrap: true;
+        wrap-mode: word_char;
+
+        styles [
+          "title-4",
+        ]
+      }
+
+      Label playtime_label {
+        xalign: 0;
+
+        styles [
+          "caption",
+          "dim-label",
+        ]
+      }
+
+      Label status_label {
+        xalign: 0;
+
+        styles [
+          "caption",
+        ]
+      }
+    }
+
+    Box {
+      spacing: 6;
+      valign: center;
+
+      Button edit_button {
+        icon-name: "document-edit-symbolic";
+        tooltip-text: _("Edit Game");
+        action-name: "win.edit-game";
+        action-target: "''";
+      }
+
+      Button delete_button {
+        icon-name: "user-trash-symbolic";
+        tooltip-text: _("Delete Game");
+        action-name: "win.delete-item";
+        action-target: "''";
+
+        styles [
+          "destructive-action",
+        ]
+      }
+
+      Button play_button {
+        action-name: "win.play-game";
+        action-target: "''";
+
+        styles [
+          "circular",
+        ]
+      }
+    }
+  };
+}

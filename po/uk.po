@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-13 20:07+0300\n"
+"POT-Creation-Date: 2026-09-13 20:53+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -13,57 +13,58 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: crates/leyen-core/src/deps/engine.rs:112
-#: crates/leyen-core/src/deps/engine.rs:191
-#: crates/leyen-core/src/deps/engine.rs:364
-#: crates/leyen-core/src/deps/engine.rs:429
-#: crates/leyen-core/src/deps/engine.rs:818
-#: crates/leyen-core/src/deps/engine.rs:826
-#: crates/leyen-core/src/deps/engine.rs:847
-#: crates/leyen-core/src/deps/engine.rs:1051
-#: crates/leyen-core/src/deps/engine.rs:1179
+#: crates/leyen-core/src/deps/engine.rs:114
+#: crates/leyen-core/src/deps/engine.rs:193
+#: crates/leyen-core/src/deps/engine.rs:365
+#: crates/leyen-core/src/deps/engine.rs:432
+#: crates/leyen-core/src/deps/engine.rs:870
+#: crates/leyen-core/src/deps/engine.rs:871
+#: crates/leyen-core/src/deps/engine.rs:880
+#: crates/leyen-core/src/deps/engine.rs:901
+#: crates/leyen-core/src/deps/engine.rs:1128
+#: crates/leyen-core/src/deps/engine.rs:1275
 #, no-c-format
 msgid "Cancelled."
 msgstr "Скасовано."
 
-#: crates/leyen-core/src/deps/engine.rs:705
-#: crates/leyen-core/src/deps/engine.rs:978
+#: crates/leyen-core/src/deps/engine.rs:738
+#: crates/leyen-core/src/deps/engine.rs:1053
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr "Інша операція із залежностями вже виконується для цього префікса."
 
-#: crates/leyen-core/src/deps/engine.rs:716
+#: crates/leyen-core/src/deps/engine.rs:749
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr "Не вдалося записати до теки кешу залежностей: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:733
-#: crates/leyen-core/src/deps/engine.rs:991
+#: crates/leyen-core/src/deps/engine.rs:769
+#: crates/leyen-core/src/deps/engine.rs:1066
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:739
+#: crates/leyen-core/src/deps/engine.rs:775
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr "Залежність уже встановлено."
 
-#: crates/leyen-core/src/deps/engine.rs:950
+#: crates/leyen-core/src/deps/engine.rs:1023
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr "Встановлено передумови: {}."
 
-#: crates/leyen-core/src/deps/engine.rs:997
+#: crates/leyen-core/src/deps/engine.rs:1072
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr "Залежність більше не відстежується."
 
-#: crates/leyen-core/src/deps/engine.rs:1001
+#: crates/leyen-core/src/deps/engine.rs:1076
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr "Неможливо вилучити «{}»: усе ще потрібно для {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1102
+#: crates/leyen-core/src/deps/engine.rs:1198
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
@@ -71,7 +72,7 @@ msgid ""
 msgstr ""
 "Деякі наявні файли префікса було змінено під час встановлення і не повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1105
+#: crates/leyen-core/src/deps/engine.rs:1201
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
@@ -80,19 +81,19 @@ msgstr ""
 "Вилучено з відстеження. Наявні файли префікса, змінені під час встановлення, "
 "не було повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1107
+#: crates/leyen-core/src/deps/engine.rs:1203
 #, no-c-format
 msgid "Removed from tracking."
 msgstr "Вилучено з відстеження."
 
-#: crates/leyen-core/src/deps/engine.rs:1122
-#: crates/leyen-core/src/launch.rs:1627
+#: crates/leyen-core/src/deps/engine.rs:1218
+#: crates/leyen-core/src/launch.rs:1662
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1134
-#: crates/leyen-core/src/launch.rs:1640 crates/leyen-gtk/src/prefix_tools.rs:26
+#: crates/leyen-core/src/deps/engine.rs:1230
+#: crates/leyen-core/src/launch.rs:1675 crates/leyen-gtk/src/prefix_tools.rs:25
 #, no-c-format
 msgid ""
 "umu-launcher is not installed. Please check your internet connection and "
@@ -101,209 +102,73 @@ msgstr ""
 "umu-launcher не встановлено. Перевірте з'єднання з інтернетом і "
 "перезапустіть."
 
-#: crates/leyen-core/src/deps/engine.rs:1142
+#: crates/leyen-core/src/deps/engine.rs:1238
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr "winetricks усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1153 crates/leyen-gtk/src/ui/mod.rs:586
+#: crates/leyen-core/src/deps/engine.rs:1249 crates/leyen-gtk/src/window.rs:472
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr "Завантаження winetricks…"
 
-#: crates/leyen-core/src/deps/engine.rs:1169
+#: crates/leyen-core/src/deps/engine.rs:1265
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не вдалося завантажити winetricks. Перевірте з'єднання з інтернетом."
 
-#: crates/leyen-core/src/launch.rs:1651
+#: crates/leyen-core/src/launch.rs:1686
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr "Для запуску ігор потрібен користувацький сеанс systemd."
 
-#: crates/leyen-core/src/launch.rs:1665 crates/leyen-core/src/launch.rs:1673
-#: crates/leyen-core/src/launch.rs:2030
+#: crates/leyen-core/src/launch.rs:1699 crates/leyen-core/src/launch.rs:1705
+#: crates/leyen-core/src/launch.rs:2058
 #, no-c-format
 msgid "This game is already running"
 msgstr "Ця гра вже запущена"
 
-#: crates/leyen-core/src/launch.rs:1690
+#: crates/leyen-core/src/launch.rs:1720
 #, no-c-format
 msgid "Game executable was not found"
 msgstr "Виконуваний файл гри не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1717
+#: crates/leyen-core/src/launch.rs:1746
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr "Вибрану версію Proton не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1806
+#: crates/leyen-core/src/launch.rs:1835
 #, no-c-format
 msgid "Prefix is already in use. Launching with shared-container fallback."
 msgstr ""
 "Префікс уже використовується. Запуск із резервним спільним контейнером."
 
-#: crates/leyen-core/src/launch.rs:1856 crates/leyen-core/src/launch.rs:2082
-#: crates/leyen-gtk/src/ui/library/mod.rs:66
+#: crates/leyen-core/src/launch.rs:1885 crates/leyen-core/src/launch.rs:2112
+#: crates/leyen-gtk/src/playback.rs:54
 #, no-c-format
 msgid "Launching {}..."
 msgstr "Запуск {}..."
 
-#: crates/leyen-core/src/launch.rs:1985
+#: crates/leyen-core/src/launch.rs:2014
 #, no-c-format
 msgid "Failed to get child PID"
 msgstr "Не вдалося отримати PID дочірнього процесу"
 
-#: crates/leyen-gtk/src/prefix_tools.rs:40
+#: crates/leyen-gtk/src/application.rs:104
+#: data/io.github.sachesi.leyen.desktop:4
+#: data/io.github.sachesi.leyen.metainfo.xml:7
 #, no-c-format
-msgid "Blocked: Cannot run winecfg while games are running."
-msgstr "Заблоковано: неможливо запустити winecfg, поки запущені ігри."
-
-#: crates/leyen-gtk/src/prefix_tools.rs:50
-#: crates/leyen-gtk/src/prefix_tools.rs:80
-#, no-c-format
-msgid "Prefix path is required"
-msgstr "Потрібно вказати шлях префікса"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:58
-#, no-c-format
-msgid "Wine Configuration launched"
-msgstr "Конфігурацію Wine запущено"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:70
-#, no-c-format
-msgid "Blocked: Cannot run regedit while games are running."
-msgstr "Заблоковано: неможливо запустити regedit, поки запущені ігри."
-
-#: crates/leyen-gtk/src/prefix_tools.rs:88
-#, no-c-format
-msgid "Registry Editor launched"
-msgstr "Редактор реєстру запущено"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:122
-#, no-c-format
-msgid "Blocked: Cannot run programs in prefix while games are running."
+msgid "Run Windows games with Proton"
 msgstr ""
-"Заблоковано: неможливо запускати програми в префіксі, поки запущені ігри."
 
-#: crates/leyen-gtk/src/prefix_tools.rs:132
+#. Translators: put your name here, one per line, optionally with an email address.
+#: crates/leyen-gtk/src/application.rs:106
 #, no-c-format
-msgid "Prefix path is required first"
-msgstr "Спершу потрібно вказати шлях префікса"
+msgid "translator-credits"
+msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:137
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:582
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1945
-#, no-c-format
-msgid "Windows programs"
-msgstr "Програми Windows"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:143
-#, no-c-format
-msgid "Select Program"
-msgstr "Виберіть програму"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:153
-#, no-c-format
-msgid "Selected file has no local path"
-msgstr "Вибраний файл не має локального шляху"
-
-#: crates/leyen-gtk/src/prefix_tools.rs:165
-#, no-c-format
-msgid "Launched in prefix"
-msgstr "Запущено в префіксі"
-
-#: crates/leyen-gtk/src/ui/components/game_card.rs:81
-#: crates/leyen-gtk/src/ui/components/group_card.rs:92
-#: crates/leyen-gtk/src/ui/library/mod.rs:111
-#: crates/leyen-gtk/src/ui/library/mod.rs:118
-#: crates/leyen-gtk/src/ui/library/mod.rs:132
-#: crates/leyen-gtk/src/ui/running_games.rs:126
-#: crates/leyen-gtk/src/ui/running_games.rs:204
-#, no-c-format
-msgid "Running for {}"
-msgstr "Працює вже {}"
-
-#: crates/leyen-gtk/src/ui/components/game_card.rs:125
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1405
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2002
-#, no-c-format
-msgid "Edit Game"
-msgstr "Редагувати гру"
-
-#: crates/leyen-gtk/src/ui/components/game_card.rs:129
-#, no-c-format
-msgid "Delete Game"
-msgstr "Видалити гру"
-
-#: crates/leyen-gtk/src/ui/components/game_card.rs:144
-#: crates/leyen-gtk/src/ui/running_games.rs:151
-#, no-c-format
-msgid "Stop Game"
-msgstr "Зупинити гру"
-
-#: crates/leyen-gtk/src/ui/components/game_card.rs:146
-#, no-c-format
-msgid "Launch Game"
-msgstr "Запустити гру"
-
-#: crates/leyen-gtk/src/ui/components/group_card.rs:73
-#, no-c-format
-msgid "{} game"
-msgid_plural "{} games"
-msgstr[0] "{} гра"
-msgstr[1] "{} гри"
-msgstr[2] "{} ігор"
-
-#: crates/leyen-gtk/src/ui/components/group_card.rs:83
-#, no-c-format
-msgid "{} running"
-msgstr "{} запущено"
-
-#: crates/leyen-gtk/src/ui/components/group_card.rs:129
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:907
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1188
-#: crates/leyen-gtk/src/ui/mod.rs:57
-#, no-c-format
-msgid "Edit Group"
-msgstr "Редагувати групу"
-
-#: crates/leyen-gtk/src/ui/components/group_card.rs:133
-#, no-c-format
-msgid "Delete Group"
-msgstr "Видалити групу"
-
-#: crates/leyen-gtk/src/ui/components/group_card.rs:138
-#, no-c-format
-msgid "Open Group"
-msgstr "Відкрити групу"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:117
-#, no-c-format
-msgid "No components installed"
-msgstr "Жодного компонента не встановлено"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:118
-#, no-c-format
-msgid "1 component installed"
-msgstr "Встановлено 1 компонент"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:119
-#, no-c-format
-msgid "{} components installed"
-msgstr "Встановлено {} компонентів"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:147
-#, no-c-format
-msgid "Remove this managed dependency"
-msgstr "Вилучити цю керовану залежність"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:151
-#, no-c-format
-msgid "Required by: {}"
-msgstr "Потрібно для: {}"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:217
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:139
 #, no-c-format
 msgid ""
 "Dependency manager is blocked while games are running. Close all games first."
@@ -311,130 +176,335 @@ msgstr ""
 "Менеджер залежностей заблоковано, поки запущені ігри. Спершу закрийте всі "
 "ігри."
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:244
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:841
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1018
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1623
-#: crates/leyen-gtk/src/ui/settings.rs:118
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:183
 #, no-c-format
-msgid "Manage Dependencies"
-msgstr "Керування залежностями"
+msgid "No components installed"
+msgstr "Жодного компонента не встановлено"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:251
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:184
 #, no-c-format
-msgid "Search dependencies…"
-msgstr "Пошук залежностей…"
+msgid "1 component installed"
+msgstr "Встановлено 1 компонент"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:342
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:185
 #, no-c-format
-msgid "Install"
+msgid "{} components installed"
+msgstr "Встановлено {} компонентів"
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:222
+#, fuzzy, no-c-format
+msgid "Installed"
 msgstr "Встановити"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:350
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:293
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:125
 #, no-c-format
-msgid "Reinstall"
-msgstr "Перевстановити"
+msgid "Required by: {}"
+msgstr "Потрібно для: {}"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:357
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:658
-#, no-c-format
-msgid "Remove"
-msgstr "Вилучити"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:365
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:658
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:257
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:911
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1409
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2202
-#: crates/leyen-gtk/src/ui/settings.rs:336
-#, no-c-format
-msgid "Cancel"
-msgstr "Скасувати"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:392
-#, no-c-format
-msgid "✓ Installed"
-msgstr "✓ Встановлено"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:494
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:310
 #, no-c-format
 msgid "'{}' installed successfully. {}"
 msgstr "«{}» успішно встановлено. {}"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:496
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:314
 #, no-c-format
 msgid "'{}' installed successfully."
 msgstr "«{}» успішно встановлено."
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:503
-#, no-c-format
-msgid "Installation failed."
-msgstr "Не вдалося встановити."
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:602
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:317
 #, no-c-format
 msgid "'{}' reinstalled successfully. {}"
 msgstr "«{}» успішно перевстановлено. {}"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:605
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:322
 #, no-c-format
 msgid "'{}' reinstalled successfully."
 msgstr "«{}» успішно перевстановлено."
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:613
-#, no-c-format
-msgid "Reinstall failed."
-msgstr "Не вдалося перевстановити."
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:657
-#, no-c-format
-msgid "Remove '{}'?"
-msgstr "Вилучити «{}»?"
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:690
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:695
-#, no-c-format
-msgid "This removes the dependency from Leyen's tracking."
-msgstr "Це вилучає залежність із відстеження Leyen."
-
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:774
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:324
 #, no-c-format
 msgid "'{}' removed successfully. {}"
 msgstr "«{}» успішно вилучено. {}"
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:777
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:328
 #, no-c-format
 msgid "'{}' removed successfully."
 msgstr "«{}» успішно вилучено."
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:785
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:331
+#, no-c-format
+msgid "Installation failed."
+msgstr "Не вдалося встановити."
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:332
+#, no-c-format
+msgid "Reinstall failed."
+msgstr "Не вдалося перевстановити."
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:333
 #, no-c-format
 msgid "Remove failed."
 msgstr "Не вдалося вилучити."
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:902
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:345
+#, no-c-format
+msgid "This removes the dependency from Leyen's tracking."
+msgstr "Це вилучає залежність із відстеження Leyen."
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:348
+#, no-c-format
+msgid "Remove '{}'?"
+msgstr "Вилучити «{}»?"
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:352
+#: crates/leyen-gtk/src/dialogs/preferences.rs:200
+#: crates/leyen-gtk/src/window.rs:665 ui/dependency_row.ui:41
+#: ui/game_dialog.ui:28 ui/group_dialog.ui:28
+#, no-c-format
+msgid "Cancel"
+msgstr "Скасувати"
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:353 ui/dependency_row.ui:75
+#, no-c-format
+msgid "Remove"
+msgstr "Вилучити"
+
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:389
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:399
 #, no-c-format
 msgid "Timed out waiting for the daemon."
 msgstr ""
 
-#: crates/leyen-gtk/src/ui/deps_dialog.rs:929
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:420
 #, no-c-format
 msgid "The daemon restarted; the operation's outcome is unknown."
 msgstr ""
 
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:75
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:114
+#, fuzzy, no-c-format
+msgid "✓ Integrated"
+msgstr "✓ Встановлено"
+
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:116
+#, no-c-format
+msgid "✓ Installed"
+msgstr "✓ Встановлено"
+
+#: crates/leyen-gtk/src/dialogs/dependency_row.rs:123
+#, no-c-format
+msgid "Remove this managed dependency"
+msgstr "Вилучити цю керовану залежність"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:175
+#, no-c-format
+msgid "Select Executable"
+msgstr "Виберіть виконуваний файл"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:186
+#, no-c-format
+msgid "Select Icon"
+msgstr "Виберіть піктограму"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:194
+#: crates/leyen-gtk/src/dialogs/group.rs:124
+#: crates/leyen-gtk/src/dialogs/preferences.rs:84
+#, no-c-format
+msgid "Select Prefix Folder"
+msgstr "Виберіть теку префікса"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:235
+#, no-c-format
+msgid "Add Game to Group"
+msgstr "Додати гру до групи"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:237 ui/window.ui:124 ui/window.ui:215
+#: ui/window.ui:240
+#, no-c-format
+msgid "Add Game"
+msgstr "Додати гру"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:239
+#: crates/leyen-gtk/src/dialogs/group.rs:139 ui/window.ui:76
+#, no-c-format
+msgid "Add"
+msgstr "Додати"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:261 ui/game_row.ui:65
+#, no-c-format
+msgid "Edit Game"
+msgstr "Редагувати гру"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:261
+#: crates/leyen-gtk/src/dialogs/group.rs:146
+#, no-c-format
+msgid "Save"
+msgstr "Зберегти"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:427
+#, no-c-format
+msgid "Custom game prefix path is required"
+msgstr "Потрібно вказати шлях до власного префікса гри"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:461
+#, no-c-format
+msgid "Managed by group prefix"
+msgstr "Керується префіксом групи"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:463
+#, no-c-format
+msgid "Use {} settings to manage dependencies or run a program in that prefix."
+msgstr ""
+"Скористайтеся параметрами «{}», щоб керувати залежностями або запустити "
+"програму в тому префіксі."
+
+#: crates/leyen-gtk/src/dialogs/game.rs:490
+#, no-c-format
+msgid "Added to menu"
+msgstr "Додано в меню"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:491
+#: crates/leyen-gtk/src/dialogs/game.rs:647
+#, no-c-format
+msgid "Failed to create menu entry: {}"
+msgstr "Не вдалося створити пункт меню: {}"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:495
+#, no-c-format
+msgid "Removed from menu"
+msgstr "Вилучено з меню"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:496 crates/leyen-gtk/src/window.rs:687
+#, no-c-format
+msgid "Failed to remove menu entry: {}"
+msgstr "Не вдалося вилучити пункт меню: {}"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:514
+#: crates/leyen-gtk/src/dialogs/group.rs:271
+#, no-c-format
+msgid "Title is required"
+msgstr "Потрібно вказати назву"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:518
+#, no-c-format
+msgid "Executable path is required"
+msgstr "Потрібно вказати шлях до виконуваного файлу"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:523
+#: crates/leyen-gtk/src/dialogs/group.rs:276
+#, no-c-format
+msgid "Selected Proton path does not exist"
+msgstr "Вибраний шлях Proton не існує"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:617
+#, no-c-format
+msgid "Error: Game not found"
+msgstr "Помилка: гру не знайдено"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:624
+#, no-c-format
+msgid "Failed to add game to the selected group"
+msgstr "Не вдалося додати гру до вибраної групи"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:642
+#, fuzzy, no-c-format
+msgid "Failed to update menu entry: {}"
+msgstr "Не вдалося створити пункт меню: {}"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:653
+#, no-c-format
+msgid "Game updated successfully"
+msgstr "Гру успішно оновлено"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:654
+#, no-c-format
+msgid "Game updated successfully. {}"
+msgstr "Гру успішно оновлено. {}"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:658
+#: crates/leyen-gtk/src/dialogs/group.rs:347
+#, no-c-format
+msgid "Item added successfully"
+msgstr "Елемент успішно додано"
+
+#: crates/leyen-gtk/src/dialogs/game.rs:659
+#, no-c-format
+msgid "Item added successfully. {}"
+msgstr "Елемент успішно додано. {}"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:116
+#, no-c-format
+msgid "Select Group Icon"
+msgstr "Виберіть піктограму групи"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:139
+#, no-c-format
+msgid "Add Group"
+msgstr "Додати групу"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:146 ui/group_row.ui:80
+#: ui/window.ui:199
+#, no-c-format
+msgid "Edit Group"
+msgstr "Редагувати групу"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:218
+#, no-c-format
+msgid "Custom group prefix path is required"
+msgstr "Потрібно вказати шлях до власного префікса групи"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:246
+#, no-c-format
+msgid "Group tools unavailable"
+msgstr "Інструменти групи недоступні"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:247
+#, no-c-format
+msgid "These games use their own prefixes: {}."
+msgstr "Ці ігри використовують власні префікси: {}."
+
+#: crates/leyen-gtk/src/dialogs/group.rs:326
+#, fuzzy, no-c-format
+msgid "Error: Group not found"
+msgstr "Помилка: гру не знайдено"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:355
+#, fuzzy, no-c-format
+msgid "Failed to update menu entries: {}"
+msgstr "Не вдалося створити пункт меню: {}"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:359
+#, no-c-format
+msgid "Group updated successfully. {}"
+msgstr "Групу успішно оновлено. {}"
+
+#: crates/leyen-gtk/src/dialogs/group.rs:360
+#, no-c-format
+msgid "Group updated successfully"
+msgstr "Групу успішно оновлено"
+
+#: crates/leyen-gtk/src/dialogs/mod.rs:44
+#, fuzzy, no-c-format
+msgid "Default"
+msgstr "Типові шляхи"
+
+#: crates/leyen-gtk/src/dialogs/mod.rs:87
+#, no-c-format
+msgid "Windows programs"
+msgstr "Програми Windows"
+
+#: crates/leyen-gtk/src/dialogs/mod.rs:96
 #, no-c-format
 msgid "Supported images"
 msgstr "Підтримувані зображення"
 
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:100
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:129
+#: crates/leyen-gtk/src/dialogs/mod.rs:145
+#: crates/leyen-gtk/src/dialogs/mod.rs:166
 #, no-c-format
 msgid "Custom icon file is required"
 msgstr "Потрібно вказати файл власної піктограми"
 
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:110
+#: crates/leyen-gtk/src/dialogs/mod.rs:153
 #, no-c-format
 msgid ""
 "No icon could be extracted from the executable; using the default symbol."
@@ -442,865 +512,26 @@ msgstr ""
 "Не вдалося видобути піктограму з виконуваного файла; використано типовий "
 "символ."
 
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:117
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:138
+#: crates/leyen-gtk/src/dialogs/mod.rs:159
+#: crates/leyen-gtk/src/dialogs/mod.rs:175
+#: crates/leyen-gtk/src/prefix_tools.rs:70
+#: crates/leyen-gtk/src/prefix_tools.rs:131
 #, no-c-format
 msgid "Internal error: background task failed"
 msgstr ""
 
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:247
-#, no-c-format
-msgid "Add Game to Group"
-msgstr "Додати гру до групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:248
-#: crates/leyen-gtk/src/ui/mod.rs:70
-#, no-c-format
-msgid "Add Game"
-msgstr "Додати гру"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:249
-#, no-c-format
-msgid "Add Group"
-msgstr "Додати групу"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:259
-#: crates/leyen-gtk/src/ui/mod.rs:66
-#, no-c-format
-msgid "Add"
-msgstr "Додати"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:269
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:920
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1418
-#, no-c-format
-msgid "Title"
-msgstr "Назва"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:270
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1422
-#, no-c-format
-msgid "Executable"
-msgstr "Виконуваний файл"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:273
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1427
-#, no-c-format
-msgid "Browse for executable"
-msgstr "Вибрати виконуваний файл"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:282
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:394
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:924
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1433
-#, no-c-format
-msgid "Prefix"
-msgstr "Префікс"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:287
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:397
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:932
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1436
-#: crates/leyen-gtk/src/ui/settings.rs:46
-#, no-c-format
-msgid "Browse for prefix folder"
-msgstr "Вибрати теку префікса"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:294
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:424
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:981
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1450
-#, no-c-format
-msgid "Custom Prefix"
-msgstr "Власний префікс"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:295
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1451
-#, no-c-format
-msgid ""
-"Use a per-game prefix instead of the inherited group and global defaults."
-msgstr ""
-"Використовувати префікс для кожної гри замість успадкованих групових і "
-"глобальних типових."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:304
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1459
-#, no-c-format
-msgid "Leyen ID"
-msgstr "Ідентифікатор Leyen"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:310
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1465
-#, no-c-format
-msgid "Game ID"
-msgstr "Ідентифікатор гри"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:316
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:404
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:940
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1472
-#, no-c-format
-msgid "Proton"
-msgstr "Proton"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:320
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1497
-#, no-c-format
-msgid "Custom Proton"
-msgstr "Власний Proton"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:321
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1498
-#, no-c-format
-msgid "Use a per-game Proton version instead of the inherited default."
-msgstr ""
-"Використовувати версію Proton для кожної гри замість успадкованої типової."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:330
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:407
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:962
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1518
-#, no-c-format
-msgid "Icon File"
-msgstr "Файл піктограми"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:333
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1523
-#, no-c-format
-msgid "Browse for custom icon"
-msgstr "Вибрати власну піктограму"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:339
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:416
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:973
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1529
-#, no-c-format
-msgid "Custom Icon"
-msgstr "Власна піктограма"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:340
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1530
-#, no-c-format
-msgid "Use a custom icon instead of extracting one from the executable."
-msgstr ""
-"Використовувати власну піктограму замість видобутої з виконуваного файлу."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:353
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1544
-#, no-c-format
-msgid "Launch Arguments"
-msgstr "Аргументи запуску"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:357
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1548
-#: crates/leyen-gtk/src/ui/settings.rs:219
-#, no-c-format
-msgid "MangoHud"
-msgstr "MangoHud"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:359
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1550
-#: crates/leyen-gtk/src/ui/settings.rs:225
-#, no-c-format
-msgid "GameMode"
-msgstr "GameMode"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:361
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1552
-#: crates/leyen-gtk/src/ui/settings.rs:231
-#, no-c-format
-msgid "Wayland"
-msgstr "Wayland"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:362
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1553
-#: crates/leyen-gtk/src/ui/settings.rs:236
-#, no-c-format
-msgid "WoW64"
-msgstr "WoW64"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:363
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1554
-#: crates/leyen-gtk/src/ui/settings.rs:241
-#, no-c-format
-msgid "NTSync"
-msgstr "NTSync"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:364
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1555
-#: crates/leyen-gtk/src/ui/settings.rs:246
-#, no-c-format
-msgid "HDR"
-msgstr "HDR"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:365
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1556
-#: crates/leyen-gtk/src/ui/settings.rs:251
-#, no-c-format
-msgid "Proton Log"
-msgstr "Журнал Proton"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:367
-#, no-c-format
-msgid "Item"
-msgstr "Елемент"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:370
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1563
-#, no-c-format
-msgid "Grouping"
-msgstr "Групування"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:373
-#, no-c-format
-msgid "Adding Into Group"
-msgstr "Додавання до групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:380
-#, no-c-format
-msgid "Game Settings"
-msgstr "Налаштування гри"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:410
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:967
-#, no-c-format
-msgid "Browse for group icon"
-msgstr "Вибрати піктограму групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:417
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:974
-#, no-c-format
-msgid "Set an optional custom icon for this group."
-msgstr "Установіть необов'язкову власну піктограму для цієї групи."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:425
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:982
-#, no-c-format
-msgid "Use a group-specific prefix instead of the global default."
-msgstr "Використовувати префікс групи замість глобального типового."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:433
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:993
-#, no-c-format
-msgid "Group Defaults"
-msgstr "Типові параметри групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:434
-#, no-c-format
-msgid "Leave prefix empty or Proton on Default to keep using global defaults."
-msgstr ""
-"Залиште префікс порожнім або Proton на «Типовий», щоб надалі використовувати "
-"глобальні типові значення."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:441
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1583
-#, no-c-format
-msgid "Environment"
-msgstr "Середовище"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:587
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1950
-#, no-c-format
-msgid "Select Executable"
-msgstr "Виберіть виконуваний файл"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:604
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:620
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1247
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1967
-#: crates/leyen-gtk/src/ui/settings.rs:57
-#, no-c-format
-msgid "Select Prefix Folder"
-msgstr "Виберіть теку префікса"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:635
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1982
-#, no-c-format
-msgid "Select Icon"
-msgstr "Виберіть піктограму"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:649
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1262
-#, no-c-format
-msgid "Select Group Icon"
-msgstr "Виберіть піктограму групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:717
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1283
-#, no-c-format
-msgid "Title is required"
-msgstr "Потрібно вказати назву"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:742
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:788
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1313
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2070
-#, no-c-format
-msgid "Selected Proton path does not exist"
-msgstr "Вибраний шлях Proton не існує"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:794
-#, no-c-format
-msgid "Executable path is required"
-msgstr "Потрібно вказати шлях до виконуваного файлу"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:852
-#, no-c-format
-msgid "Failed to add game to the selected group"
-msgstr "Не вдалося додати гру до вибраної групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:881
-#, no-c-format
-msgid "Item added successfully. {}"
-msgstr "Елемент успішно додано. {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:883
-#, no-c-format
-msgid "Item added successfully"
-msgstr "Елемент успішно додано"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:913
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1411
-#, no-c-format
-msgid "Save"
-msgstr "Зберегти"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:990
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1565
-#: crates/leyen-gtk/src/ui/library/group_view.rs:37
-#: crates/leyen-gtk/src/ui/mod.rs:62
-#, no-c-format
-msgid "Group"
-msgstr "Група"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:994
-#, no-c-format
-msgid "Leave prefix empty or Proton on Default to inherit global settings."
-msgstr ""
-"Залиште префікс порожнім або Proton на «Типовий», щоб успадкувати глобальні "
-"налаштування."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1000
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1593
-#: crates/leyen-gtk/src/ui/settings.rs:105
-#, no-c-format
-msgid "Tools"
-msgstr "Інструменти"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1010
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1615
-#: crates/leyen-gtk/src/ui/settings.rs:110
-#, no-c-format
-msgid "Wine Configuration"
-msgstr "Конфігурація Wine"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1014
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1619
-#: crates/leyen-gtk/src/ui/settings.rs:114
-#, no-c-format
-msgid "Registry Editor"
-msgstr "Редактор реєстру"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1021
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1626
-#, no-c-format
-msgid "Run in prefix"
-msgstr "Запустити в префіксі"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1030
-#, no-c-format
-msgid "Group tools unavailable"
-msgstr "Інструменти групи недоступні"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1034
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1639
-#, no-c-format
-msgid "Managed by global preferences"
-msgstr "Керується глобальними параметрами"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1035
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1640
-#, no-c-format
-msgid ""
-"Use Global Settings to manage dependencies or run a program in the default "
-"prefix."
-msgstr ""
-"Скористайтеся глобальними параметрами, щоб керувати залежностями або "
-"запустити програму в типовому префіксі."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1062
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1083
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1103
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1129
-#, no-c-format
-msgid "Custom group prefix path is required"
-msgstr "Потрібно вказати шлях до власного префікса групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1153
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1168
-#, no-c-format
-msgid "These games use their own prefixes: {}."
-msgstr "Ці ігри використовують власні префікси: {}."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1365
-#, no-c-format
-msgid "Group updated successfully. {}"
-msgstr "Групу успішно оновлено. {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1367
-#, no-c-format
-msgid "Group updated successfully"
-msgstr "Групу успішно оновлено"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1559
-#: crates/leyen-gtk/src/ui/mod.rs:61
-#, no-c-format
-msgid "Game"
-msgstr "Гра"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1571
-#, no-c-format
-msgid "Settings"
-msgstr "Налаштування"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1605
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1862
-#, no-c-format
-msgid "Remove from menu"
-msgstr "Вилучити з меню"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1607
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1854
-#, no-c-format
-msgid "Add to menu"
-msgstr "Додати в меню"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1635
-#, no-c-format
-msgid "Managed by group prefix"
-msgstr "Керується префіксом групи"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1673
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1708
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1742
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1779
-#, no-c-format
-msgid "Custom game prefix path is required"
-msgstr "Потрібно вказати шлях до власного префікса гри"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1811
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1830
-#, no-c-format
-msgid "Use {} settings to manage dependencies or run a program in that prefix."
-msgstr ""
-"Скористайтеся параметрами «{}», щоб керувати залежностями або запустити "
-"програму в тому префіксі."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1855
-#, no-c-format
-msgid "Removed from menu"
-msgstr "Вилучено з меню"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1857
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2232
-#, no-c-format
-msgid "Failed to remove menu entry: {}"
-msgstr "Не вдалося вилучити пункт меню: {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1863
-#, no-c-format
-msgid "Added to menu"
-msgstr "Додано в меню"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:1865
-#, no-c-format
-msgid "Failed to create menu entry: {}"
-msgstr "Не вдалося створити пункт меню: {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2022
-#, no-c-format
-msgid "Title and executable path are required"
-msgstr "Потрібно вказати назву та шлях до виконуваного файлу"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2147
-#, no-c-format
-msgid "Game updated successfully"
-msgstr "Гру успішно оновлено"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2149
-#, no-c-format
-msgid "Game updated successfully. {}"
-msgstr "Гру успішно оновлено. {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2154
-#, no-c-format
-msgid "Error: Game not found"
-msgstr "Помилка: гру не знайдено"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2178
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2190
-#, no-c-format
-msgid "game '{}'"
-msgstr "гра «{}»"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2180
-#, no-c-format
-msgid "group '{}'"
-msgstr "група «{}»"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2194
-#, no-c-format
-msgid "item"
-msgstr "елемент"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2197
-#, no-c-format
-msgid "Delete Item?"
-msgstr "Видалити елемент?"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2199
-#, no-c-format
-msgid ""
-"Are you sure you want to delete {}?\n"
-"\n"
-"This action cannot be undone."
-msgstr ""
-"Ви впевнені, що хочете видалити {}?\n"
-"\n"
-"Цю дію не можна скасувати."
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2202
-#, no-c-format
-msgid "Delete"
-msgstr "Видалити"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2242
-#, no-c-format
-msgid "Failed to remove a menu entry: {}"
-msgstr "Не вдалося вилучити пункт меню: {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2258
-#, no-c-format
-msgid "'{}' deleted successfully. {}"
-msgstr "«{}» успішно видалено. {}"
-
-#: crates/leyen-gtk/src/ui/game_dialogs.rs:2260
-#, no-c-format
-msgid "'{}' deleted successfully"
-msgstr "«{}» успішно видалено"
-
-#: crates/leyen-gtk/src/ui/library/mod.rs:52
-#, no-c-format
-msgid "Stopping {}..."
-msgstr "Зупинка {}..."
-
-#: crates/leyen-gtk/src/ui/library/mod.rs:54
-#: crates/leyen-gtk/src/ui/library/mod.rs:90
-#, no-c-format
-msgid "Game is no longer running"
-msgstr "Гра вже не запущена"
-
-#: crates/leyen-gtk/src/ui/library/mod.rs:57
-#, no-c-format
-msgid "Failed to stop {}"
-msgstr "Не вдалося зупинити {}"
-
-#: crates/leyen-gtk/src/ui/library/mod.rs:70
-#, fuzzy, no-c-format
-msgid "Failed to launch {}"
-msgstr "Не вдалося зупинити {}"
-
-#: crates/leyen-gtk/src/ui/library/mod.rs:242
-#: crates/leyen-gtk/src/ui/library/mod.rs:262
-#: data/io.github.sachesi.leyen.desktop:2
-#: data/io.github.sachesi.leyen.metainfo.xml:6
-#, no-c-format
-msgid "Leyen"
-msgstr "Leyen"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:87
-#, no-c-format
-msgid "Leyen – Logs"
-msgstr "Leyen – Журнали"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:99
-#, no-c-format
-msgid "All Logs"
-msgstr "Усі журнали"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:131
-#, no-c-format
-msgid "Filter logs by game"
-msgstr "Фільтрувати журнали за грою"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:135
-#, no-c-format
-msgid "Clear logs"
-msgstr "Очистити журнали"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:174
-#, no-c-format
-msgid "No log lines to show"
-msgstr "Немає журнальних записів для показу"
-
-#: crates/leyen-gtk/src/ui/log_window.rs:175
-#, no-c-format
-msgid "New logs will appear here automatically, or choose another filter."
-msgstr ""
-"Нові журнали з'являтимуться тут автоматично, або виберіть інший фільтр."
-
-#: crates/leyen-gtk/src/ui/mod.rs:52
-#, no-c-format
-msgid "Back to Library"
-msgstr "Назад до бібліотеки"
-
-#: crates/leyen-gtk/src/ui/mod.rs:83
-#, no-c-format
-msgid "Running Games"
-msgstr "Запущені ігри"
-
-#: crates/leyen-gtk/src/ui/mod.rs:84
-#, no-c-format
-msgid "Logs"
-msgstr "Журнали"
-
-#: crates/leyen-gtk/src/ui/mod.rs:86
-#, no-c-format
-msgid "Preferences"
-msgstr "Параметри"
-
-#: crates/leyen-gtk/src/ui/mod.rs:87
-#, no-c-format
-msgid "Keyboard Shortcuts"
-msgstr "Клавіатурні скорочення"
-
-#: crates/leyen-gtk/src/ui/mod.rs:88
-#, no-c-format
-msgid "About Leyen"
-msgstr "Про Leyen"
-
-#: crates/leyen-gtk/src/ui/mod.rs:93
-#, no-c-format
-msgid "Main Menu"
-msgstr "Головне меню"
-
-#: crates/leyen-gtk/src/ui/mod.rs:97
-#, no-c-format
-msgid "Search"
-msgstr "Пошук"
-
-#: crates/leyen-gtk/src/ui/mod.rs:102
-#, no-c-format
-msgid "Search games..."
-msgstr "Пошук ігор..."
-
-#: crates/leyen-gtk/src/ui/mod.rs:161
-#, no-c-format
-msgid "No games added yet"
-msgstr "Ще не додано жодної гри"
-
-#: crates/leyen-gtk/src/ui/mod.rs:162
-#, no-c-format
-msgid "Add a game or create a group to organize your library."
-msgstr "Додайте гру або створіть групу, щоб упорядкувати бібліотеку."
-
-#: crates/leyen-gtk/src/ui/mod.rs:167
-#, no-c-format
-msgid "This group is empty"
-msgstr "Ця група порожня"
-
-#: crates/leyen-gtk/src/ui/mod.rs:168
-#, no-c-format
-msgid "Add a game while inside the group to populate it."
-msgstr "Додайте гру, перебуваючи в групі, щоб наповнити її."
-
-#: crates/leyen-gtk/src/ui/mod.rs:231 crates/leyen-gtk/src/ui/mod.rs:584
-#, no-c-format
-msgid "Downloading umu-launcher… Please wait before starting games."
-msgstr "Завантаження umu-launcher… Зачекайте, перш ніж запускати ігри."
-
-#: crates/leyen-gtk/src/ui/mod.rs:517
-#, no-c-format
-msgid "Quit Leyen"
-msgstr "Вийти з Leyen"
-
-#: crates/leyen-gtk/src/ui/mod.rs:521
-#, no-c-format
-msgid "Search Games"
-msgstr "Пошук ігор"
-
-#: crates/leyen-gtk/src/ui/mod.rs:525 crates/leyen-gtk/src/ui/mod.rs:530
-#, no-c-format
-msgid "General"
-msgstr "Загальне"
-
-#: crates/leyen-gtk/src/ui/mod.rs:582
-#, no-c-format
-msgid ""
-"Downloading umu-launcher & winetricks… Please wait before starting games."
-msgstr ""
-"Завантаження umu-launcher та winetricks… Зачекайте, перш ніж запускати ігри."
-
-#: crates/leyen-gtk/src/ui/running_games.rs:109
-#, no-c-format
-msgid "{} process"
-msgid_plural "{} processes"
-msgstr[0] "{} процес"
-msgstr[1] "{} процеси"
-msgstr[2] "{} процесів"
-
-#: crates/leyen-gtk/src/ui/running_games.rs:111
-#, no-c-format
-msgid "PID {} | tracking {}"
-msgstr "PID {} | відстеження {}"
-
-#: crates/leyen-gtk/src/ui/running_games.rs:146
-#, no-c-format
-msgid "View Game Logs"
-msgstr "Переглянути журнали гри"
-
-#: crates/leyen-gtk/src/ui/running_games.rs:222
-#, no-c-format
-msgid "Leyen – Running Games"
-msgstr "Leyen – Запущені ігри"
-
-#: crates/leyen-gtk/src/ui/running_games.rs:250
-#, no-c-format
-msgid "No running games"
-msgstr "Немає запущених ігор"
-
-#: crates/leyen-gtk/src/ui/running_games.rs:251
-#, no-c-format
-msgid "Games you launch through Leyen will appear here while they are active."
-msgstr "Ігри, запущені через Leyen, з'являтимуться тут, поки вони активні."
-
-#: crates/leyen-gtk/src/ui/settings.rs:20
-#: crates/leyen-gtk/src/ui/settings.rs:30
-#: crates/leyen-gtk/src/ui/settings.rs:414
-#, no-c-format
-msgid "Global Settings"
-msgstr "Глобальні параметри"
-
-#: crates/leyen-gtk/src/ui/settings.rs:36
-#, no-c-format
-msgid "Default Paths"
-msgstr "Типові шляхи"
-
-#: crates/leyen-gtk/src/ui/settings.rs:40
-#, no-c-format
-msgid "Default Prefix Path"
-msgstr "Типовий шлях префікса"
-
-#: crates/leyen-gtk/src/ui/settings.rs:89
-#, no-c-format
-msgid "Default Proton"
-msgstr "Типовий Proton"
-
-#: crates/leyen-gtk/src/ui/settings.rs:106
-#, no-c-format
-msgid "Manage the default prefix inherited by games and groups."
-msgstr "Керуйте типовим префіксом, який успадковують ігри та групи."
-
-#: crates/leyen-gtk/src/ui/settings.rs:122
-#, no-c-format
-msgid "Run in default prefix"
-msgstr "Запустити в типовому префіксі"
-
-#: crates/leyen-gtk/src/ui/settings.rs:215
-#, no-c-format
-msgid "Global Environment"
-msgstr "Глобальне середовище"
-
-#: crates/leyen-gtk/src/ui/settings.rs:265
-#, no-c-format
-msgid "Logging"
-msgstr "Журналювання"
-
-#: crates/leyen-gtk/src/ui/settings.rs:266
-#, no-c-format
-msgid "Select which messages are printed to the terminal."
-msgstr "Виберіть, які повідомлення виводяться в термінал."
-
-#: crates/leyen-gtk/src/ui/settings.rs:270
-#, no-c-format
-msgid "Errors"
-msgstr "Помилки"
-
-#: crates/leyen-gtk/src/ui/settings.rs:271
-#, no-c-format
-msgid "Show error messages from leyen and launched processes"
-msgstr "Показувати повідомлення про помилки від leyen та запущених процесів"
-
-#: crates/leyen-gtk/src/ui/settings.rs:276
-#, no-c-format
-msgid "Warnings"
-msgstr "Попередження"
-
-#: crates/leyen-gtk/src/ui/settings.rs:277
-#, no-c-format
-msgid "Show warning messages (e.g. game not found)"
-msgstr "Показувати попередження (напр., гру не знайдено)"
-
-#: crates/leyen-gtk/src/ui/settings.rs:282
-#, no-c-format
-msgid "Operations"
-msgstr "Операції"
-
-#: crates/leyen-gtk/src/ui/settings.rs:283
-#, no-c-format
-msgid "Show info about background operations"
-msgstr "Показувати відомості про фонові операції"
-
-#: crates/leyen-gtk/src/ui/settings.rs:293
-#, no-c-format
-msgid "Maintenance"
-msgstr "Обслуговування"
-
-#: crates/leyen-gtk/src/ui/settings.rs:297
-#, no-c-format
-msgid "Repair Runtime"
-msgstr "Відновити середовище"
-
-#: crates/leyen-gtk/src/ui/settings.rs:298
-#, no-c-format
-msgid ""
-"Reset internal umu-launcher components if dependency installation fails."
-msgstr ""
-"Скинути внутрішні компоненти umu-launcher, якщо встановлення залежностей не "
-"вдається."
-
-#: crates/leyen-gtk/src/ui/settings.rs:302
-#, no-c-format
-msgid "Reset umu Runtime"
-msgstr "Скинути середовище umu"
-
-#: crates/leyen-gtk/src/ui/settings.rs:304
-#, no-c-format
-msgid ""
-"Deletes steamrt3 directory. It will be re-downloaded on next dependency "
-"install."
-msgstr ""
-"Видаляє теку steamrt3. Її буде завантажено знову під час наступного "
-"встановлення залежностей."
-
-#: crates/leyen-gtk/src/ui/settings.rs:309
-#: crates/leyen-gtk/src/ui/settings.rs:336
-#, no-c-format
-msgid "Reset"
-msgstr "Скинути"
-
-#: crates/leyen-gtk/src/ui/settings.rs:324
+#: crates/leyen-gtk/src/dialogs/preferences.rs:187
 #, no-c-format
 msgid "Cannot reset runtime while games are running. Close all games first."
 msgstr ""
 "Неможливо скинути середовище, поки запущені ігри. Спершу закрийте всі ігри."
 
-#: crates/leyen-gtk/src/ui/settings.rs:330
+#: crates/leyen-gtk/src/dialogs/preferences.rs:193
 #, no-c-format
 msgid "Reset umu Runtime?"
 msgstr "Скинути середовище umu?"
 
-#: crates/leyen-gtk/src/ui/settings.rs:334
+#: crates/leyen-gtk/src/dialogs/preferences.rs:197
 #, fuzzy, no-c-format
 msgid ""
 "This deletes the Steam Linux Runtime (steamrt3) directory. umu-launcher will "
@@ -1315,7 +546,12 @@ msgstr ""
 "Використовуйте це, щоб виправити помилки «pressure-vessel-wrap» під час "
 "встановлення залежностей."
 
-#: crates/leyen-gtk/src/ui/settings.rs:363
+#: crates/leyen-gtk/src/dialogs/preferences.rs:200 ui/preferences_dialog.ui:129
+#, no-c-format
+msgid "Reset"
+msgstr "Скинути"
+
+#: crates/leyen-gtk/src/dialogs/preferences.rs:214
 #, no-c-format
 msgid ""
 "umu runtime reset. Re-run any dependency install to download a fresh copy."
@@ -1323,84 +559,272 @@ msgstr ""
 "Середовище umu скинуто. Запустіть будь-яке встановлення залежностей, щоб "
 "завантажити свіжу копію."
 
-#: crates/leyen-gtk/src/ui/settings.rs:368
+#: crates/leyen-gtk/src/dialogs/preferences.rs:217
 #, no-c-format
 msgid "umu runtime directory not found — nothing to reset."
 msgstr "Теку середовища umu не знайдено — нічого скидати."
 
-#: crates/leyen-gtk/src/ui/settings.rs:372
+#: crates/leyen-gtk/src/dialogs/preferences.rs:220
 #, no-c-format
 msgid "Failed to reset umu runtime: {}"
 msgstr "Не вдалося скинути середовище umu: {}"
 
-#: crates/leyen-gtk/src/ui/settings.rs:385
+#: crates/leyen-gtk/src/dialogs/prefix_tools_group.rs:219
 #, no-c-format
-msgid "Use shared container"
-msgstr "Використовувати спільний контейнер"
+msgid "Managed by global preferences"
+msgstr "Керується глобальними параметрами"
 
-#: crates/leyen-gtk/src/ui/settings.rs:387
-#, no-c-format
+#: crates/leyen-gtk/src/dialogs/prefix_tools_group.rs:220
+#, fuzzy, no-c-format
 msgid ""
-"When a game launches while another sharing its Wine prefix is already "
-"running, run it inside the running container. Disable to launch it in its "
-"own container on the same prefix instead."
+"Use Preferences to manage dependencies or run a program in the default "
+"prefix."
 msgstr ""
-"Якщо гра запускається, коли інша гра з тим самим префіксом Wine вже працює, "
-"запускати її всередині вже запущеного контейнера. Вимкніть, щоб натомість "
-"запускати її у власному контейнері на тому самому префіксі."
+"Скористайтеся глобальними параметрами, щоб керувати залежностями або "
+"запустити програму в типовому префіксі."
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:112
+#: crates/leyen-gtk/src/format.rs:17
 #, no-c-format
 msgid "Playtime: {}h {}m"
 msgstr "Час гри: {} год {} хв"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:116
+#: crates/leyen-gtk/src/format.rs:21
 #, no-c-format
 msgid "Playtime: {}m"
 msgstr "Час гри: {} хв"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:118
+#: crates/leyen-gtk/src/format.rs:23
 #, no-c-format
 msgid "Playtime: {}s"
 msgstr "Час гри: {} с"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:138
+#: crates/leyen-gtk/src/format.rs:33
+#, no-c-format
+msgid "{}h {}m"
+msgstr ""
+
+#: crates/leyen-gtk/src/format.rs:37
+#, no-c-format
+msgid "{}m {}s"
+msgstr ""
+
+#: crates/leyen-gtk/src/format.rs:41
+#, fuzzy, no-c-format
+msgid "{}s"
+msgstr "{} с тому"
+
+#: crates/leyen-gtk/src/format.rs:48
+#, no-c-format
+msgid "Running for {}"
+msgstr "Працює вже {}"
+
+#: crates/leyen-gtk/src/format.rs:53
 #, no-c-format
 msgid "Last played: never"
 msgstr "Востаннє запускалася: ніколи"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:148
+#: crates/leyen-gtk/src/format.rs:58
 #, no-c-format
 msgid "{}s ago"
 msgstr "{} с тому"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:150
+#: crates/leyen-gtk/src/format.rs:60
 #, no-c-format
 msgid "{}m ago"
 msgstr "{} хв тому"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:152
+#: crates/leyen-gtk/src/format.rs:62
 #, no-c-format
 msgid "{}h ago"
 msgstr "{} год тому"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:154
+#: crates/leyen-gtk/src/format.rs:64
 #, no-c-format
 msgid "{}d ago"
 msgstr "{} дн тому"
 
-#: crates/leyen-gtk/src/ui/utils/mod.rs:157
+#: crates/leyen-gtk/src/format.rs:67
 #, no-c-format
 msgid "Last played: {}"
 msgstr "Востаннє запускалася: {}"
 
+#: crates/leyen-gtk/src/game_row.rs:120 ui/running_game_row.ui:75
+#, no-c-format
+msgid "Stop Game"
+msgstr "Зупинити гру"
+
+#: crates/leyen-gtk/src/game_row.rs:127
+#, no-c-format
+msgid "Launch Game"
+msgstr "Запустити гру"
+
+#: crates/leyen-gtk/src/group_row.rs:89
+#, no-c-format
+msgid "{} game"
+msgid_plural "{} games"
+msgstr[0] "{} гра"
+msgstr[1] "{} гри"
+msgstr[2] "{} ігор"
+
+#: crates/leyen-gtk/src/group_row.rs:102
+#, no-c-format
+msgid "{} running"
+msgstr "{} запущено"
+
+#: crates/leyen-gtk/src/log_window.rs:223
+#, no-c-format
+msgid "All Logs"
+msgstr "Усі журнали"
+
+#: crates/leyen-gtk/src/playback.rs:45
+#, no-c-format
+msgid "Stopping {}..."
+msgstr "Зупинка {}..."
+
+#: crates/leyen-gtk/src/playback.rs:46 crates/leyen-gtk/src/playback.rs:69
+#, no-c-format
+msgid "Game is no longer running"
+msgstr "Гра вже не запущена"
+
+#: crates/leyen-gtk/src/playback.rs:49
+#, no-c-format
+msgid "Failed to stop {}"
+msgstr "Не вдалося зупинити {}"
+
+#: crates/leyen-gtk/src/playback.rs:57
+#, fuzzy, no-c-format
+msgid "Failed to launch {}"
+msgstr "Не вдалося зупинити {}"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:29
+#, no-c-format
+msgid "Prefix path is required"
+msgstr "Потрібно вказати шлях префікса"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:37
+#, no-c-format
+msgid "Blocked: Cannot run winecfg while games are running."
+msgstr "Заблоковано: неможливо запустити winecfg, поки запущені ігри."
+
+#: crates/leyen-gtk/src/prefix_tools.rs:38
+#, no-c-format
+msgid "Wine Configuration launched"
+msgstr "Конфігурацію Wine запущено"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:48
+#, no-c-format
+msgid "Blocked: Cannot run regedit while games are running."
+msgstr "Заблоковано: неможливо запустити regedit, поки запущені ігри."
+
+#: crates/leyen-gtk/src/prefix_tools.rs:49
+#, no-c-format
+msgid "Registry Editor launched"
+msgstr "Редактор реєстру запущено"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:108
+#, no-c-format
+msgid "Blocked: Cannot run programs in prefix while games are running."
+msgstr ""
+"Заблоковано: неможливо запускати програми в префіксі, поки запущені ігри."
+
+#: crates/leyen-gtk/src/prefix_tools.rs:117
+#, no-c-format
+msgid "Select Program"
+msgstr "Виберіть програму"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:124
+#, no-c-format
+msgid "Selected file has no local path"
+msgstr "Вибраний файл не має локального шляху"
+
+#: crates/leyen-gtk/src/prefix_tools.rs:133
+#, no-c-format
+msgid "Launched in prefix"
+msgstr "Запущено в префіксі"
+
+#: crates/leyen-gtk/src/running_games.rs:79
+#, no-c-format
+msgid "{} process"
+msgid_plural "{} processes"
+msgstr[0] "{} процес"
+msgstr[1] "{} процеси"
+msgstr[2] "{} процесів"
+
+#: crates/leyen-gtk/src/running_games.rs:81
+#, no-c-format
+msgid "PID {} | tracking {}"
+msgstr "PID {} | відстеження {}"
+
+#: crates/leyen-gtk/src/window.rs:467
+#, no-c-format
+msgid ""
+"Downloading umu-launcher & winetricks… Please wait before starting games."
+msgstr ""
+"Завантаження umu-launcher та winetricks… Зачекайте, перш ніж запускати ігри."
+
+#: crates/leyen-gtk/src/window.rs:470
+#, no-c-format
+msgid "Downloading umu-launcher… Please wait before starting games."
+msgstr "Завантаження umu-launcher… Зачекайте, перш ніж запускати ігри."
+
+#: crates/leyen-gtk/src/window.rs:653
+#, no-c-format
+msgid "game '{}'"
+msgstr "гра «{}»"
+
+#: crates/leyen-gtk/src/window.rs:654
+#, no-c-format
+msgid "group '{}'"
+msgstr "група «{}»"
+
+#: crates/leyen-gtk/src/window.rs:655
+#, no-c-format
+msgid "item"
+msgstr "елемент"
+
+#: crates/leyen-gtk/src/window.rs:658
+#, no-c-format
+msgid "Delete Item?"
+msgstr "Видалити елемент?"
+
+#: crates/leyen-gtk/src/window.rs:660
+#, no-c-format
+msgid ""
+"Are you sure you want to delete {}?\n"
+"\n"
+"This action cannot be undone."
+msgstr ""
+"Ви впевнені, що хочете видалити {}?\n"
+"\n"
+"Цю дію не можна скасувати."
+
+#: crates/leyen-gtk/src/window.rs:666
+#, no-c-format
+msgid "Delete"
+msgstr "Видалити"
+
+#: crates/leyen-gtk/src/window.rs:698
+#, no-c-format
+msgid "Failed to remove a menu entry: {}"
+msgstr "Не вдалося вилучити пункт меню: {}"
+
+#: crates/leyen-gtk/src/window.rs:716
+#, no-c-format
+msgid "'{}' deleted successfully. {}"
+msgstr "«{}» успішно видалено. {}"
+
+#: crates/leyen-gtk/src/window.rs:719
+#, no-c-format
+msgid "'{}' deleted successfully"
+msgstr "«{}» успішно видалено"
+
+#: data/io.github.sachesi.leyen.desktop:2
+#: data/io.github.sachesi.leyen.metainfo.xml:6 ui/window.ui:46 ui/window.ui:58
+msgid "Leyen"
+msgstr "Leyen"
+
 #: data/io.github.sachesi.leyen.desktop:3
 msgid "Game Launcher"
-msgstr ""
-
-#: data/io.github.sachesi.leyen.desktop:4
-#: data/io.github.sachesi.leyen.metainfo.xml:7
-msgid "Run Windows games with Proton"
 msgstr ""
 
 #: data/io.github.sachesi.leyen.desktop:10
@@ -1490,6 +914,479 @@ msgid ""
 "written, and reports why an operation failed. Dependency downloads can be "
 "cancelled, and the log window follows new lines as they come."
 msgstr ""
+
+#: ui/dependencies_page.ui:10 ui/dependencies_page.ui:21
+#: ui/prefix_tools_group.ui:35
+msgid "Manage Dependencies"
+msgstr "Керування залежностями"
+
+#: ui/dependencies_page.ui:37
+msgid "Search dependencies…"
+msgstr "Пошук залежностей…"
+
+#: ui/dependency_row.ui:53
+msgid "Install"
+msgstr "Встановити"
+
+#: ui/dependency_row.ui:65
+msgid "Reinstall"
+msgstr "Перевстановити"
+
+#: ui/game_dialog.ui:46
+msgid "Game"
+msgstr "Гра"
+
+#: ui/game_dialog.ui:49 ui/group_dialog.ui:49
+msgid "Title"
+msgstr "Назва"
+
+#: ui/game_dialog.ui:55
+msgid "Executable"
+msgstr "Виконуваний файл"
+
+#: ui/game_dialog.ui:59
+msgid "Browse for executable"
+msgstr "Вибрати виконуваний файл"
+
+#: ui/game_dialog.ui:71 ui/group_dialog.ui:46 ui/window.ui:193
+msgid "Group"
+msgstr "Група"
+
+#: ui/game_dialog.ui:82
+msgid "Settings"
+msgstr "Налаштування"
+
+#: ui/game_dialog.ui:85
+msgid "Leyen ID"
+msgstr "Ідентифікатор Leyen"
+
+#: ui/game_dialog.ui:94
+msgid "Game ID"
+msgstr "Ідентифікатор гри"
+
+#: ui/game_dialog.ui:103 ui/group_dialog.ui:61
+msgid "Custom Icon"
+msgstr "Власна піктограма"
+
+#: ui/game_dialog.ui:104
+msgid "Use a custom icon instead of extracting one from the executable."
+msgstr ""
+"Використовувати власну піктограму замість видобутої з виконуваного файлу."
+
+#: ui/game_dialog.ui:109 ui/group_dialog.ui:67
+msgid "Icon File"
+msgstr "Файл піктограми"
+
+#: ui/game_dialog.ui:113
+msgid "Browse for custom icon"
+msgstr "Вибрати власну піктограму"
+
+#: ui/game_dialog.ui:127 ui/group_dialog.ui:85
+msgid "Custom Prefix"
+msgstr "Власний префікс"
+
+#: ui/game_dialog.ui:128
+msgid ""
+"Use a per-game prefix instead of the inherited group and global defaults."
+msgstr ""
+"Використовувати префікс для кожної гри замість успадкованих групових і "
+"глобальних типових."
+
+#: ui/game_dialog.ui:134 ui/group_dialog.ui:92
+msgid "Prefix"
+msgstr "Префікс"
+
+#: ui/game_dialog.ui:138 ui/group_dialog.ui:96 ui/preferences_dialog.ui:24
+msgid "Browse for prefix folder"
+msgstr "Вибрати теку префікса"
+
+#: ui/game_dialog.ui:152 ui/game_dialog.ui:165 ui/group_dialog.ui:110
+msgid "Proton"
+msgstr "Proton"
+
+#: ui/game_dialog.ui:157
+msgid "Custom Proton"
+msgstr "Власний Proton"
+
+#: ui/game_dialog.ui:158
+msgid "Use a per-game Proton version instead of the inherited default."
+msgstr ""
+"Використовувати версію Proton для кожної гри замість успадкованої типової."
+
+#: ui/game_dialog.ui:172
+msgid "Launch Arguments"
+msgstr "Аргументи запуску"
+
+#: ui/game_dialog.ui:187
+msgid "Environment"
+msgstr "Середовище"
+
+#: ui/game_dialog.ui:190 ui/preferences_dialog.ui:51
+msgid "MangoHud"
+msgstr "MangoHud"
+
+#: ui/game_dialog.ui:195 ui/preferences_dialog.ui:56
+msgid "GameMode"
+msgstr "GameMode"
+
+#: ui/game_dialog.ui:200 ui/preferences_dialog.ui:61
+msgid "Wayland"
+msgstr "Wayland"
+
+#: ui/game_dialog.ui:205 ui/preferences_dialog.ui:66
+msgid "WoW64"
+msgstr "WoW64"
+
+#: ui/game_dialog.ui:210 ui/preferences_dialog.ui:71
+msgid "NTSync"
+msgstr "NTSync"
+
+#: ui/game_dialog.ui:215 ui/preferences_dialog.ui:76
+msgid "HDR"
+msgstr "HDR"
+
+#: ui/game_dialog.ui:220 ui/preferences_dialog.ui:81
+msgid "Proton Log"
+msgstr "Журнал Proton"
+
+#: ui/game_dialog.ui:235
+msgid "Menu Entry"
+msgstr ""
+
+#: ui/game_dialog.ui:236
+msgid "Start the game from the applications menu"
+msgstr ""
+
+#: ui/game_row.ui:73
+msgid "Delete Game"
+msgstr "Видалити гру"
+
+#: ui/group_dialog.ui:57
+msgid "Group Defaults"
+msgstr "Типові параметри групи"
+
+#: ui/group_dialog.ui:58
+msgid "Leave prefix empty or Proton on Default to inherit global settings."
+msgstr ""
+"Залиште префікс порожнім або Proton на «Типовий», щоб успадкувати глобальні "
+"налаштування."
+
+#: ui/group_dialog.ui:62
+msgid "Set an optional custom icon for this group."
+msgstr "Установіть необов'язкову власну піктограму для цієї групи."
+
+#: ui/group_dialog.ui:71
+msgid "Browse for group icon"
+msgstr "Вибрати піктограму групи"
+
+#: ui/group_dialog.ui:86
+msgid "Use a group-specific prefix instead of the global default."
+msgstr "Використовувати префікс групи замість глобального типового."
+
+#: ui/group_row.ui:88
+msgid "Delete Group"
+msgstr "Видалити групу"
+
+#: ui/group_row.ui:99
+msgid "Open Group"
+msgstr "Відкрити групу"
+
+#: ui/log_window.ui:10
+msgid "Leyen – Logs"
+msgstr "Leyen – Журнали"
+
+#: ui/log_window.ui:21
+msgid "Filter logs by game"
+msgstr "Фільтрувати журнали за грою"
+
+#: ui/log_window.ui:28
+msgid "Clear logs"
+msgstr "Очистити журнали"
+
+#: ui/log_window.ui:42
+msgid "No log lines to show"
+msgstr "Немає журнальних записів для показу"
+
+#: ui/log_window.ui:43
+msgid "New logs will appear here automatically, or choose another filter."
+msgstr ""
+"Нові журнали з'являтимуться тут автоматично, або виберіть інший фільтр."
+
+#: ui/preferences_dialog.ui:17
+msgid "Default Paths"
+msgstr "Типові шляхи"
+
+#: ui/preferences_dialog.ui:20
+msgid "Default Prefix Path"
+msgstr "Типовий шлях префікса"
+
+#: ui/preferences_dialog.ui:36
+msgid "Default Proton"
+msgstr "Типовий Proton"
+
+#: ui/preferences_dialog.ui:43
+msgid "Manage the default prefix inherited by games and groups."
+msgstr "Керуйте типовим префіксом, який успадковують ігри та групи."
+
+#: ui/preferences_dialog.ui:48
+msgid "Global Environment"
+msgstr "Глобальне середовище"
+
+#: ui/preferences_dialog.ui:88
+msgid "Logging"
+msgstr "Журналювання"
+
+#: ui/preferences_dialog.ui:89
+msgid "Select which messages are printed to the terminal."
+msgstr "Виберіть, які повідомлення виводяться в термінал."
+
+#: ui/preferences_dialog.ui:92
+msgid "Errors"
+msgstr "Помилки"
+
+#: ui/preferences_dialog.ui:93
+msgid "Show error messages from leyen and launched processes"
+msgstr "Показувати повідомлення про помилки від leyen та запущених процесів"
+
+#: ui/preferences_dialog.ui:98
+msgid "Warnings"
+msgstr "Попередження"
+
+#: ui/preferences_dialog.ui:99
+msgid "Show warning messages (e.g. game not found)"
+msgstr "Показувати попередження (напр., гру не знайдено)"
+
+#: ui/preferences_dialog.ui:104
+msgid "Operations"
+msgstr "Операції"
+
+#: ui/preferences_dialog.ui:105
+msgid "Show info about background operations"
+msgstr "Показувати відомості про фонові операції"
+
+#: ui/preferences_dialog.ui:112
+msgid "Maintenance"
+msgstr "Обслуговування"
+
+#: ui/preferences_dialog.ui:115
+msgid "Use shared container"
+msgstr "Використовувати спільний контейнер"
+
+#: ui/preferences_dialog.ui:116
+msgid ""
+"When a game launches while another sharing its Wine prefix is already "
+"running, run it inside the running container. Disable to launch it in its "
+"own container on the same prefix instead."
+msgstr ""
+"Якщо гра запускається, коли інша гра з тим самим префіксом Wine вже працює, "
+"запускати її всередині вже запущеного контейнера. Вимкніть, щоб натомість "
+"запускати її у власному контейнері на тому самому префіксі."
+
+#: ui/preferences_dialog.ui:121
+msgid "Repair Runtime"
+msgstr "Відновити середовище"
+
+#: ui/preferences_dialog.ui:122
+msgid ""
+"Reset internal umu-launcher components if dependency installation fails."
+msgstr ""
+"Скинути внутрішні компоненти umu-launcher, якщо встановлення залежностей не "
+"вдається."
+
+#: ui/preferences_dialog.ui:125
+msgid "Reset umu Runtime"
+msgstr "Скинути середовище umu"
+
+#: ui/preferences_dialog.ui:126
+msgid ""
+"Deletes steamrt3 directory. It will be re-downloaded on next dependency "
+"install."
+msgstr ""
+"Видаляє теку steamrt3. Її буде завантажено знову під час наступного "
+"встановлення залежностей."
+
+#: ui/prefix_tools_group.ui:10
+msgid "Tools"
+msgstr "Інструменти"
+
+#: ui/prefix_tools_group.ui:21
+msgid "Wine Configuration"
+msgstr "Конфігурація Wine"
+
+#: ui/prefix_tools_group.ui:28
+msgid "Registry Editor"
+msgstr "Редактор реєстру"
+
+#: ui/prefix_tools_group.ui:48
+msgid "Run in prefix"
+msgstr "Запустити в префіксі"
+
+#: ui/running_game_row.ui:67
+msgid "View Game Logs"
+msgstr "Переглянути журнали гри"
+
+#: ui/running_games_window.ui:10
+msgid "Leyen – Running Games"
+msgstr "Leyen – Запущені ігри"
+
+#: ui/running_games_window.ui:31
+msgid "No running games"
+msgstr "Немає запущених ігор"
+
+#: ui/running_games_window.ui:32
+msgid "Games you launch through Leyen will appear here while they are active."
+msgstr "Ігри, запущені через Leyen, з'являтимуться тут, поки вони активні."
+
+#: ui/shortcuts_dialog.ui:12
+msgid "General"
+msgstr "Загальне"
+
+#: ui/shortcuts_dialog.ui:15
+msgid "Search Games"
+msgstr "Пошук ігор"
+
+#: ui/shortcuts_dialog.ui:21
+msgid "Preferences"
+msgstr "Параметри"
+
+#: ui/shortcuts_dialog.ui:27
+msgid "Keyboard Shortcuts"
+msgstr "Клавіатурні скорочення"
+
+#: ui/shortcuts_dialog.ui:33
+msgid "Close Window"
+msgstr ""
+
+#: ui/shortcuts_dialog.ui:39
+msgid "Quit Leyen"
+msgstr "Вийти з Leyen"
+
+#: ui/window.ui:12
+#, fuzzy
+msgid "_Running Games"
+msgstr "Запущені ігри"
+
+#: ui/window.ui:16
+#, fuzzy
+msgid "_Logs"
+msgstr "Журнали"
+
+#: ui/window.ui:22
+#, fuzzy
+msgid "_Preferences"
+msgstr "Параметри"
+
+#: ui/window.ui:26
+#, fuzzy
+msgid "_Keyboard Shortcuts"
+msgstr "Клавіатурні скорочення"
+
+#: ui/window.ui:30
+#, fuzzy
+msgid "_About Leyen"
+msgstr "Про Leyen"
+
+#: ui/window.ui:37
+#, fuzzy
+msgid "_Game"
+msgstr "Гра"
+
+#: ui/window.ui:41
+#, fuzzy
+msgid "G_roup"
+msgstr "Група"
+
+#: ui/window.ui:69 ui/window.ui:209
+msgid "Main Menu"
+msgstr "Головне меню"
+
+#: ui/window.ui:82
+msgid "Search"
+msgstr "Пошук"
+
+#: ui/window.ui:97
+#, fuzzy
+msgid "Search games…"
+msgstr "Пошук ігор"
+
+#: ui/window.ui:120
+msgid "No games added yet"
+msgstr "Ще не додано жодної гри"
+
+#: ui/window.ui:121
+msgid "Add a game or create a group to organize your library."
+msgstr "Додайте гру або створіть групу, щоб упорядкувати бібліотеку."
+
+#: ui/window.ui:143
+msgid "No Results Found"
+msgstr ""
+
+#: ui/window.ui:144
+msgid "No game or group matches the search."
+msgstr ""
+
+#: ui/window.ui:236
+msgid "This group is empty"
+msgstr "Ця група порожня"
+
+#: ui/window.ui:237
+msgid "Add a game while inside the group to populate it."
+msgstr "Додайте гру, перебуваючи в групі, щоб наповнити її."
+
+#, no-c-format
+#~ msgid "Prefix path is required first"
+#~ msgstr "Спершу потрібно вказати шлях префікса"
+
+#, no-c-format
+#~ msgid "Item"
+#~ msgstr "Елемент"
+
+#, no-c-format
+#~ msgid "Grouping"
+#~ msgstr "Групування"
+
+#, no-c-format
+#~ msgid "Adding Into Group"
+#~ msgstr "Додавання до групи"
+
+#, no-c-format
+#~ msgid "Game Settings"
+#~ msgstr "Налаштування гри"
+
+#, no-c-format
+#~ msgid ""
+#~ "Leave prefix empty or Proton on Default to keep using global defaults."
+#~ msgstr ""
+#~ "Залиште префікс порожнім або Proton на «Типовий», щоб надалі "
+#~ "використовувати глобальні типові значення."
+
+#, no-c-format
+#~ msgid "Remove from menu"
+#~ msgstr "Вилучити з меню"
+
+#, no-c-format
+#~ msgid "Add to menu"
+#~ msgstr "Додати в меню"
+
+#, no-c-format
+#~ msgid "Title and executable path are required"
+#~ msgstr "Потрібно вказати назву та шлях до виконуваного файлу"
+
+#, no-c-format
+#~ msgid "Back to Library"
+#~ msgstr "Назад до бібліотеки"
+
+#, no-c-format
+#~ msgid "Search games..."
+#~ msgstr "Пошук ігор..."
+
+#, no-c-format
+#~ msgid "Global Settings"
+#~ msgstr "Глобальні параметри"
+
+#, no-c-format
+#~ msgid "Run in default prefix"
+#~ msgstr "Запустити в типовому префіксі"
 
 #~ msgid "{} file"
 #~ msgid_plural "{} files"

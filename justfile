@@ -1,6 +1,6 @@
 # Leyen build, check and install tasks.
 #
-# `build` needs cargo. `install` copies what is already in target/release, building it
+# `build` needs cargo and blueprint-compiler. `install` copies what is already in target/release, building it
 # only when it is missing, so a release built elsewhere installs on a machine without
 # the toolchain. It asks for sudo itself when the prefix
 # is not writable: the daemon it restarts belongs to your session, not root's.
@@ -18,6 +18,7 @@ bindir := destdir + prefix + "/bin"
 datadir := destdir + prefix + "/share"
 release := "target/release"
 pot_dir := "target/pot"
+check_dir := "target/check"
 stage_dir := "target/stage"
 version := `sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1`
 
@@ -36,10 +37,12 @@ build-debug:
 run *args: build-debug
     target/debug/leyen-gtk {{args}}
 
-# Lints: rustfmt, clippy, desktop entry, metainfo and catalogues.
+# Lints: rustfmt, clippy, blueprint, desktop entry, metainfo and catalogues.
 check:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
+    mkdir -p {{check_dir}}
+    blueprint-compiler batch-compile {{check_dir}} data/ui data/ui/*.blp >/dev/null
     desktop-file-validate data/{{app_id}}.desktop
     appstreamcli validate --no-net data/{{app_id}}.metainfo.xml
     for lang in $(cat po/LINGUAS); do msgfmt -c -o /dev/null po/$lang.po; done
@@ -63,9 +66,11 @@ smoke: build-debug
     call GetLogs 0 >/dev/null
     echo "smoke OK"
 
-# Regenerate po/leyen.pot from the Rust sources, the desktop entry and the metainfo.
+# Regenerate po/leyen.pot from the Rust sources, the Blueprint files, the desktop entry
+# and the metainfo.
 pot:
-    rm -rf {{pot_dir}} && mkdir -p {{pot_dir}}
+    rm -rf {{pot_dir}} && mkdir -p {{pot_dir}}/ui
+    blueprint-compiler batch-compile {{pot_dir}}/ui data/ui data/ui/*.blp >/dev/null
     # xgettext has no Rust mode; the C lexer copes once lifetimes ('a, 'static) are stripped.
     find crates -name '*.rs' -exec cp --parents {} {{pot_dir}} \;
     # A quote right after a letter is an apostrophe in a string, not a lifetime.
@@ -75,6 +80,7 @@ pot:
         --language=C --keyword= --keyword=gettext --keyword=ngettext:1,2 \
         --flag=gettext:1:no-c-format --flag=ngettext:1:no-c-format --flag=ngettext:2:no-c-format \
         --add-comments=Translators --sort-by-file --directory={{pot_dir}} -o po/leyen.pot $(cd {{pot_dir}} && find crates -name '*.rs' | sort)
+    xgettext -j --from-code=UTF-8 --package-name=leyen --package-version={{version}} --msgid-bugs-address=https://github.com/sachesi/leyen/issues --add-comments=Translators --sort-by-file --directory={{pot_dir}} -o po/leyen.pot $(cd {{pot_dir}} && ls ui/*.ui)
     xgettext -j --from-code=UTF-8 --package-name=leyen --package-version={{version}} --msgid-bugs-address=https://github.com/sachesi/leyen/issues --language=Desktop --sort-by-file -o po/leyen.pot data/{{app_id}}.desktop
     xgettext -j --from-code=UTF-8 --package-name=leyen --package-version={{version}} --msgid-bugs-address=https://github.com/sachesi/leyen/issues --sort-by-file -o po/leyen.pot data/{{app_id}}.metainfo.xml
 

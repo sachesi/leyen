@@ -1,0 +1,99 @@
+using Gtk 4.0;
+
+template $LeyenGroupRow: ListBoxRow {
+  child: Box {
+    spacing: 12;
+    margin-top: 12;
+    margin-bottom: 12;
+    margin-start: 12;
+    margin-end: 12;
+
+    $LeyenLibraryIcon icon {
+      fallback-icon-name: "folder";
+      valign: start;
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 4;
+      hexpand: true;
+      valign: center;
+
+      Label title_label {
+        xalign: 0;
+        wrap: true;
+        wrap-mode: word_char;
+
+        styles [
+          "title-4",
+        ]
+      }
+
+      Box {
+        spacing: 8;
+
+        Label count_label {
+          xalign: 0;
+
+          styles [
+            "caption",
+            "dim-label",
+          ]
+        }
+
+        Label running_label {
+          xalign: 0;
+          visible: false;
+
+          styles [
+            "caption",
+            "accent",
+          ]
+        }
+      }
+
+      Label status_label {
+        xalign: 0;
+
+        styles [
+          "caption",
+        ]
+      }
+    }
+
+    Box {
+      spacing: 6;
+      valign: center;
+
+      Button edit_button {
+        icon-name: "document-edit-symbolic";
+        tooltip-text: _("Edit Group");
+        action-name: "win.edit-group";
+        action-target: "''";
+      }
+
+      Button delete_button {
+        icon-name: "user-trash-symbolic";
+        tooltip-text: _("Delete Group");
+        action-name: "win.delete-item";
+        action-target: "''";
+
+        styles [
+          "destructive-action",
+        ]
+      }
+
+      Button open_button {
+        icon-name: "go-next-symbolic";
+        tooltip-text: _("Open Group");
+        action-name: "win.open-group";
+        action-target: "''";
+
+        styles [
+          "suggested-action",
+          "circular",
+        ]
+      }
+    }
+  };
+}

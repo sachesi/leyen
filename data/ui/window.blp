@@ -1,0 +1,266 @@
+using Gtk 4.0;
+using Adw 1;
+
+menu primary_menu {
+  section {
+    item {
+      label: _("_Running Games");
+      action: "win.show-running-games";
+    }
+
+    item {
+      label: _("_Logs");
+      action: "win.show-logs";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Preferences");
+      action: "app.preferences";
+    }
+
+    item {
+      label: _("_Keyboard Shortcuts");
+      action: "app.shortcuts";
+    }
+
+    item {
+      label: _("_About Leyen");
+      action: "app.about";
+    }
+  }
+}
+
+menu add_menu {
+  item {
+    label: _("_Game");
+    action: "win.add-game";
+  }
+
+  item {
+    label: _("G_roup");
+    action: "win.add-group";
+  }
+}
+
+template $LeyenWindow: Adw.ApplicationWindow {
+  title: _("Leyen");
+  default-width: 540;
+  default-height: 640;
+  width-request: 360;
+  height-request: 294;
+
+  content: Adw.ToastOverlay toast_overlay {
+    child: Adw.NavigationView navigation_view {
+      popped => $on_page_popped() swapped;
+
+      Adw.NavigationPage {
+        title: _("Leyen");
+        tag: "library";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            [end]
+            MenuButton {
+              icon-name: "open-menu-symbolic";
+              menu-model: primary_menu;
+              primary: true;
+              tooltip-text: _("Main Menu");
+            }
+
+            [end]
+            MenuButton {
+              icon-name: "list-add-symbolic";
+              menu-model: add_menu;
+              tooltip-text: _("Add");
+            }
+
+            [end]
+            ToggleButton search_button {
+              icon-name: "edit-find-symbolic";
+              tooltip-text: _("Search");
+              active: bind search_bar.search-mode-enabled bidirectional;
+            }
+          }
+
+          [top]
+          SearchBar search_bar {
+            key-capture-widget: template;
+
+            child: Adw.Clamp {
+              maximum-size: 400;
+
+              child: SearchEntry search_entry {
+                hexpand: true;
+                placeholder-text: _("Search games…");
+                search-changed => $on_search_changed() swapped;
+              };
+            };
+          }
+
+          [top]
+          Adw.Banner {
+            title: bind template.runtime-message;
+            revealed: bind template.runtime-busy;
+          }
+
+          content: Stack library_stack {
+            transition-type: crossfade;
+
+            StackPage {
+              name: "empty";
+
+              child: Adw.StatusPage {
+                icon-name: "applications-games-symbolic";
+                title: _("No games added yet");
+                description: _("Add a game or create a group to organize your library.");
+
+                child: Button {
+                  label: _("Add Game");
+                  action-name: "win.add-game";
+                  halign: center;
+
+                  styles [
+                    "pill",
+                    "suggested-action",
+                  ]
+                };
+              };
+            }
+
+            StackPage {
+              name: "no-results";
+
+              child: Adw.StatusPage {
+                icon-name: "edit-find-symbolic";
+                title: _("No Results Found");
+                description: _("No game or group matches the search.");
+              };
+            }
+
+            StackPage {
+              name: "list";
+
+              child: ScrolledWindow {
+                hscrollbar-policy: never;
+
+                child: Adw.Clamp {
+                  maximum-size: 800;
+                  margin-top: 24;
+                  margin-bottom: 12;
+                  margin-start: 12;
+                  margin-end: 12;
+
+                  child: ListBox library_list {
+                    selection-mode: none;
+                    valign: start;
+                    row-activated => $on_row_activated() swapped;
+
+                    styles [
+                      "boxed-list-separate",
+                    ]
+                  };
+                };
+              };
+            }
+          };
+        };
+      }
+
+      Adw.NavigationPage group_page {
+        tag: "group";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            title-widget: Adw.WindowTitle group_title {
+              subtitle: _("Group");
+            };
+
+            [start]
+            Button group_edit_button {
+              icon-name: "document-edit-symbolic";
+              tooltip-text: _("Edit Group");
+              action-name: "win.edit-group";
+              action-target: "''";
+            }
+
+            [end]
+            MenuButton {
+              icon-name: "open-menu-symbolic";
+              menu-model: primary_menu;
+              primary: true;
+              tooltip-text: _("Main Menu");
+            }
+
+            [end]
+            Button {
+              icon-name: "list-add-symbolic";
+              tooltip-text: _("Add Game");
+              action-name: "win.add-game";
+            }
+          }
+
+          [top]
+          Adw.Banner {
+            title: bind template.runtime-message;
+            revealed: bind template.runtime-busy;
+          }
+
+          content: Stack group_stack {
+            transition-type: crossfade;
+
+            StackPage {
+              name: "empty";
+
+              child: Adw.StatusPage {
+                icon-name: "folder-symbolic";
+                title: _("This group is empty");
+                description: _("Add a game while inside the group to populate it.");
+
+                child: Button {
+                  label: _("Add Game");
+                  action-name: "win.add-game";
+                  halign: center;
+
+                  styles [
+                    "pill",
+                    "suggested-action",
+                  ]
+                };
+              };
+            }
+
+            StackPage {
+              name: "list";
+
+              child: ScrolledWindow {
+                hscrollbar-policy: never;
+
+                child: Adw.Clamp {
+                  maximum-size: 800;
+                  margin-top: 24;
+                  margin-bottom: 12;
+                  margin-start: 12;
+                  margin-end: 12;
+
+                  child: ListBox group_list {
+                    selection-mode: none;
+                    valign: start;
+                    row-activated => $on_row_activated() swapped;
+
+                    styles [
+                      "boxed-list-separate",
+                    ]
+                  };
+                };
+              };
+            }
+          };
+        };
+      }
+    };
+  };
+}

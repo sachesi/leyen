@@ -1,0 +1,120 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenPreferencesDialog: Adw.PreferencesDialog {
+  content-width: 520;
+  content-height: 620;
+  closed => $on_closed() swapped;
+
+  Adw.PreferencesPage {
+    Adw.PreferencesGroup {
+      title: _("Default Paths");
+
+      Adw.EntryRow prefix_row {
+        title: _("Default Prefix Path");
+
+        [suffix]
+        Button {
+          icon-name: "folder-open-symbolic";
+          tooltip-text: _("Browse for prefix folder");
+          valign: center;
+          clicked => $on_browse_prefix() swapped;
+
+          styles [
+            "flat",
+          ]
+        }
+      }
+
+      Adw.ComboRow proton_row {
+        title: _("Default Proton");
+      }
+    }
+
+    $LeyenPrefixToolsGroup tools_group {
+      description: _("Manage the default prefix inherited by games and groups.");
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Global Environment");
+
+      Adw.SwitchRow mangohud_row {
+        title: _("MangoHud");
+      }
+
+      Adw.SwitchRow gamemode_row {
+        title: _("GameMode");
+      }
+
+      Adw.SwitchRow wayland_row {
+        title: _("Wayland");
+      }
+
+      Adw.SwitchRow wow64_row {
+        title: _("WoW64");
+      }
+
+      Adw.SwitchRow ntsync_row {
+        title: _("NTSync");
+      }
+
+      Adw.SwitchRow hdr_row {
+        title: _("HDR");
+      }
+
+      Adw.SwitchRow proton_log_row {
+        title: _("Proton Log");
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Logging");
+      description: _("Select which messages are printed to the terminal.");
+
+      Adw.SwitchRow log_errors_row {
+        title: _("Errors");
+        subtitle: _("Show error messages from leyen and launched processes");
+      }
+
+      Adw.SwitchRow log_warnings_row {
+        title: _("Warnings");
+        subtitle: _("Show warning messages (e.g. game not found)");
+      }
+
+      Adw.SwitchRow log_operations_row {
+        title: _("Operations");
+        subtitle: _("Show info about background operations");
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Maintenance");
+
+      Adw.SwitchRow shared_container_row {
+        title: _("Use shared container");
+        subtitle: _("When a game launches while another sharing its Wine prefix is already running, run it inside the running container. Disable to launch it in its own container on the same prefix instead.");
+      }
+
+      Adw.ExpanderRow {
+        title: _("Repair Runtime");
+        subtitle: _("Reset internal umu-launcher components if dependency installation fails.");
+
+        Adw.ActionRow {
+          title: _("Reset umu Runtime");
+          subtitle: _("Deletes steamrt3 directory. It will be re-downloaded on next dependency install.");
+
+          [suffix]
+          Button {
+            label: _("Reset");
+            valign: center;
+            clicked => $on_reset_runtime() swapped;
+
+            styles [
+              "destructive-action",
+            ]
+          }
+        }
+      }
+    }
+  }
+}

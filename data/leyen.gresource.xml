@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/github/sachesi/leyen">
+    <file>style.css</file>
+    <file preprocess="xml-stripblanks">ui/window.ui</file>
+    <file preprocess="xml-stripblanks">ui/game_row.ui</file>
+    <file preprocess="xml-stripblanks">ui/group_row.ui</file>
+    <file preprocess="xml-stripblanks">ui/game_dialog.ui</file>
+    <file preprocess="xml-stripblanks">ui/group_dialog.ui</file>
+    <file preprocess="xml-stripblanks">ui/prefix_tools_group.ui</file>
+    <file preprocess="xml-stripblanks">ui/preferences_dialog.ui</file>
+    <file preprocess="xml-stripblanks">ui/dependencies_page.ui</file>
+    <file preprocess="xml-stripblanks">ui/dependency_row.ui</file>
+    <file preprocess="xml-stripblanks">ui/log_window.ui</file>
+    <file preprocess="xml-stripblanks">ui/running_games_window.ui</file>
+    <file preprocess="xml-stripblanks">ui/running_game_row.ui</file>
+    <file preprocess="xml-stripblanks" alias="shortcuts-dialog.ui">ui/shortcuts_dialog.ui</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/apps/io.github.sachesi.leyen.svg">icons/hicolor/scalable/apps/io.github.sachesi.leyen.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/symbolic/apps/io.github.sachesi.leyen-symbolic.svg">icons/hicolor/symbolic/apps/io.github.sachesi.leyen-symbolic.svg</file>
+  </gresource>
+</gresources>

@@ -1,0 +1,56 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenRunningGamesWindow: Adw.Window {
+  title: _("Leyen – Running Games");
+  default-width: 560;
+  default-height: 420;
+  width-request: 360;
+  height-request: 294;
+
+  content: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {}
+
+    content: Adw.ToastOverlay toast_overlay {
+      child: Stack stack {
+        transition-type: crossfade;
+
+        StackPage {
+          name: "empty";
+
+          child: Adw.StatusPage {
+            icon-name: "media-playback-stop-symbolic";
+            title: _("No running games");
+            description: _("Games you launch through Leyen will appear here while they are active.");
+          };
+        }
+
+        StackPage {
+          name: "list";
+
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
+
+            child: Adw.Clamp {
+              maximum-size: 800;
+              margin-top: 24;
+              margin-bottom: 12;
+              margin-start: 12;
+              margin-end: 12;
+
+              child: ListBox list {
+                selection-mode: none;
+                valign: start;
+
+                styles [
+                  "boxed-list-separate",
+                ]
+              };
+            };
+          };
+        }
+      };
+    };
+  };
+}

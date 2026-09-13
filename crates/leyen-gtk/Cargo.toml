@@ -25,3 +25,6 @@ image.workspace = true
 pelite.workspace = true
 toml.workspace = true
 uuid.workspace = true
+
+[build-dependencies]
+glib-build-tools.workspace = true

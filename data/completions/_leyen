@@ -22,7 +22,7 @@ _leyen() {
     'help:show usage'
     'list:list games and running sessions'
     'run:launch a game by Leyen ID'
-    'logs:open the log window'
+    'logs:print the log'
     'kill:stop a running game by Leyen ID'
   )
 
@@ -42,7 +42,10 @@ _leyen() {
         kill)
           _leyen_running_ids
           ;;
-        help|list|logs)
+        logs)
+          _arguments '(-f --follow)'{-f,--follow}'[keep printing new lines]'
+          ;;
+        help|list)
           ;;
       esac
       ;;

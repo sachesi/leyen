@@ -17,10 +17,11 @@ complete -c leyen -f
 complete -c leyen -n '__fish_use_subcommand' -a help -d 'Show usage'
 complete -c leyen -n '__fish_use_subcommand' -a list -d 'List games and running sessions'
 complete -c leyen -n '__fish_use_subcommand' -a run -d 'Launch a game by Leyen ID'
-complete -c leyen -n '__fish_use_subcommand' -a logs -d 'Open the log window'
+complete -c leyen -n '__fish_use_subcommand' -a logs -d 'Print the log'
 complete -c leyen -n '__fish_use_subcommand' -a kill -d 'Stop a running game by Leyen ID'
 
 complete -c leyen -n '__fish_seen_subcommand_from run' -a '(__fish_leyen_ids)' -d 'Leyen ID'
 complete -c leyen -n '__fish_seen_subcommand_from kill' -a '(__fish_leyen_running_ids)' -d 'Running Leyen ID'
+complete -c leyen -n '__fish_seen_subcommand_from logs' -s f -l follow -d 'Keep printing new lines'
 
 complete -c leyen -s h -l help -d 'Show usage'

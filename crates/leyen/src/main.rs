@@ -14,7 +14,7 @@ use leyen_model::models::{Game, LibraryItem};
 
 #[derive(Parser)]
 #[command(name = "leyen")]
-#[command(about = "A small GTK4/libadwaita launcher for Windows games on Linux", long_about = None)]
+#[command(about = "List, run and stop the games in the Leyen library", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -29,9 +29,9 @@ enum Commands {
         /// The Leyen ID of the game to launch (e.g., ly-1234)
         leyen_id: String,
     },
-    /// Stream game logs to stdout
+    /// Print the log of games and of Leyen
     Logs {
-        /// Keep streaming new log lines until interrupted
+        /// Keep printing new lines until interrupted
         #[arg(short, long)]
         follow: bool,
     },

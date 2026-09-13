@@ -51,7 +51,11 @@ _leyen() {
             COMPREPLY=( $(compgen -W "$(_leyen_running_ids)" -- "${cur}") )
             return 0
             ;;
-        help|list|logs|--help|-h)
+        logs)
+            COMPREPLY=( $(compgen -W "--follow -f" -- "${cur}") )
+            return 0
+            ;;
+        help|list|--help|-h)
             COMPREPLY=()
             return 0
             ;;

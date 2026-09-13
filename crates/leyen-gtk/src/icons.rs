@@ -82,9 +82,9 @@ fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
     let mut reader = image::ImageReader::open(source).map_err(|err| unreadable(&err))?;
     reader.limits(icon_decode_limits());
     let image = reader.decode().map_err(|err| unreadable(&err))?;
-    let normalized = image.resize(MANAGED_ICON_SIZE, MANAGED_ICON_SIZE, FilterType::CatmullRom);
+    let normalized = fit_square(&image, MANAGED_ICON_SIZE, FilterType::CatmullRom);
 
-    save_png_atomically(&normalized, target).map_err(|err| {
+    save_png_atomically(&normalized.into(), target).map_err(|err| {
         gettext("Cannot save the icon: {}").replacen(
             "{}",
             &format!("{}: {err}", target.display()),
@@ -136,8 +136,22 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
         .or_else(|| find_ico_blob(&bytes).and_then(decode_icon_blob))
         .ok_or_else(|| format!("No icon resource found in '{}'", exe_path.display()))?;
 
-    save_png_atomically(&decoded.resize(size, size, FilterType::CatmullRom), out)
-        .map_err(|err| format!("Failed to save icon '{}': {}", out.display(), err))
+    save_png_atomically(
+        &fit_square(&decoded, size, FilterType::CatmullRom).into(),
+        out,
+    )
+    .map_err(|err| format!("Failed to save icon '{}': {}", out.display(), err))
+}
+
+/// `image` scaled to fit a square of `size` pixels and centred on a transparent one, so
+/// an icon that is not square keeps all of itself and still suits a square icon slot.
+pub fn fit_square(image: &image::DynamicImage, size: u32, filter: FilterType) -> image::RgbaImage {
+    let fitted = image.resize(size, size, filter).to_rgba8();
+    let mut square = image::RgbaImage::new(size, size);
+    let x = (size - fitted.width()) / 2;
+    let y = (size - fitted.height()) / 2;
+    image::imageops::overlay(&mut square, &fitted, i64::from(x), i64::from(y));
+    square
 }
 
 /// Encodes to PNG in memory and writes via temp file + rename, so a crash or

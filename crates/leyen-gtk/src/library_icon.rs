@@ -13,6 +13,7 @@ use gtk4::{gdk, glib};
 use image::imageops::FilterType;
 
 use crate::daemon::gio_blocking;
+use crate::icons::fit_square;
 
 pub const ICON_SIZE: i32 = 56;
 const ICON_CACHE_CAP: usize = 256;
@@ -240,16 +241,33 @@ fn store_texture(path: &Path, stamp: Stamp, texture: &gdk::MemoryTexture) {
     });
 }
 
-/// Decodes the icon, trims transparent padding and scales it to twice the display
-/// size. Runs on a worker thread.
+/// Decodes the icon, trims transparent padding and makes a square of it at twice the
+/// display size: a shape drawn on transparency is scaled into it whole, and artwork
+/// that fills its rectangle is cropped to it from the centre and has its corners
+/// rounded by the style. Runs on a worker thread.
 fn decode(path: &Path) -> Option<(i32, i32, Vec<u8>)> {
     let image = image::open(path).ok()?;
-    let image = crop_transparent_padding(image);
+    Some(square_texture_data(crop_transparent_padding(image)))
+}
+
+fn square_texture_data(image: image::DynamicImage) -> (i32, i32, Vec<u8>) {
     let size = (ICON_SIZE * 2) as u32;
-    let rgba = image.resize(size, size, FilterType::Lanczos3).to_rgba8();
-    let width = i32::try_from(rgba.width()).ok()?;
-    let height = i32::try_from(rgba.height()).ok()?;
-    Some((width, height, rgba.into_raw()))
+    let rgba = if is_shaped(&image) {
+        fit_square(&image, size, FilterType::Lanczos3)
+    } else {
+        image
+            .resize_to_fill(size, size, FilterType::Lanczos3)
+            .to_rgba8()
+    };
+    (ICON_SIZE * 2, ICON_SIZE * 2, rgba.into_raw())
+}
+
+/// Whether more than a tenth of the image is see-through: a logo or a round badge
+/// rather than a filled rectangle. Rounded corners alone stay well under that.
+fn is_shaped(image: &image::DynamicImage) -> bool {
+    let rgba = image.to_rgba8();
+    let clear = rgba.pixels().filter(|pixel| pixel.0[3] < 128).count();
+    clear * 10 > rgba.pixels().len()
 }
 
 fn make_texture(width: i32, height: i32, rgba: Vec<u8>) -> gdk::MemoryTexture {
@@ -288,4 +306,41 @@ fn alpha_bounds(image: &image::DynamicImage) -> Option<(u32, u32, u32, u32)> {
         });
     }
     bounds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ICON_SIZE, crop_transparent_padding, square_texture_data};
+    use image::{DynamicImage, Rgba, RgbaImage};
+
+    fn alpha(rgba: &[u8], x: i32, y: i32) -> u8 {
+        rgba[((y * ICON_SIZE * 2 + x) * 4 + 3) as usize]
+    }
+
+    #[test]
+    fn a_tall_logo_on_transparency_is_shown_whole() {
+        let logo = RgbaImage::from_fn(60, 120, |x, y| {
+            let (dx, dy) = ((x as f32 - 29.5) / 30.0, (y as f32 - 59.5) / 60.0);
+            if dx * dx + dy * dy <= 1.0 {
+                Rgba([200, 30, 40, 255])
+            } else {
+                Rgba([0, 0, 0, 0])
+            }
+        });
+        let (width, height, rgba) =
+            square_texture_data(crop_transparent_padding(DynamicImage::ImageRgba8(logo)));
+        let size = ICON_SIZE * 2;
+        assert_eq!((width, height), (size, size));
+        // Its top and bottom are still there, and the sides are padding.
+        assert!(alpha(&rgba, size / 2, 2) > 128);
+        assert!(alpha(&rgba, size / 2, size - 3) > 128);
+        assert_eq!(alpha(&rgba, 2, size / 2), 0);
+    }
+
+    #[test]
+    fn opaque_artwork_fills_the_square() {
+        let art = RgbaImage::from_pixel(200, 100, Rgba([30, 120, 200, 255]));
+        let (_, _, rgba) = square_texture_data(DynamicImage::ImageRgba8(art));
+        assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+    }
 }

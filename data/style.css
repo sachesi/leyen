@@ -2,7 +2,7 @@
 
 /* Game and group icons: a rounded square, whatever shape the image has. */
 .library-icon {
-  border-radius: 7px;
+  border-radius: 8px;
 }
 
 /* A game that is running is outlined in the accent colour, inside the row so the

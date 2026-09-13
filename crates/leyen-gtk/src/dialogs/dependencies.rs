@@ -41,8 +41,6 @@ mod imp {
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
-        pub search_bar: TemplateChild<gtk4::SearchBar>,
-        #[template_child]
         pub search_entry: TemplateChild<gtk4::SearchEntry>,
         #[template_child]
         pub page: TemplateChild<adw::PreferencesPage>,
@@ -92,12 +90,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for DependenciesPage {
-        fn constructed(&self) {
-            self.parent_constructed();
-            self.search_bar.connect_entry(&*self.search_entry);
-        }
-    }
+    impl ObjectImpl for DependenciesPage {}
 
     impl WidgetImpl for DependenciesPage {}
     impl NavigationPageImpl for DependenciesPage {}
@@ -113,6 +106,17 @@ mod imp {
         #[template_callback]
         fn on_search_changed(&self, _entry: &gtk4::SearchEntry) {
             self.obj().apply_filter();
+        }
+
+        /// Escape clears the search, and once it is empty goes back: the search
+        /// field has the focus, so the page would not see the key otherwise.
+        #[template_callback]
+        fn on_stop_search(&self, entry: &gtk4::SearchEntry) {
+            if entry.text().is_empty() {
+                let _ = WidgetExt::activate_action(&*self.obj(), "navigation.pop", None);
+            } else {
+                entry.set_text("");
+            }
         }
     }
 }

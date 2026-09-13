@@ -16,8 +16,7 @@ template $LeyenDependenciesPage: Adw.NavigationPage {
       }
 
       [top]
-      SearchBar search_bar {
-        key-capture-widget: template;
+      SearchBar {
         search-mode-enabled: true;
         show-close-button: false;
 
@@ -27,7 +26,9 @@ template $LeyenDependenciesPage: Adw.NavigationPage {
           child: SearchEntry search_entry {
             hexpand: true;
             placeholder-text: _("Search dependencies…");
+            key-capture-widget: template;
             search-changed => $on_search_changed() swapped;
+            stop-search => $on_stop_search() swapped;
           };
         };
       }

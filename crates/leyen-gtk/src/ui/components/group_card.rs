@@ -1,13 +1,12 @@
-use leyen_model::i18n::gettext;
-use leyen_model::i18n::ngettext;
 use gtk4::glib;
 use gtk4::prelude::*;
+use leyen_model::i18n::gettext;
+use leyen_model::i18n::ngettext;
 use libadwaita as adw;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::group_icon_path;
-use leyen_model::models::GameGroup;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
 use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_group_dialog};
@@ -16,6 +15,7 @@ use crate::ui::utils::{
     RunningGameMap, format_duration_brief, format_last_played, game_is_running, group_last_played,
     group_running_elapsed_seconds,
 };
+use leyen_model::models::GameGroup;
 
 pub fn build_group_card(
     group: &GameGroup,
@@ -70,8 +70,11 @@ pub fn build_group_card(
         .build();
     let count_label = gtk4::Label::builder()
         .label(
-            ngettext("{} game", "{} games", group.games.len() as u32)
-                .replacen("{}", &group.games.len().to_string(), 1),
+            ngettext("{} game", "{} games", group.games.len() as u32).replacen(
+                "{}",
+                &group.games.len().to_string(),
+                1,
+            ),
         )
         .xalign(0.0)
         .css_classes(["caption", "dim-label"])

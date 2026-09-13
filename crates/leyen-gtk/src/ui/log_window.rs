@@ -172,7 +172,9 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
     let empty_state = adw::StatusPage::builder()
         .icon_name("utilities-terminal-symbolic")
         .title(gettext("No log lines to show"))
-        .description(gettext("New logs will appear here automatically, or choose another filter."))
+        .description(gettext(
+            "New logs will appear here automatically, or choose another filter.",
+        ))
         .hexpand(true)
         .vexpand(true)
         .build();
@@ -244,7 +246,13 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
                     buffer.set_text("");
                     let filter = selected_filter.borrow().clone();
                     append_entries(
-                        &buffer, &filter, &scroll, &empty_state, &entries, &text_view, &end_mark,
+                        &buffer,
+                        &filter,
+                        &scroll,
+                        &empty_state,
+                        &entries,
+                        &text_view,
+                        &end_mark,
                         &autoscroll,
                     );
                     offset = next;
@@ -255,7 +263,13 @@ pub async fn show_log_window(parent: &adw::ApplicationWindow, initial_game_id: O
                 }
                 let filter = selected_filter.borrow().clone();
                 append_entries(
-                    &buffer, &filter, &scroll, &empty_state, &entries, &text_view, &end_mark,
+                    &buffer,
+                    &filter,
+                    &scroll,
+                    &empty_state,
+                    &entries,
+                    &text_view,
+                    &end_mark,
                     &autoscroll,
                 );
                 offset = next;

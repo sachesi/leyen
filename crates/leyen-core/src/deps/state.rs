@@ -76,7 +76,9 @@ fn prefix_deps_lock_path(prefix_path: &str) -> PathBuf {
 /// later mutation, so the same corrupt-state-as-empty trap applies (e.g. an
 /// uninstall would silently no-op on a dependency that's actually still
 /// tracked).
-pub(crate) fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencyState, String> {
+pub(crate) fn read_prefix_dep_state_checked(
+    prefix_path: &str,
+) -> Result<PrefixDependencyState, String> {
     let path = get_prefix_deps_state_path(prefix_path);
     match fs::read_to_string(&path) {
         Ok(content) => {
@@ -234,7 +236,11 @@ mod tests {
 
         let state_path = prefix.join(".leyen/deps/state.toml");
         fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-        fs::write(&state_path, format!("version = {}\n", DEP_STATE_VERSION + 1)).unwrap();
+        fs::write(
+            &state_path,
+            format!("version = {}\n", DEP_STATE_VERSION + 1),
+        )
+        .unwrap();
 
         let err = read_prefix_dep_state_checked(&prefix_str).unwrap_err();
         assert!(err.contains("newer version of leyen"), "{err}");

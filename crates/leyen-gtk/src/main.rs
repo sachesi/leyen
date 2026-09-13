@@ -28,9 +28,7 @@ fn main() -> glib::ExitCode {
     // Start the D-Bus bridge before the UI so early signals queue rather than drop.
     let evt_rx = Rc::new(RefCell::new(Some(daemon::start())));
 
-    let app = adw::Application::builder()
-        .application_id(APP_ID)
-        .build();
+    let app = adw::Application::builder().application_id(APP_ID).build();
 
     app.connect_activate(move |app| {
         // gio uniqueness: a second invocation re-activates the primary instance;

@@ -23,7 +23,7 @@ async fn preflight(overlay: &adw::ToastOverlay, blocked_msg: &str) -> bool {
     }
     if !gio_blocking(is_umu_run_available).await.unwrap_or(false) {
         overlay.add_toast(adw::Toast::new(&gettext(
-            "umu-launcher is not installed. Please check your internet connection and restart."
+            "umu-launcher is not installed. Please check your internet connection and restart.",
         )));
         return false;
     }
@@ -98,7 +98,10 @@ fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Resu
         cmd.env("PROTONPATH", proton_path);
     }
     cmd.env("GAMEID", format!("leyen-{name}"));
-    cmd.env("WINEDLLOVERRIDES", "mscoree=b;mshtml=b;winemenubuilder.exe=d");
+    cmd.env(
+        "WINEDLLOVERRIDES",
+        "mscoree=b;mshtml=b;winemenubuilder.exe=d",
+    );
     cmd.env("WINEDEBUG", "fixme-all");
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
     let mut child = cmd

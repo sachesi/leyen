@@ -105,14 +105,13 @@ fn save_custom_icon(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|err| format!("Failed to read custom icon '{}': {}", source.display(), err))?;
     let normalized = image.resize(MANAGED_ICON_SIZE, MANAGED_ICON_SIZE, FilterType::CatmullRom);
 
-    save_png_atomically(&normalized, target)
-        .map_err(|err| {
-            format!(
-                "Failed to write managed icon '{}': {}",
-                target.display(),
-                err
-            )
-        })
+    save_png_atomically(&normalized, target).map_err(|err| {
+        format!(
+            "Failed to write managed icon '{}': {}",
+            target.display(),
+            err
+        )
+    })
 }
 
 fn ensure_icons_dir() -> Result<PathBuf, String> {
@@ -136,18 +135,27 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
     let mut file = fs::File::open(exe_path)
         .map_err(|err| format!("Failed to open '{}': {}", exe_path.display(), err))?;
 
-    let metadata = file.metadata()
-        .map_err(|err| format!("Failed to get metadata for '{}': {}", exe_path.display(), err))?;
+    let metadata = file.metadata().map_err(|err| {
+        format!(
+            "Failed to get metadata for '{}': {}",
+            exe_path.display(),
+            err
+        )
+    })?;
 
     let bytes = if metadata.len() < 64 * 1024 * 1024 {
         fs::read(exe_path)
             .map_err(|err| format!("Failed to read '{}': {}", exe_path.display(), err))?
     } else {
-        log::warn!("File '{}' is larger than 64MB and will be truncated to 64MB for icon extraction", exe_path.display());
+        log::warn!(
+            "File '{}' is larger than 64MB and will be truncated to 64MB for icon extraction",
+            exe_path.display()
+        );
         // For huge files, only read the first 64MB which usually contains all headers and resources
         use std::io::Read;
         let mut buffer = vec![0u8; 64 * 1024 * 1024];
-        let n = file.read(&mut buffer)
+        let n = file
+            .read(&mut buffer)
             .map_err(|err| format!("Failed to read header of '{}': {}", exe_path.display(), err))?;
         buffer.truncate(n);
         buffer
@@ -167,7 +175,10 @@ fn extract_best_icon_to_png(exe_path: &Path, out: &Path, size: u32) -> Result<()
 fn save_png_atomically(image: &image::DynamicImage, out: &std::path::Path) -> Result<(), String> {
     let mut bytes = Vec::new();
     image
-        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
         .map_err(|err| err.to_string())?;
     leyen_model::paths::atomic_write_bytes(out, &bytes).map_err(|err| err.to_string())
 }

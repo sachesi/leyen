@@ -46,7 +46,10 @@ impl FlockGuard {
                 return Err(err);
             }
             if start.elapsed() >= timeout {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "settings lock timeout"));
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "settings lock timeout",
+                ));
             }
             sleep(Duration::from_millis(50));
         }

@@ -100,7 +100,9 @@ mod tests {
     #[test]
     fn entry_without_the_old_id_is_left_alone() {
         assert_eq!(
-            migrate_desktop_entry("Icon=io.github.sachesi.leyen\nComment=com.github.sachesi.leyen\n"),
+            migrate_desktop_entry(
+                "Icon=io.github.sachesi.leyen\nComment=com.github.sachesi.leyen\n"
+            ),
             None
         );
     }

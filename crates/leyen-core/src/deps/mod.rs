@@ -5,9 +5,9 @@
 pub mod engine;
 pub mod recipes;
 pub mod state;
-pub mod verify;
 #[cfg(test)]
 mod tests;
+pub mod verify;
 
 pub use engine::{execute_dep_step, install_dep, uninstall_dep};
 pub use recipes::get_dep_steps;

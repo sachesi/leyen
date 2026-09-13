@@ -137,9 +137,7 @@ fn dotnet48_steps() -> Vec<DepStep> {
         },
         DepStep {
             description: "Configuring mscoree DLL override…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "mscoree",
-            },
+            action: DepStepAction::OverrideDlls { dlls: "mscoree" },
         },
     ]
 }
@@ -293,9 +291,7 @@ fn dotnet40_steps() -> Vec<DepStep> {
         },
         DepStep {
             description: "Configuring mscoree DLL override…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "mscoree",
-            },
+            action: DepStepAction::OverrideDlls { dlls: "mscoree" },
         },
     ]
 }
@@ -320,9 +316,7 @@ fn dotnet35sp1_steps() -> Vec<DepStep> {
         },
         DepStep {
             description: "Configuring mscoree DLL override…",
-            action: DepStepAction::OverrideDlls {
-                dlls: "mscoree",
-            },
+            action: DepStepAction::OverrideDlls { dlls: "mscoree" },
         },
     ]
 }

@@ -1,5 +1,5 @@
-use leyen_model::i18n::gettext;
 use gtk4::prelude::*;
+use leyen_model::i18n::gettext;
 use libadwaita as adw;
 
 use crate::ui::LibraryUi;

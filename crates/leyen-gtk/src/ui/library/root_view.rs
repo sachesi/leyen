@@ -1,13 +1,13 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use leyen_model::models::LibraryItem;
 use crate::ui::LibraryUi;
 use crate::ui::components::game_card::build_game_card;
 use crate::ui::components::group_card::build_group_card;
 use crate::ui::utils::{
     clear_list_box, finish_list_swap, next_swap_list_box, root_library_item_cmp, running_game_map,
 };
+use leyen_model::models::LibraryItem;
 
 pub async fn populate_root_view(
     ui: &LibraryUi,

@@ -33,7 +33,9 @@ fn dep_category_order(cat: &str) -> usize {
 
 #[allow(clippy::type_complexity)]
 fn redistribute_rows(
-    groups: &Rc<std::cell::RefCell<Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>>>,
+    groups: &Rc<
+        std::cell::RefCell<Vec<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>>,
+    >,
     page: &adw::PreferencesPage,
     entries: &[&DepProfile],
     installed: &std::collections::BTreeSet<String>,
@@ -100,7 +102,9 @@ fn redistribute_rows(
                 let visible = {
                     let title = row.title().to_lowercase();
                     let subtitle = row.subtitle().map(|s| s.to_lowercase()).unwrap_or_default();
-                    title.contains(search_query) || subtitle.contains(search_query) || dep_id.contains(search_query)
+                    title.contains(search_query)
+                        || subtitle.contains(search_query)
+                        || dep_id.contains(search_query)
                 };
                 row.set_visible(visible);
                 if visible {
@@ -148,7 +152,11 @@ fn sync_dep_row(
     } else if is_installed {
         handle
             .remove_btn
-            .set_tooltip_text(Some(&gettext("Required by: {}").replacen("{}", &dependents.join(", "), 1)));
+            .set_tooltip_text(Some(&gettext("Required by: {}").replacen(
+                "{}",
+                &dependents.join(", "),
+                1,
+            )));
     } else {
         handle.remove_btn.set_tooltip_text(None);
     }
@@ -192,11 +200,7 @@ async fn refresh_dep_rows(
     installed
 }
 
-fn set_dialog_busy(
-    busy: bool,
-    search_entry: &gtk4::SearchEntry,
-    handles: &[DepRowHandle],
-) {
+fn set_dialog_busy(busy: bool, search_entry: &gtk4::SearchEntry, handles: &[DepRowHandle]) {
     search_entry.set_sensitive(!busy);
     for handle in handles {
         handle.install_btn.set_sensitive(!busy);
@@ -213,9 +217,9 @@ pub async fn open_dependencies_page(
 ) {
     let snapshots = crate::daemon::running_games_snapshot().await;
     if !snapshots.is_empty() {
-        overlay.add_toast(adw::Toast::new(
-            &gettext("Dependency manager is blocked while games are running. Close all games first."),
-        ));
+        overlay.add_toast(adw::Toast::new(&gettext(
+            "Dependency manager is blocked while games are running. Close all games first.",
+        )));
         return;
     }
 
@@ -300,9 +304,10 @@ pub async fn open_dependencies_page(
         categories.insert(0, "Installed");
     }
 
-    let groups = Rc::new(std::cell::RefCell::new(
-        Vec::<(adw::PreferencesGroup, Vec<(adw::ActionRow, &'static str)>)>::new(),
-    ));
+    let groups = Rc::new(std::cell::RefCell::new(Vec::<(
+        adw::PreferencesGroup,
+        Vec<(adw::ActionRow, &'static str)>,
+    )>::new()));
     let row_handles = std::rc::Rc::new(std::cell::RefCell::new(Vec::<DepRowHandle>::new()));
 
     for cat in &categories {
@@ -468,7 +473,9 @@ pub async fn open_dependencies_page(
                     };
 
                     let on_finish = move |success: bool, note_or_error: Option<String>| {
-                        if !spinner3.is_realized() { return; }
+                        if !spinner3.is_realized() {
+                            return;
+                        }
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
@@ -491,9 +498,14 @@ pub async fn open_dependencies_page(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    gettext("'{}' installed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                    gettext("'{}' installed successfully. {}")
+                                        .replacen("{}", dep_id, 1)
+                                        .replacen("{}", &note, 1)
                                 })
-                                .unwrap_or_else(|| gettext("'{}' installed successfully.").replacen("{}", dep_id, 1));
+                                .unwrap_or_else(|| {
+                                    gettext("'{}' installed successfully.")
+                                        .replacen("{}", dep_id, 1)
+                                });
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(true);
@@ -576,7 +588,9 @@ pub async fn open_dependencies_page(
                     };
 
                     let on_finish = move |success: bool, note_or_error: Option<String>| {
-                        if !spinner3.is_realized() { return; }
+                        if !spinner3.is_realized() {
+                            return;
+                        }
                         spinner3.stop();
                         spinner3.set_visible(false);
                         progress_label3.set_visible(false);
@@ -599,18 +613,20 @@ pub async fn open_dependencies_page(
                             badge3.set_visible(true);
                             let message = note_or_error
                                 .map(|note| {
-                                    gettext("'{}' reinstalled successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                    gettext("'{}' reinstalled successfully. {}")
+                                        .replacen("{}", dep_id, 1)
+                                        .replacen("{}", &note, 1)
                                 })
                                 .unwrap_or_else(|| {
-                                    gettext("'{}' reinstalled successfully.").replacen("{}", dep_id, 1)
+                                    gettext("'{}' reinstalled successfully.")
+                                        .replacen("{}", dep_id, 1)
                                 });
                             overlay3.add_toast(adw::Toast::new(&message));
                         } else {
                             install_btn3.set_visible(false);
                             reinstall_btn3.set_visible(true);
                             remove_btn3.set_visible(true);
-                            let msg =
-                                note_or_error.unwrap_or_else(|| gettext("Reinstall failed."));
+                            let msg = note_or_error.unwrap_or_else(|| gettext("Reinstall failed."));
                             overlay3.add_toast(adw::Toast::new(&msg));
                         }
                     };
@@ -705,11 +721,7 @@ pub async fn open_dependencies_page(
                                 let page5 = page4.clone();
                                 let entries5 = entries4.clone();
                                 dialog_busy3.set(true);
-                                 set_dialog_busy(
-                                     true,
-                                     &search_entry3,
-                                    &row_handles3.borrow(),
-                                );
+                                set_dialog_busy(true, &search_entry3, &row_handles3.borrow());
                                 reinstall_btn3.set_visible(false);
                                 remove_btn3.set_visible(false);
                                 spinner3.set_visible(true);
@@ -740,7 +752,9 @@ pub async fn open_dependencies_page(
 
                                 let on_finish =
                                     move |success: bool, note_or_error: Option<String>| {
-                                        if !spinner4.is_realized() { return; }
+                                        if !spinner4.is_realized() {
+                                            return;
+                                        }
                                         spinner4.stop();
                                         spinner4.set_visible(false);
                                         progress_label4.set_visible(false);
@@ -753,17 +767,20 @@ pub async fn open_dependencies_page(
                                         let search_query = search_entry4.text().to_string();
                                         glib::spawn_future_local(async move {
                                             let snapshot = handles.borrow().clone();
-                                            let inst = refresh_dep_rows(&prefix4, &title, &snapshot)
-                                                .await;
-                                            redistribute_rows(&g, &pg, &e, &inst, &handles.borrow(), &search_query);
+                                            let inst =
+                                                refresh_dep_rows(&prefix4, &title, &snapshot).await;
+                                            redistribute_rows(
+                                                &g,
+                                                &pg,
+                                                &e,
+                                                &inst,
+                                                &handles.borrow(),
+                                                &search_query,
+                                            );
                                         });
                                         dialog_busy4.set(false);
                                         let busy_snapshot = row_handles4.borrow().clone();
-                                         set_dialog_busy(
-                                             false,
-                                             &search_entry4,
-                                            &busy_snapshot,
-                                        );
+                                        set_dialog_busy(false, &search_entry4, &busy_snapshot);
                                         if success {
                                             badge4.set_visible(false);
                                             install_btn4.set_visible(true);
@@ -771,10 +788,13 @@ pub async fn open_dependencies_page(
                                             remove_btn4.set_visible(false);
                                             let message = note_or_error
                                                 .map(|note| {
-                                                    gettext("'{}' removed successfully. {}").replacen("{}", dep_id, 1).replacen("{}", &note, 1)
+                                                    gettext("'{}' removed successfully. {}")
+                                                        .replacen("{}", dep_id, 1)
+                                                        .replacen("{}", &note, 1)
                                                 })
                                                 .unwrap_or_else(|| {
-                                                    gettext("'{}' removed successfully.").replacen("{}", dep_id, 1)
+                                                    gettext("'{}' removed successfully.")
+                                                        .replacen("{}", dep_id, 1)
                                                 });
                                             overlay4.add_toast(adw::Toast::new(&message));
                                         } else {
@@ -886,7 +906,12 @@ fn start_dep_job(
             let evt = if remaining.is_zero() {
                 None
             } else {
-                match select(Box::pin(events.recv()), Box::pin(glib::timeout_future(remaining))).await {
+                match select(
+                    Box::pin(events.recv()),
+                    Box::pin(glib::timeout_future(remaining)),
+                )
+                .await
+                {
                     Either::Left((Ok(evt), _)) => Some(evt),
                     Either::Left((Err(_), _)) => break,
                     Either::Right(_) => None,
@@ -926,7 +951,9 @@ fn start_dep_job(
                     if let Some(cb) = on_finish.take() {
                         cb(
                             false,
-                            Some(gettext("The daemon restarted; the operation's outcome is unknown.")),
+                            Some(gettext(
+                                "The daemon restarted; the operation's outcome is unknown.",
+                            )),
                         );
                     }
                     break;

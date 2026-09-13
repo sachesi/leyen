@@ -124,7 +124,11 @@ async fn list_games() -> Result<()> {
                     snapshot.leyen_id,
                     snapshot.pid,
                     snapshot.tracked_pid_count,
-                    if snapshot.tracked_pid_count == 1 { "" } else { "es" }
+                    if snapshot.tracked_pid_count == 1 {
+                        ""
+                    } else {
+                        "es"
+                    }
                 );
             }
         }
@@ -151,7 +155,11 @@ async fn list_games() -> Result<()> {
                     game.title,
                     snapshot.pid,
                     snapshot.tracked_pid_count,
-                    if snapshot.tracked_pid_count == 1 { "" } else { "es" }
+                    if snapshot.tracked_pid_count == 1 {
+                        ""
+                    } else {
+                        "es"
+                    }
                 );
             }
         }
@@ -170,7 +178,11 @@ async fn list_games() -> Result<()> {
                 snapshot.leyen_id,
                 snapshot.pid,
                 snapshot.tracked_pid_count,
-                if snapshot.tracked_pid_count == 1 { "" } else { "es" }
+                if snapshot.tracked_pid_count == 1 {
+                    ""
+                } else {
+                    "es"
+                }
             );
         }
 
@@ -226,16 +238,19 @@ async fn run_game(leyen_id: &str) -> Result<()> {
     };
     let (title, group_title) = (game.title.clone(), group.map(|g| g.title.clone()));
 
-    proxy()
-        .await?
-        .launch_game(leyen_id)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!("Failed to launch '{}' ({}): {}", title, leyen_id, dbus_error_message(&e))
-        })?;
+    proxy().await?.launch_game(leyen_id).await.map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to launch '{}' ({}): {}",
+            title,
+            leyen_id,
+            dbus_error_message(&e)
+        )
+    })?;
 
     match group_title {
-        Some(group) => eprintln!("Managed launch active for '{title}' ({leyen_id}) in group '{group}'."),
+        Some(group) => {
+            eprintln!("Managed launch active for '{title}' ({leyen_id}) in group '{group}'.")
+        }
         None => eprintln!("Managed launch active for '{title}' ({leyen_id})."),
     }
     Ok(())
@@ -250,13 +265,14 @@ async fn kill_game(leyen_id: &str) -> Result<()> {
     };
     let title = game.title.clone();
 
-    let was_running = proxy()
-        .await?
-        .stop_game(leyen_id)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!("Failed to stop '{}' ({}): {}", title, leyen_id, dbus_error_message(&e))
-        })?;
+    let was_running = proxy().await?.stop_game(leyen_id).await.map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to stop '{}' ({}): {}",
+            title,
+            leyen_id,
+            dbus_error_message(&e)
+        )
+    })?;
     if was_running {
         eprintln!("Stopping '{title}' ({leyen_id})...");
         Ok(())
@@ -288,7 +304,10 @@ async fn stream_logs(follow: bool) -> Result<()> {
 }
 
 async fn print_logs_since(proxy: &LeyenProxy<'_>, offset: u64) -> Result<u64> {
-    let (next, entries) = proxy.get_logs(offset).await.context("Failed to fetch logs")?;
+    let (next, entries) = proxy
+        .get_logs(offset)
+        .await
+        .context("Failed to fetch logs")?;
     // An offset running backwards means the daemon restarted (its counter is
     // session-scoped) — re-pull from the start so its early lines are shown.
     if next < offset {

@@ -2,9 +2,9 @@ pub mod group_view;
 pub mod root_view;
 pub mod state;
 
-use leyen_model::i18n::gettext;
 use gtk4::glib;
 use gtk4::prelude::*;
+use leyen_model::i18n::gettext;
 use libadwaita as adw;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -14,10 +14,10 @@ pub use self::root_view::populate_root_view;
 pub use self::state::*;
 
 use crate::daemon;
-use leyen_model::models::{Game, LibraryItem};
 use crate::ui::utils::{
     find_group, format_duration_brief, game_is_running, group_running_started_at, running_game_map,
 };
+use leyen_model::models::{Game, LibraryItem};
 
 thread_local! {
     /// Game ids with a primary (launch/stop) action in flight. Guards against
@@ -38,8 +38,7 @@ impl Drop for PrimaryActionGuard {
 }
 
 pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay) {
-    let accepted =
-        PRIMARY_ACTION_INFLIGHT.with(|set| set.borrow_mut().insert(game.id.clone()));
+    let accepted = PRIMARY_ACTION_INFLIGHT.with(|set| set.borrow_mut().insert(game.id.clone()));
     if !accepted {
         return;
     }
@@ -48,9 +47,11 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
     let running = game_is_running(&running_game_map().await, &game.id);
     if running {
         match daemon::stop_game(&game.leyen_id).await {
-            Ok(true) => overlay.add_toast(adw::Toast::new(
-                &gettext("Stopping {}...").replacen("{}", &game.title, 1),
-            )),
+            Ok(true) => overlay.add_toast(adw::Toast::new(&gettext("Stopping {}...").replacen(
+                "{}",
+                &game.title,
+                1,
+            ))),
             Ok(false) => overlay.add_toast(adw::Toast::new(&gettext("Game is no longer running"))),
             Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
                 "{}: {}",
@@ -62,9 +63,11 @@ pub async fn handle_game_primary_action(game: &Game, overlay: &adw::ToastOverlay
         // Await the launch while holding the in-flight guard so rapid re-clicks
         // can't issue duplicate concurrent launches.
         match daemon::launch_game(&game.leyen_id).await {
-            Ok(()) => overlay.add_toast(adw::Toast::new(
-                &gettext("Launching {}...").replacen("{}", &game.title, 1),
-            )),
+            Ok(()) => overlay.add_toast(adw::Toast::new(&gettext("Launching {}...").replacen(
+                "{}",
+                &game.title,
+                1,
+            ))),
             Err(reason) => overlay.add_toast(adw::Toast::new(&format!(
                 "{}: {}",
                 gettext("Failed to launch {}").replacen("{}", &game.title, 1),
@@ -108,14 +111,22 @@ pub fn update_running_duration_labels(ui: &LibraryUi) {
         for (game_id, label) in ui.group_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen(
+                    "{}",
+                    &format_duration_brief(elapsed),
+                    1,
+                ));
             }
         }
     } else {
         for (game_id, label) in ui.root_running_duration_labels.borrow().iter() {
             if let Some(snapshot) = snapshots.get(game_id) {
                 let elapsed = now.saturating_sub(snapshot.started_at_epoch_seconds);
-                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen(
+                    "{}",
+                    &format_duration_brief(elapsed),
+                    1,
+                ));
             }
         }
 
@@ -129,7 +140,11 @@ pub fn update_running_duration_labels(ui: &LibraryUi) {
                     .get(&group.id)
             {
                 let elapsed = now.saturating_sub(started_at);
-                label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+                label.set_label(&gettext("Running for {}").replacen(
+                    "{}",
+                    &format_duration_brief(elapsed),
+                    1,
+                ));
             }
         }
     }
@@ -207,11 +222,9 @@ async fn run_library_refresh(
                         flat.push(LibraryItem::Game(game));
                     }
                     LibraryItem::Group(group) => {
-                        let group_matches =
-                            group.title.to_lowercase().contains(&search_text);
+                        let group_matches = group.title.to_lowercase().contains(&search_text);
                         for game in group.games {
-                            if (group_matches
-                                || game.title.to_lowercase().contains(&search_text))
+                            if (group_matches || game.title.to_lowercase().contains(&search_text))
                                 && seen_ids.insert(game.id.clone())
                             {
                                 flat.push(LibraryItem::Game(game));
@@ -226,8 +239,7 @@ async fn run_library_refresh(
             *ui_clone.library_state.borrow_mut() = items;
         }
 
-        let entering_group =
-            !is_searching && ui_clone.current_group_id.borrow().is_some();
+        let entering_group = !is_searching && ui_clone.current_group_id.borrow().is_some();
 
         if entering_group {
             populate_group_view(&ui_clone, &overlay_clone, &window_clone).await;
@@ -244,8 +256,7 @@ async fn run_library_refresh(
         } else {
             let group_id = ui_clone.current_group_id.borrow().clone();
             if let Some(group_id) = group_id {
-                if find_group(&ui_clone.library_state.borrow(), &group_id).is_none()
-                {
+                if find_group(&ui_clone.library_state.borrow(), &group_id).is_none() {
                     *ui_clone.current_group_id.borrow_mut() = None;
                     populate_root_view(&ui_clone, &overlay_clone, &window_clone).await;
                 } else {

@@ -269,7 +269,10 @@ mod tests {
     #[test]
     fn picks_correct_line_among_several() {
         let sums = "aaaa  a.tar.gz\nbbbb  b.tar.gz\n";
-        assert_eq!(parse_sha512sum_line(sums, "b.tar.gz"), Some("bbbb".to_string()));
+        assert_eq!(
+            parse_sha512sum_line(sums, "b.tar.gz"),
+            Some("bbbb".to_string())
+        );
     }
 
     #[test]
@@ -281,4 +284,3 @@ mod tests {
         );
     }
 }
-

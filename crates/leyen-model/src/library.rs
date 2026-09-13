@@ -10,7 +10,9 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::models::{GAMES_CONFIG_VERSION, Game, GameGroup, GamesConfig, GroupLaunchDefaults, LibraryItem};
+use crate::models::{
+    GAMES_CONFIG_VERSION, Game, GameGroup, GamesConfig, GroupLaunchDefaults, LibraryItem,
+};
 use crate::paths::get_config_path;
 
 const LEYEN_ID_PREFIX: &str = "ly-";

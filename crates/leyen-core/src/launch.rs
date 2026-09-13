@@ -10,14 +10,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::{AsyncBufReadExt, BufReader as AsyncBufReader};
 
-
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::{
-    add_game_playtime, load_library, record_game_launch_result,
-    record_game_launch_start,
+    add_game_playtime, load_library, record_game_launch_result, record_game_launch_start,
 };
 use crate::runtime::proton::resolve_proton_path;
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
@@ -160,8 +158,12 @@ struct FlockGuard {
 impl FlockGuard {
     fn lock(path: &Path, timeout: Duration) -> io::Result<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| io::Error::new(e.kind(), format!("create_dir_all '{}': {}", path.display(), e)))?;
+            fs::create_dir_all(parent).map_err(|e| {
+                io::Error::new(
+                    e.kind(),
+                    format!("create_dir_all '{}': {}", path.display(), e),
+                )
+            })?;
         }
         let file = OpenOptions::new()
             .create(true)
@@ -204,10 +206,12 @@ impl Drop for FlockGuard {
 fn with_running_registry<R>(
     f: impl FnOnce(&mut RunningGamesRegistry) -> (R, bool),
 ) -> Result<R, LaunchError> {
-    let _guard = FlockGuard::lock(&running_registry_lock_path(), Duration::from_secs(5))
-        .map_err(|e| LaunchError::LockAcquireError {
-            path: running_registry_lock_path(),
-            source: e,
+    let _guard =
+        FlockGuard::lock(&running_registry_lock_path(), Duration::from_secs(5)).map_err(|e| {
+            LaunchError::LockAcquireError {
+                path: running_registry_lock_path(),
+                source: e,
+            }
         })?;
 
     let registry_path = running_registry_path();
@@ -364,7 +368,9 @@ async fn finalize_finished_session(session: &RunningGameSession) {
 }
 
 async fn synchronize_running_sessions() -> Result<Vec<RunningGameSession>, LaunchError> {
-    synchronize_running_sessions_seq().await.map(|(sessions, _)| sessions)
+    synchronize_running_sessions_seq()
+        .await
+        .map(|(sessions, _)| sessions)
 }
 
 /// [`synchronize_running_sessions`] plus the registry sequence the returned set
@@ -382,7 +388,8 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
         // behind one slow sync and cascaded into UI stalls.
         let universe = leyen_pid_cmdlines(&mut sessions);
         let mut finished_sessions = Vec::new();
-        let mut finished_keys: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
+        let mut finished_keys: std::collections::HashSet<(String, u64)> =
+            std::collections::HashSet::new();
         let mut updates: HashMap<(String, u64), (Option<String>, usize)> = HashMap::new();
         for mut session in sessions {
             // Unknown liveness (systemd query timed out) keeps the session:
@@ -390,7 +397,8 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
             // it; the next tick retries.
             let alive = session_is_live(&mut session, &universe).unwrap_or(true);
             let key = (session.game_id.clone(), session.started_at_epoch_seconds);
-            if alive || now.saturating_sub(session.started_at_epoch_seconds) < LAUNCH_GRACE_SECONDS {
+            if alive || now.saturating_sub(session.started_at_epoch_seconds) < LAUNCH_GRACE_SECONDS
+            {
                 updates.insert(key, (session.cgroup_dir.clone(), session.tracked_pid_count));
             } else {
                 finished_keys.insert(key);
@@ -412,7 +420,9 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
             // reaches the published snapshot below.
             let mut dirty = false;
             for s in registry.sessions.iter_mut() {
-                if let Some((dir, count)) = updates.get(&(s.game_id.clone(), s.started_at_epoch_seconds)) {
+                if let Some((dir, count)) =
+                    updates.get(&(s.game_id.clone(), s.started_at_epoch_seconds))
+                {
                     if s.cgroup_dir.is_none() && dir.is_some() {
                         s.cgroup_dir = dir.clone();
                         dirty = true;
@@ -423,7 +433,9 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
             let active: Vec<RunningGameSession> = registry
                 .sessions
                 .iter()
-                .filter(|s| !finished_keys.contains(&(s.game_id.clone(), s.started_at_epoch_seconds)))
+                .filter(|s| {
+                    !finished_keys.contains(&(s.game_id.clone(), s.started_at_epoch_seconds))
+                })
                 .cloned()
                 .collect();
             let seq = SYNC_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
@@ -570,7 +582,11 @@ async fn try_register_running_session(
                     .sessions
                     .iter()
                     .filter(|s| s.match_prefix_path == session.match_prefix_path)
-                    .find_map(|s| s.container_cgroup_dir.clone().or_else(|| s.cgroup_dir.clone()));
+                    .find_map(|s| {
+                        s.container_cgroup_dir
+                            .clone()
+                            .or_else(|| s.cgroup_dir.clone())
+                    });
             }
 
             registry.sessions.push(session);
@@ -599,7 +615,7 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();
@@ -630,8 +646,7 @@ pub fn set_sessions_listener(listener: impl Fn(Vec<RunningGameSnapshot>) + Send 
 /// Async probe answering "does this well-known bus name have an owner on the
 /// session bus?". Installed by the daemon (which owns a zbus connection) so the
 /// engine can wait for a shared pressure-vessel container without an IPC dep.
-type BusNameProbe =
-    Box<dyn Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync>;
+type BusNameProbe = Box<dyn Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync>;
 static BUS_NAME_PROBE: OnceLock<BusNameProbe> = OnceLock::new();
 
 /// Installs the session-bus name probe. No-op if called more than once.
@@ -666,8 +681,8 @@ static SESSION_START_INSTANTS: OnceLock<
     std::sync::Mutex<HashMap<(String, u64), std::time::Instant>>,
 > = OnceLock::new();
 
-fn session_start_instants()
--> &'static std::sync::Mutex<HashMap<(String, u64), std::time::Instant>> {
+fn session_start_instants() -> &'static std::sync::Mutex<HashMap<(String, u64), std::time::Instant>>
+{
     SESSION_START_INSTANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -977,8 +992,8 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
         // Graceful first: SIGTERM the game's real processes (wherever they run) and
         // its own launcher scope so Wine/Proton can flush and save state.
-        let signaled = signal_pids(&matched, libc::SIGTERM)
-            | systemctl(&["kill", "--signal=SIGTERM", &unit]);
+        let signaled =
+            signal_pids(&matched, libc::SIGTERM) | systemctl(&["kill", "--signal=SIGTERM", &unit]);
         info!(
             target: &format!("game:{}", game_id_clone),
             "Sent SIGTERM to {} process(es) of {}", matched.len(), unit
@@ -1003,7 +1018,8 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
             if !signaled && !forced {
                 return Err(LaunchError::Other(format!(
-                    "Failed to signal any process of {}", unit
+                    "Failed to signal any process of {}",
+                    unit
                 )));
             }
         } else if !shared {
@@ -1080,8 +1096,7 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
     }
 
     let path_clone = prefix_path.to_string();
-    let create_result = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone))
-        .await;
+    let create_result = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone)).await;
     match create_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => {
@@ -1089,7 +1104,10 @@ async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
             return PrefixLockState::Unavailable;
         }
         Err(e) => {
-            warn!("spawn_blocking task failed while creating prefix directory '{}': {e}", prefix_path);
+            warn!(
+                "spawn_blocking task failed while creating prefix directory '{}': {e}",
+                prefix_path
+            );
             return PrefixLockState::Unavailable;
         }
     }
@@ -1278,7 +1296,10 @@ fn resolve_cgroup_dir(session: &mut RunningGameSession) -> Option<String> {
 /// Parses a cgroup `cgroup.procs` file (one PID per line) into a PID list.
 fn read_cgroup_pids(path: &Path) -> Vec<u32> {
     match fs::read_to_string(path) {
-        Ok(data) => data.lines().filter_map(|line| line.trim().parse().ok()).collect(),
+        Ok(data) => data
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -1317,7 +1338,6 @@ fn scope_pids(session: &mut RunningGameSession) -> Vec<u32> {
         None => Vec::new(),
     }
 }
-
 
 /// Polls until the target session's real (cmdline-matched) processes are gone or
 /// `attempts * 200ms` elapse, re-reading the cgroup universe each poll. Returns
@@ -1398,7 +1418,10 @@ fn read_process_cmdline_blocking(pid: u32) -> Option<String> {
     if raw.is_empty() {
         return None;
     }
-    let joined: Vec<u8> = raw.into_iter().map(|b| if b == 0 { b' ' } else { b }).collect();
+    let joined: Vec<u8> = raw
+        .into_iter()
+        .map(|b| if b == 0 { b' ' } else { b })
+        .collect();
     let text = String::from_utf8_lossy(&joined).to_lowercase();
     Some(text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
@@ -1412,7 +1435,6 @@ fn read_process_game_id_blocking(pid: u32) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-
 /// Normalized, lowercased signature of a game's launch arguments. Drops the
 /// `%command%` wrapper prefix (only the trailing real args reach the game's
 /// cmdline).
@@ -1421,13 +1443,21 @@ fn cmdline_arg_signature(launch_args: &str) -> Option<String> {
         Some((_, after)) => after,
         None => launch_args,
     };
-    let normalized = tail.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let normalized = tail
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
     (!normalized.is_empty()).then_some(normalized)
 }
 
 /// A process cmdline belongs to a game launch when it contains the executable
 /// basename and (if recorded) the distinguishing launch-argument signature.
-fn process_matches_cmdline(cmdline: &str, match_exe: Option<&str>, match_args: Option<&str>) -> bool {
+fn process_matches_cmdline(
+    cmdline: &str,
+    match_exe: Option<&str>,
+    match_args: Option<&str>,
+) -> bool {
     let Some(exe) = match_exe.filter(|e| !e.is_empty()) else {
         return false;
     };
@@ -1490,7 +1520,9 @@ fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> PidUniverse {
     };
     for pid in to_read {
         let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(entry) = guard.get_mut(&pid) else { continue };
+        let Some(entry) = guard.get_mut(&pid) else {
+            continue;
+        };
         let second_read = entry.0.is_some();
         drop(guard);
         let read = read_proc_info_timeout(pid);
@@ -1522,12 +1554,15 @@ fn session_matched_pids(session: &RunningGameSession, universe: &PidUniverse) ->
     universe
         .iter()
         .filter(|(_, info)| {
-            process_matches_cmdline(&info.cmdline, session.match_exe.as_deref(), session.match_args.as_deref())
-                && match (&info.game_id, &session.match_game_id) {
-                    // A process that carries a GAMEID belongs to that launch only.
-                    (Some(process), Some(expected)) => process == expected,
-                    _ => true,
-                }
+            process_matches_cmdline(
+                &info.cmdline,
+                session.match_exe.as_deref(),
+                session.match_args.as_deref(),
+            ) && match (&info.game_id, &session.match_game_id) {
+                // A process that carries a GAMEID belongs to that launch only.
+                (Some(process), Some(expected)) => process == expected,
+                _ => true,
+            }
         })
         .map(|(pid, _)| *pid)
         .collect()
@@ -1623,9 +1658,9 @@ async fn launch_game_managed(
 
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
-        return Err(LaunchError::Other(
-            gettext("umu-launcher is still downloading, please wait…"),
-        ));
+        return Err(LaunchError::Other(gettext(
+            "umu-launcher is still downloading, please wait…",
+        )));
     }
 
     // Block launch if umu-run is simply not available.
@@ -1636,9 +1671,9 @@ async fn launch_game_managed(
             false
         })
     {
-        return Err(LaunchError::Other(
-            gettext("umu-launcher is not installed. Please check your internet connection and restart."),
-        ));
+        return Err(LaunchError::Other(gettext(
+            "umu-launcher is not installed. Please check your internet connection and restart.",
+        )));
     }
 
     // The launch runs inside a transient systemd user scope; without a reachable
@@ -1647,9 +1682,9 @@ async fn launch_game_managed(
         .await
         .unwrap_or(false)
     {
-        return Err(LaunchError::Other(
-            gettext("A systemd user session is required to launch games."),
-        ));
+        return Err(LaunchError::Other(gettext(
+            "A systemd user session is required to launch games.",
+        )));
     }
 
     // Settings load re-scans the Proton install dir — keep it off the async
@@ -1661,17 +1696,13 @@ async fn launch_game_managed(
     let launch_game_id = effective_game_id(game);
 
     if is_game_running(&game.id) {
-        return Err(LaunchError::Other(
-            gettext("This game is already running"),
-        ));
+        return Err(LaunchError::Other(gettext("This game is already running")));
     }
 
     // Held until the session is registered (or the launch fails); covers the
     // whole pre-registration window the running check above can't see.
     let Some(launch_claim) = LaunchClaim::try_claim(&game.id) else {
-        return Err(LaunchError::Other(
-            gettext("This game is already running"),
-        ));
+        return Err(LaunchError::Other(gettext("This game is already running")));
     };
 
     // Fail fast on a missing executable: without this, umu/wine only surface it
@@ -1686,9 +1717,7 @@ async fn launch_game_managed(
                 target: &format!("game:{}", game.id),
                 "Executable for '{}' does not exist: {}", game.title, game.exe_path
             );
-            return Err(LaunchError::Other(
-                gettext("Game executable was not found"),
-            ));
+            return Err(LaunchError::Other(gettext("Game executable was not found")));
         }
     }
 
@@ -1713,9 +1742,9 @@ async fn launch_game_managed(
                         target: &format!("game:{}", game.id),
                         "Proton path for '{}' does not exist: {}", game.title, path
                     );
-                    return Err(LaunchError::Other(
-                        gettext("Selected Proton version was not found"),
-                    ));
+                    return Err(LaunchError::Other(gettext(
+                        "Selected Proton version was not found",
+                    )));
                 }
             }
             env_vars.push(("PROTONPATH".to_string(), path.clone()));
@@ -1802,9 +1831,9 @@ async fn launch_game_managed(
     let allow_shared_container = settings.use_shared_container;
     let join_shared_container = match try_lock_prefix(&prefix_path).await {
         PrefixLockState::Busy if allow_shared_container => {
-            notices.push(
-                gettext("Prefix is already in use. Launching with shared-container fallback."),
-            );
+            notices.push(gettext(
+                "Prefix is already in use. Launching with shared-container fallback.",
+            ));
             true
         }
         // Shared container disabled for this group: launch in its own container
@@ -2026,9 +2055,7 @@ async fn finish_launch(
         let unit = scope_unit.clone();
         let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
         let _ = child.wait().await;
-        return Err(LaunchError::Other(
-            gettext("This game is already running"),
-        ));
+        return Err(LaunchError::Other(gettext("This game is already running")));
     }
 
     // Monotonic start instant for playtime: immune to wall-clock steps that
@@ -2062,7 +2089,10 @@ async fn finish_launch(
         tokio::spawn(async move {
             match child.wait().await {
                 Ok(status) => {
-                    let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string());
+                    let code = status
+                        .code()
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "signal".to_string());
                     info!(target: &format!("game:{}", game_id_log), "'{}' exited with status {}", game_title_log, code);
                 }
                 Err(e) => {

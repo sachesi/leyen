@@ -23,8 +23,7 @@ use crate::runtime::umu::{
 use super::recipes::get_dep_steps;
 use super::state::{read_prefix_dep_state_checked, remove_installed_dep, upsert_installed_dep};
 use leyen_model::deps::{
-    DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile,
-    get_deps_cache_dir,
+    DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile, get_deps_cache_dir,
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
@@ -103,7 +102,10 @@ fn try_claim_cache_file(file_name: &str) -> Option<CacheFileGuard> {
 }
 
 /// Claims `file_name`, waiting (honoring `cancel`) while another task holds it.
-async fn claim_cache_file(file_name: &str, cancel: &Arc<AtomicBool>) -> Result<CacheFileGuard, String> {
+async fn claim_cache_file(
+    file_name: &str,
+    cancel: &Arc<AtomicBool>,
+) -> Result<CacheFileGuard, String> {
     loop {
         if let Some(guard) = try_claim_cache_file(file_name) {
             return Ok(guard);
@@ -243,8 +245,6 @@ pub struct DepStep {
     pub action: DepStepAction,
 }
 
-
-
 #[derive(Default, Debug)]
 pub struct StepChanges {
     pub created_files: Vec<String>,
@@ -290,8 +290,6 @@ enum CleanupAction {
     RemoveCreatedFiles(Vec<String>),
 }
 
-
-
 pub async fn execute_dep_step(
     step: &DepStep,
     prefix_path: &str,
@@ -301,7 +299,10 @@ pub async fn execute_dep_step(
 ) -> Result<StepChanges, String> {
     // Verify tokio runtime context for timeout/process drivers
     match tokio::runtime::Handle::try_current() {
-        Ok(_) => info!("[dep] Tokio runtime available for step '{}'", step.description),
+        Ok(_) => info!(
+            "[dep] Tokio runtime available for step '{}'",
+            step.description
+        ),
         Err(_) => warn!("[dep] No tokio runtime context! Timeout won't fire."),
     }
     match &step.action {
@@ -369,7 +370,9 @@ pub async fn execute_dep_step(
             tokio::task::spawn_blocking(move || fs::create_dir_all(cache_dir_clone))
                 .await
                 .map_err(join_err)
-                .and_then(|r| r.map_err(|err| format!("Failed to create dependency cache directory: {err}")))?;
+                .and_then(|r| {
+                    r.map_err(|err| format!("Failed to create dependency cache directory: {err}"))
+                })?;
 
             // Download to a unique temp name and rename into place only after
             // the checksum matches, so `dest` is either absent or complete.
@@ -436,7 +439,11 @@ pub async fn execute_dep_step(
             if !output.status.success() {
                 let _ = tokio::fs::remove_file(&temp).await;
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Download failed for {}: {}", file_name, stderr.trim()));
+                return Err(format!(
+                    "Download failed for {}: {}",
+                    file_name,
+                    stderr.trim()
+                ));
             }
             info!("[dep] Downloaded {}", file_name);
 
@@ -475,7 +482,10 @@ pub async fn execute_dep_step(
             extra_env,
         } => {
             let exe_path = Path::new(cache_dir).join(file_name);
-            info!("[dep] Running {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
+            info!(
+                "[dep] Running {} {} (timeout: {}s)",
+                file_name, args, COMMAND_TIMEOUT_SECS
+            );
             let output = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -517,7 +527,10 @@ pub async fn execute_dep_step(
 
         DepStepAction::RunMsi { file_name, args } => {
             let msi_path = Path::new(cache_dir).join(file_name);
-            info!("[dep] Running msiexec /i {} {} (timeout: {}s)", file_name, args, COMMAND_TIMEOUT_SECS);
+            info!(
+                "[dep] Running msiexec /i {} {} (timeout: {}s)",
+                file_name, args, COMMAND_TIMEOUT_SECS
+            );
             let output = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, prefix_path, proton_path);
@@ -530,12 +543,17 @@ pub async fn execute_dep_step(
             };
 
             let exit_code = output.status.code();
-            info!("[dep] msiexec {} completed (exit code: {:?})", file_name, exit_code);
+            info!(
+                "[dep] msiexec {} completed (exit code: {:?})",
+                file_name, exit_code
+            );
             if !output.status.success() && exit_code != Some(3010) {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
                     "MSI install '{}' failed (code {:?}): {}",
-                    file_name, exit_code, stderr.trim()
+                    file_name,
+                    exit_code,
+                    stderr.trim()
                 ));
             }
 
@@ -568,13 +586,21 @@ pub async fn execute_dep_step(
         }
 
         DepStepAction::RunWinetricks { verb } => {
-            info!("[dep] Running winetricks {} (timeout: {}s)", verb, COMMAND_TIMEOUT_SECS);
+            info!(
+                "[dep] Running winetricks {} (timeout: {}s)",
+                verb, COMMAND_TIMEOUT_SECS
+            );
             let output = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, prefix_path, proton_path);
                 // `--force`: winetricks skips verbs listed in winetricks.log;
                 // after an uninstall removed the files that log is stale.
-                cmd.args([get_winetricks_path().as_str(), "-q", "--force", verb.as_str()]);
+                cmd.args([
+                    get_winetricks_path().as_str(),
+                    "-q",
+                    "--force",
+                    verb.as_str(),
+                ]);
                 run_umu_command(cmd, format!("winetricks {}", verb), cancel.clone()).await?
             };
             if !output.status.success() {
@@ -588,7 +614,11 @@ pub async fn execute_dep_step(
             let mut changes = StepChanges::default();
             let known = winetricks_known_dll_overrides(verb);
             if !known.is_empty() {
-                info!("[dep] Recording {} known DLL overrides for winetricks {}", known.len(), verb);
+                info!(
+                    "[dep] Recording {} known DLL overrides for winetricks {}",
+                    known.len(),
+                    verb
+                );
                 changes.dll_overrides = known;
             }
             Ok(changes)
@@ -609,7 +639,6 @@ pub async fn execute_dep_step(
                     )
                     .await?
                 }
-
             };
 
             if !verified {
@@ -624,8 +653,8 @@ pub async fn execute_dep_step(
 
 /// Streams `path` through SHA-256 and compares with `expected` (hex).
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool, String> {
-    let mut file = fs::File::open(path)
-        .map_err(|err| format!("Failed to open downloaded file: {err}"))?;
+    let mut file =
+        fs::File::open(path).map_err(|err| format!("Failed to open downloaded file: {err}"))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 8192];
     loop {
@@ -662,7 +691,11 @@ fn forget_winetricks_verb(prefix_path: &str, verb: &str) -> Result<(), String> {
         .map_err(|err| format!("Failed to update winetricks.log: {err}"))
 }
 
-pub(super) fn configure_umu_command_async(cmd: &mut AsyncCommand, prefix_path: &str, proton_path: &str) {
+pub(super) fn configure_umu_command_async(
+    cmd: &mut AsyncCommand,
+    prefix_path: &str,
+    proton_path: &str,
+) {
     cmd.env("WINEPREFIX", prefix_path);
     if !proton_path.is_empty() {
         cmd.env("PROTONPATH", proton_path);
@@ -702,7 +735,7 @@ pub async fn install_dep(
 
     let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
         return Err(gettext(
-            "Another dependency operation is already running for this prefix."
+            "Another dependency operation is already running for this prefix.",
         ));
     };
 
@@ -713,8 +746,11 @@ pub async fn install_dep(
         .map_err(join_err)
         .and_then(|r| {
             r.map_err(|e| {
-                gettext("Cannot write to the dependency cache directory: {}")
-                    .replacen("{}", &e.to_string(), 1)
+                gettext("Cannot write to the dependency cache directory: {}").replacen(
+                    "{}",
+                    &e.to_string(),
+                    1,
+                )
             })
         })?;
 
@@ -761,12 +797,24 @@ pub async fn install_dep(
         let mut recorded = StepChanges::default();
 
         // Parallelize independent downloads
-        let download_steps: Vec<&DepStep> = steps.iter().filter(|s| matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
-        let execution_steps: Vec<&DepStep> = steps.iter().filter(|s| !matches!(s.action, DepStepAction::DownloadFile { .. })).collect();
+        let download_steps: Vec<&DepStep> = steps
+            .iter()
+            .filter(|s| matches!(s.action, DepStepAction::DownloadFile { .. }))
+            .collect();
+        let execution_steps: Vec<&DepStep> = steps
+            .iter()
+            .filter(|s| !matches!(s.action, DepStepAction::DownloadFile { .. }))
+            .collect();
 
         if !download_steps.is_empty() {
             let description = "Downloading files…";
-            info!("[dep:{}] {} {}/{}", profile.id, description, completed_steps + 1, total_steps);
+            info!(
+                "[dep:{}] {} {}/{}",
+                profile.id,
+                description,
+                completed_steps + 1,
+                total_steps
+            );
             on_progress(completed_steps + 1, total_steps, description.to_string());
 
             // Downloads run in parallel under a shared stop flag: the user's
@@ -788,8 +836,11 @@ pub async fn install_dep(
                     }
                 });
             }
-            let (prefix_ref, proton_ref, cache_ref) =
-                (prefix_path.as_str(), proton_path.as_str(), cache_dir.as_str());
+            let (prefix_ref, proton_ref, cache_ref) = (
+                prefix_path.as_str(),
+                proton_path.as_str(),
+                cache_dir.as_str(),
+            );
             let futures: Vec<_> = download_steps
                 .iter()
                 .map(|step| {
@@ -815,7 +866,10 @@ pub async fn install_dep(
                     // the error that actually caused the abort.
                     Err(error) => {
                         error!("[dep:{}] download failed: {}", profile.id, error);
-                        if first_error.is_none() || (error != gettext("Cancelled.") && first_error.as_deref() == Some(gettext("Cancelled.").as_str())) {
+                        if first_error.is_none()
+                            || (error != gettext("Cancelled.")
+                                && first_error.as_deref() == Some(gettext("Cancelled.").as_str()))
+                        {
                             first_error = Some(error);
                         }
                     }
@@ -906,8 +960,12 @@ pub async fn install_dep(
                 })
                 .await
                 .map_err(join_err)
-                .and_then(|r| r) {
-                    warn!("[dep:{}] cleanup failed during rollback: {}", profile.id, cleanup_err);
+                .and_then(|r| r)
+                {
+                    warn!(
+                        "[dep:{}] cleanup failed during rollback: {}",
+                        profile.id, cleanup_err
+                    );
                 }
             }
             return Err(error);
@@ -916,12 +974,21 @@ pub async fn install_dep(
         {
             let upsert_prefix = prefix_path.clone();
             let upsert_id = profile.id.to_string();
-            let upsert_deps: Vec<String> = profile.dependencies.iter().map(|d| d.to_string()).collect();
+            let upsert_deps: Vec<String> =
+                profile.dependencies.iter().map(|d| d.to_string()).collect();
             let upsert_record = recorded.into_dependency_record();
             tokio::task::spawn_blocking(move || {
                 let upsert_deps_refs: Vec<&str> = upsert_deps.iter().map(|d| d.as_str()).collect();
-                upsert_installed_dep(&upsert_prefix, &upsert_id, &upsert_deps_refs, &upsert_record)
-            }).await.map_err(join_err).and_then(|r| r)?;
+                upsert_installed_dep(
+                    &upsert_prefix,
+                    &upsert_id,
+                    &upsert_deps_refs,
+                    &upsert_record,
+                )
+            })
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)?;
         }
 
         for provided_id in profile.provides {
@@ -931,8 +998,15 @@ pub async fn install_dep(
             let deps: Vec<&str> = Vec::new();
             if let Err(error) = tokio::task::spawn_blocking(move || {
                 upsert_installed_dep(&stub_prefix, &stub_id, &deps, &stub)
-            }).await.map_err(join_err).and_then(|r| r) {
-                warn!("[dep:{}] failed to create stub for '{}': {}", profile.id, provided_id, error);
+            })
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)
+            {
+                warn!(
+                    "[dep:{}] failed to create stub for '{}': {}",
+                    profile.id, provided_id, error
+                );
             }
         }
     }
@@ -946,10 +1020,11 @@ pub async fn install_dep(
         if prerequisites.is_empty() {
             None
         } else {
-            Some(
-                gettext("Installed prerequisites: {}.")
-                    .replacen("{}", &prerequisites.join(", "), 1),
-            )
+            Some(gettext("Installed prerequisites: {}.").replacen(
+                "{}",
+                &prerequisites.join(", "),
+                1,
+            ))
         }
     } else {
         None
@@ -975,7 +1050,7 @@ pub async fn uninstall_dep(
 
     let Some(_prefix_guard) = try_lock_prefix_op(&prefix_path).await else {
         return Err(gettext(
-            "Another dependency operation is already running for this prefix."
+            "Another dependency operation is already running for this prefix.",
         ));
     };
     let prefix_path_for_state = prefix_path.clone();
@@ -1007,7 +1082,8 @@ pub async fn uninstall_dep(
 
     // Detect winetricks-based deps and uninstall their registry markers first
     // so reinstall doesn't fail with "already installed"
-    let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id).iter()
+    let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id)
+        .iter()
         .filter_map(|step| match &step.action {
             DepStepAction::RunWinetricks { verb } => Some(verb.clone()),
             _ => None,
@@ -1030,10 +1106,11 @@ pub async fn uninstall_dep(
         on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
         let prefix_path = prefix_path.clone();
         let verb = verb.clone();
-        let result = tokio::task::spawn_blocking(move || forget_winetricks_verb(&prefix_path, &verb))
-            .await
-            .map_err(join_err)
-            .and_then(|r| r);
+        let result =
+            tokio::task::spawn_blocking(move || forget_winetricks_verb(&prefix_path, &verb))
+                .await
+                .map_err(join_err)
+                .and_then(|r| r);
         if let Err(e) = result {
             warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
         }
@@ -1058,8 +1135,14 @@ pub async fn uninstall_dep(
 
         let result = match action {
             CleanupAction::RemoveDllOverrides(dlls) => {
-                remove_dll_overrides(&prefix_path, &proton_path, &cache_dir, &dlls, cancel.clone())
-                    .await
+                remove_dll_overrides(
+                    &prefix_path,
+                    &proton_path,
+                    &cache_dir,
+                    &dlls,
+                    cancel.clone(),
+                )
+                .await
             }
             CleanupAction::UnregisterDlls(dlls) => {
                 unregister_dlls(&prefix_path, &proton_path, &dlls, cancel.clone()).await
@@ -1077,32 +1160,45 @@ pub async fn uninstall_dep(
     if let Some(profile) = get_dep_profile(&dep_id) {
         for provided_id in profile.provides {
             if let Some(entry) = state.installed.get(*provided_id)
-                && !entry.has_removable_changes() && !entry.touched_existing_files {
-                    let remove_prefix = prefix_path.clone();
-                    let remove_id = provided_id.to_string();
-                    if let Err(error) = tokio::task::spawn_blocking(move || {
-                        remove_installed_dep(&remove_prefix, &remove_id)
-                    }).await.map_err(join_err).and_then(|r| r) {
-                        warn!("[dep:{}] failed to remove stub for '{}': {}", dep_id, provided_id, error);
-                    }
+                && !entry.has_removable_changes()
+                && !entry.touched_existing_files
+            {
+                let remove_prefix = prefix_path.clone();
+                let remove_id = provided_id.to_string();
+                if let Err(error) = tokio::task::spawn_blocking(move || {
+                    remove_installed_dep(&remove_prefix, &remove_id)
+                })
+                .await
+                .map_err(join_err)
+                .and_then(|r| r)
+                {
+                    warn!(
+                        "[dep:{}] failed to remove stub for '{}': {}",
+                        dep_id, provided_id, error
+                    );
                 }
+            }
         }
     }
 
     {
         let remove_prefix = prefix_path.clone();
         let remove_id = dep_id.clone();
-        tokio::task::spawn_blocking(move || {
-            remove_installed_dep(&remove_prefix, &remove_id)
-        }).await.map_err(join_err).and_then(|r| r)?;
+        tokio::task::spawn_blocking(move || remove_installed_dep(&remove_prefix, &remove_id))
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)?;
     }
 
-    let note = match (installed.has_removable_changes(), installed.touched_existing_files) {
+    let note = match (
+        installed.has_removable_changes(),
+        installed.touched_existing_files,
+    ) {
         (true, true) => Some(gettext(
-            "Some existing prefix files were changed during installation and were not reverted."
+            "Some existing prefix files were changed during installation and were not reverted.",
         )),
         (false, true) => Some(gettext(
-            "Removed from tracking. Existing prefix files changed during installation were not reverted."
+            "Removed from tracking. Existing prefix files changed during installation were not reverted.",
         )),
         (false, false) => Some(gettext("Removed from tracking.")),
         (true, false) => None,
@@ -1131,7 +1227,7 @@ async fn ensure_umu_ready<F: Fn(usize, usize, String)>(
     {
         info!("[dep] umu-launcher not available");
         return Err(gettext(
-            "umu-launcher is not installed. Please check your internet connection and restart."
+            "umu-launcher is not installed. Please check your internet connection and restart.",
         ));
     }
     info!("[dep] umu-launcher is available");
@@ -1267,13 +1363,20 @@ fn merge_unique_strings(existing: &[String], additional: &[String]) -> Vec<Strin
 fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
     let root = Path::new(prefix_path);
     if !root.exists() {
-        info!("[dep] Prefix {} does not exist, empty snapshot", prefix_path);
+        info!(
+            "[dep] Prefix {} does not exist, empty snapshot",
+            prefix_path
+        );
         return Ok(PrefixSnapshot::default());
     }
 
     let mut snapshot = PrefixSnapshot::default();
     collect_snapshot(root, root, &mut snapshot)?;
-    info!("[dep] Snapshot: {} files in {}", snapshot.files.len(), prefix_path);
+    info!(
+        "[dep] Snapshot: {} files in {}",
+        snapshot.files.len(),
+        prefix_path
+    );
     Ok(snapshot)
 }
 

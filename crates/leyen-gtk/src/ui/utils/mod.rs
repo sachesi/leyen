@@ -1,7 +1,7 @@
-use leyen_ipc::RunningGameSnapshot;
-use leyen_model::models::{Game, GameGroup, LibraryItem};
-use leyen_model::i18n::gettext;
 use gtk4::prelude::*;
+use leyen_ipc::RunningGameSnapshot;
+use leyen_model::i18n::gettext;
+use leyen_model::models::{Game, GameGroup, LibraryItem};
 use std::cmp::Ordering;
 
 pub type RunningGameMap = std::collections::HashMap<String, RunningGameSnapshot>;

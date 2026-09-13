@@ -68,7 +68,10 @@ pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
 /// [`atomic_write`] for binary content.
 pub fn atomic_write_bytes(path: &Path, contents: &[u8]) -> io::Result<()> {
     let file_name = path.file_name().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "atomic_write: path has no file name")
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "atomic_write: path has no file name",
+        )
     })?;
     let mut temp_name = file_name.to_os_string();
     temp_name.push(format!(".tmp.{}.{}", std::process::id(), Uuid::new_v4()));

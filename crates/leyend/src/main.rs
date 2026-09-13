@@ -108,11 +108,13 @@ impl Manager {
 async fn map_snapshots(
     core: Vec<leyen_core::launch::RunningGameSnapshot>,
 ) -> Vec<leyen_ipc::RunningGameSnapshot> {
-    let library = leyen_core::config::load_library().await.unwrap_or_else(|e| {
-        // Signal path — keep publishing (with empty leyen_ids) but say why.
-        warn!("map_snapshots: failed to read the library: {e}");
-        Vec::new()
-    });
+    let library = leyen_core::config::load_library()
+        .await
+        .unwrap_or_else(|e| {
+            // Signal path — keep publishing (with empty leyen_ids) but say why.
+            warn!("map_snapshots: failed to read the library: {e}");
+            Vec::new()
+        });
     let leyen_ids: HashMap<String, String> = flatten_games(&library)
         .into_iter()
         .map(|g| (g.id, g.leyen_id))
@@ -132,10 +134,9 @@ async fn current_runtime_readiness() -> RuntimeReadiness {
     let umu = tokio::task::spawn_blocking(leyen_core::runtime::umu::is_umu_run_available)
         .await
         .unwrap_or(false);
-    let winetricks =
-        tokio::task::spawn_blocking(leyen_core::runtime::umu::is_winetricks_available)
-            .await
-            .unwrap_or(false);
+    let winetricks = tokio::task::spawn_blocking(leyen_core::runtime::umu::is_winetricks_available)
+        .await
+        .unwrap_or(false);
     RuntimeReadiness {
         umu_ready: umu,
         winetricks_ready: winetricks,
@@ -155,8 +156,7 @@ impl Manager {
             let jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
             if !jobs.is_empty() {
                 return Err(leyen_ipc::Error::Failed(
-                    "A dependency operation is in progress; try again when it finishes"
-                        .to_string(),
+                    "A dependency operation is in progress; try again when it finishes".to_string(),
                 ));
             }
             LaunchGuard::new()
@@ -326,7 +326,15 @@ impl Manager {
             }
             jobs.insert(job_id.clone(), cancel.clone());
         }
-        self.spawn_dep_job(conn, job_id.clone(), prefix, dep_id, proton_path, cancel, true);
+        self.spawn_dep_job(
+            conn,
+            job_id.clone(),
+            prefix,
+            dep_id,
+            proton_path,
+            cancel,
+            true,
+        );
         Ok(job_id)
     }
 
@@ -362,7 +370,15 @@ impl Manager {
             }
             jobs.insert(job_id.clone(), cancel.clone());
         }
-        self.spawn_dep_job(conn, job_id.clone(), prefix, dep_id, proton_path, cancel, false);
+        self.spawn_dep_job(
+            conn,
+            job_id.clone(),
+            prefix,
+            dep_id,
+            proton_path,
+            cancel,
+            false,
+        );
         Ok(job_id)
     }
 
@@ -523,14 +539,8 @@ impl Manager {
                 leyen_core::deps::install_dep(&dep_id, &prefix, &proton_path, cancel, on_progress)
                     .await
             } else {
-                leyen_core::deps::uninstall_dep(
-                    &dep_id,
-                    &prefix,
-                    &proton_path,
-                    cancel,
-                    on_progress,
-                )
-                .await
+                leyen_core::deps::uninstall_dep(&dep_id, &prefix, &proton_path, cancel, on_progress)
+                    .await
             };
             job_guard.finish();
             drop(job_guard);
@@ -682,7 +692,10 @@ async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
 /// Spawns a long-lived background task under a supervisor: a panic inside
 /// `fut` is caught and logged instead of silently killing the loop forever
 /// (the task itself never returns, so nothing else would ever notice).
-fn spawn_supervised(name: &'static str, fut: impl std::future::Future<Output = ()> + Send + 'static) {
+fn spawn_supervised(
+    name: &'static str,
+    fut: impl std::future::Future<Output = ()> + Send + 'static,
+) {
     tokio::spawn(async move {
         if let Err(e) = tokio::spawn(fut).await
             && e.is_panic()
@@ -809,8 +822,7 @@ fn spawn_runtime_status_watcher(connection: Connection) {
             let now = current_runtime_readiness().await;
             let changed = match last {
                 Some(prev) => {
-                    prev.umu_ready != now.umu_ready
-                        || prev.winetricks_ready != now.winetricks_ready
+                    prev.umu_ready != now.umu_ready || prev.winetricks_ready != now.winetricks_ready
                 }
                 None => true,
             };
@@ -843,9 +855,7 @@ fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>, shutdown: Arc<tokio::sync
     spawn_supervised("idle-exit", async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
-            if leyen_core::launch::is_any_game_running()
-                || ACTIVE_WORK.load(Ordering::SeqCst) > 0
-            {
+            if leyen_core::launch::is_any_game_running() || ACTIVE_WORK.load(Ordering::SeqCst) > 0 {
                 continue;
             }
             let idle = last_activity

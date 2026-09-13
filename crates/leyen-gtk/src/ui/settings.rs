@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use super::deps_dialog::open_dependencies_page;
 use super::{SECONDARY_WINDOW_DEFAULT_HEIGHT, SECONDARY_WINDOW_DEFAULT_WIDTH};
 use crate::prefix_tools::{pick_and_run_in_prefix, run_regedit_in_prefix, run_winecfg_in_prefix};
+use gtk4::glib;
 use leyen_model::runtime::{get_umu_runtime_dir, resolve_proton_path};
 use leyen_model::tools::{gamemode_available, mangohud_available};
-use gtk4::glib;
 
 pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let settings = crate::daemon::load_settings().await;
@@ -56,13 +56,17 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         let file_dialog = gtk4::FileDialog::builder()
             .title(gettext("Select Prefix Folder"))
             .build();
-        file_dialog.select_folder(Some(&parent_for_fd), gio::Cancellable::NONE, move |result| {
-            if let Ok(file) = result
-                && let Some(path) = file.path()
-            {
-                prefix_row_clone.set_text(&path.to_string_lossy());
-            }
-        });
+        file_dialog.select_folder(
+            Some(&parent_for_fd),
+            gio::Cancellable::NONE,
+            move |result| {
+                if let Ok(file) = result
+                    && let Some(path) = file.path()
+                {
+                    prefix_row_clone.set_text(&path.to_string_lossy());
+                }
+            },
+        );
     });
 
     // Build Proton dropdown – display basenames, store full paths via index
@@ -103,7 +107,9 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     let tools_group = adw::PreferencesGroup::builder()
         .title(gettext("Tools"))
-        .description(gettext("Manage the default prefix inherited by games and groups."))
+        .description(gettext(
+            "Manage the default prefix inherited by games and groups.",
+        ))
         .build();
 
     let winecfg_btn = gtk4::Button::builder()
@@ -115,7 +121,9 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
         .build();
     regedit_btn.set_margin_top(6);
     regedit_btn.set_margin_bottom(6);
-    let manage_deps_btn = gtk4::Button::builder().label(gettext("Manage Dependencies")).build();
+    let manage_deps_btn = gtk4::Button::builder()
+        .label(gettext("Manage Dependencies"))
+        .build();
     manage_deps_btn.set_margin_top(6);
     manage_deps_btn.set_margin_bottom(6);
     let run_prefix_btn = gtk4::Button::builder()
@@ -131,13 +139,13 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let available_versions_for_winecfg = available_versions.clone();
     winecfg_btn.connect_clicked(move |_| {
         let prefix = prefix_row_for_winecfg.text().to_string();
-        let proton_choice =
-            if (proton_row_for_winecfg.selected() as usize) < available_versions_for_winecfg.len()
-            {
-                available_versions_for_winecfg[proton_row_for_winecfg.selected() as usize].clone()
-            } else {
-                "Default".to_string()
-            };
+        let proton_choice = if (proton_row_for_winecfg.selected() as usize)
+            < available_versions_for_winecfg.len()
+        {
+            available_versions_for_winecfg[proton_row_for_winecfg.selected() as usize].clone()
+        } else {
+            "Default".to_string()
+        };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
         let o = overlay_for_winecfg.clone();
         glib::spawn_future_local(async move {
@@ -151,12 +159,13 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     let available_versions_for_regedit = available_versions.clone();
     regedit_btn.connect_clicked(move |_| {
         let prefix = prefix_row_for_regedit.text().to_string();
-        let proton_choice =
-            if (proton_row_for_regedit.selected() as usize) < available_versions_for_regedit.len() {
-                available_versions_for_regedit[proton_row_for_regedit.selected() as usize].clone()
-            } else {
-                "Default".to_string()
-            };
+        let proton_choice = if (proton_row_for_regedit.selected() as usize)
+            < available_versions_for_regedit.len()
+        {
+            available_versions_for_regedit[proton_row_for_regedit.selected() as usize].clone()
+        } else {
+            "Default".to_string()
+        };
         let proton = resolve_proton_path(&proton_choice).unwrap_or_default();
         let o = overlay_for_regedit.clone();
         glib::spawn_future_local(async move {
@@ -263,12 +272,16 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
     // ── Logging ────────────────────────────────────────────────────────────
     let logging_group = adw::PreferencesGroup::builder()
         .title(gettext("Logging"))
-        .description(gettext("Select which messages are printed to the terminal."))
+        .description(gettext(
+            "Select which messages are printed to the terminal.",
+        ))
         .build();
 
     let log_errors_row = adw::SwitchRow::builder()
         .title(gettext("Errors"))
-        .subtitle(gettext("Show error messages from leyen and launched processes"))
+        .subtitle(gettext(
+            "Show error messages from leyen and launched processes",
+        ))
         .active(settings.log_errors)
         .build();
 
@@ -295,14 +308,16 @@ pub async fn show_global_settings(parent: &adw::ApplicationWindow) {
 
     let runtime_repair_row = adw::ExpanderRow::builder()
         .title(gettext("Repair Runtime"))
-        .subtitle(gettext("Reset internal umu-launcher components if dependency installation fails."))
+        .subtitle(gettext(
+            "Reset internal umu-launcher components if dependency installation fails.",
+        ))
         .build();
 
     let reset_row = adw::ActionRow::builder()
         .title(gettext("Reset umu Runtime"))
-        .subtitle(
-            gettext("Deletes steamrt3 directory. It will be re-downloaded on next dependency install."),
-        )
+        .subtitle(gettext(
+            "Deletes steamrt3 directory. It will be re-downloaded on next dependency install.",
+        ))
         .build();
 
     let reset_btn = gtk4::Button::builder()

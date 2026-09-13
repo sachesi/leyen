@@ -20,7 +20,9 @@ use std::rc::Rc;
 pub use self::library::*;
 pub use self::utils::*;
 
-use self::game_dialogs::{AddLibraryItemKind, show_add_library_item_dialog, show_edit_group_dialog};
+use self::game_dialogs::{
+    AddLibraryItemKind, show_add_library_item_dialog, show_edit_group_dialog,
+};
 use self::log_window::show_log_window;
 use self::running_games::show_running_games_window;
 use self::settings::show_global_settings;
@@ -80,11 +82,17 @@ pub fn build_ui(app: &adw::Application) {
     header.pack_start(&back_btn);
     header.pack_start(&group_edit_btn);
     let menu_model = gio::Menu::new();
-    menu_model.append(Some(&gettext("Running Games")), Some("win.show-running-games"));
+    menu_model.append(
+        Some(&gettext("Running Games")),
+        Some("win.show-running-games"),
+    );
     menu_model.append(Some(&gettext("Logs")), Some("win.show-logs"));
     let menu_section = gio::Menu::new();
     menu_section.append(Some(&gettext("Preferences")), Some("win.show-preferences"));
-    menu_section.append(Some(&gettext("Keyboard Shortcuts")), Some("win.show-shortcuts"));
+    menu_section.append(
+        Some(&gettext("Keyboard Shortcuts")),
+        Some("win.show-shortcuts"),
+    );
     menu_section.append(Some(&gettext("About Leyen")), Some("win.show-about"));
     menu_model.append_section(None, &menu_section);
     let menu_btn = gtk4::MenuButton::builder()
@@ -159,7 +167,9 @@ pub fn build_ui(app: &adw::Application) {
     let root_empty_state = adw::StatusPage::builder()
         .icon_name("applications-games-symbolic")
         .title(gettext("No games added yet"))
-        .description(gettext("Add a game or create a group to organize your library."))
+        .description(gettext(
+            "Add a game or create a group to organize your library.",
+        ))
         .build();
 
     let group_empty_state = adw::StatusPage::builder()
@@ -228,7 +238,9 @@ pub fn build_ui(app: &adw::Application) {
     toast_overlay.set_child(Some(&stack));
 
     let download_banner = adw::Banner::builder()
-        .title(gettext("Downloading umu-launcher… Please wait before starting games."))
+        .title(gettext(
+            "Downloading umu-launcher… Please wait before starting games.",
+        ))
         .revealed(false)
         .build();
     toolbar_view.add_top_bar(&download_banner);

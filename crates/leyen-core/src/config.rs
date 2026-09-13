@@ -342,10 +342,7 @@ mod tests {
         // brand-new game g2.
         let mut edited = game("g1", 0);
         edited.title = "Renamed".to_string();
-        let incoming = vec![
-            LibraryItem::Game(edited),
-            LibraryItem::Game(game("g2", 0)),
-        ];
+        let incoming = vec![LibraryItem::Game(edited), LibraryItem::Game(game("g2", 0))];
 
         let merged = merge_authoritative_fields(incoming, &current);
         let games = flatten_games(&merged);
@@ -355,6 +352,13 @@ mod tests {
         assert_eq!(g1.playtime_seconds, 500);
         assert_eq!(g1.title, "Renamed");
         // New game keeps its client values.
-        assert_eq!(games.iter().find(|g| g.id == "g2").unwrap().playtime_seconds, 0);
+        assert_eq!(
+            games
+                .iter()
+                .find(|g| g.id == "g2")
+                .unwrap()
+                .playtime_seconds,
+            0
+        );
     }
 }

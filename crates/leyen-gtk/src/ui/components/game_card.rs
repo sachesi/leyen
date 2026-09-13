@@ -1,12 +1,11 @@
-use leyen_model::i18n::gettext;
 use gtk4::glib;
 use gtk4::prelude::*;
+use leyen_model::i18n::gettext;
 use libadwaita as adw;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::icons::game_icon_path;
-use leyen_model::models::Game;
 use crate::ui::LibraryUi;
 use crate::ui::components::icon::build_library_icon;
 use crate::ui::game_dialogs::{show_delete_confirmation, show_edit_game_dialog};
@@ -15,6 +14,7 @@ use crate::ui::utils::{
     RunningGameMap, format_duration_brief, format_last_played, format_playtime, game_is_running,
     running_game_elapsed_seconds,
 };
+use leyen_model::models::Game;
 
 pub fn build_game_card(
     game: &Game,
@@ -78,9 +78,13 @@ pub fn build_game_card(
     info_column.append(&{
         let status_label = gtk4::Label::builder()
             .label(&if game_running {
-                gettext("Running for {}").replacen("{}", &format_duration_brief(
-                    running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0)
-                ), 1)
+                gettext("Running for {}").replacen(
+                    "{}",
+                    &format_duration_brief(
+                        running_game_elapsed_seconds(running_games, &game.id).unwrap_or(0),
+                    ),
+                    1,
+                )
             } else {
                 format_last_played(game.last_played_epoch_seconds)
             })

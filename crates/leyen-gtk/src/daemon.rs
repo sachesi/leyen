@@ -187,8 +187,7 @@ async fn bridge_main(
 
     // Adopt the daemon's current library version (best-effort; a failure means
     // the daemon isn't up yet — the restart watch resyncs on activation).
-    if let Ok(Ok(version)) =
-        tokio::time::timeout(QUERY_TIMEOUT, proxy.get_library_version()).await
+    if let Ok(Ok(version)) = tokio::time::timeout(QUERY_TIMEOUT, proxy.get_library_version()).await
     {
         LIBRARY_VERSION.store(version, Ordering::SeqCst);
     }
@@ -283,13 +282,16 @@ async fn handle_command(
             let _ = reply.send(result).await;
         }
         DaemonCommand::GetRunning(reply) => {
-            let result =
-                bounded("GetRunningGames", QUERY_TIMEOUT, proxy.get_running_games()).await;
+            let result = bounded("GetRunningGames", QUERY_TIMEOUT, proxy.get_running_games()).await;
             let _ = reply.send(result).await;
         }
         DaemonCommand::GetRuntime(reply) => {
-            let result =
-                bounded("GetRuntimeStatus", QUERY_TIMEOUT, proxy.get_runtime_status()).await;
+            let result = bounded(
+                "GetRuntimeStatus",
+                QUERY_TIMEOUT,
+                proxy.get_runtime_status(),
+            )
+            .await;
             let _ = reply.send(result).await;
         }
         DaemonCommand::GetLogs(offset, reply) => {
@@ -305,8 +307,7 @@ async fn handle_command(
             let _ = reply.send(result).await;
         }
         DaemonCommand::ReloadSettings(reply) => {
-            let result =
-                bounded("ReloadSettings", QUERY_TIMEOUT, proxy.reload_settings()).await;
+            let result = bounded("ReloadSettings", QUERY_TIMEOUT, proxy.reload_settings()).await;
             let _ = reply.send(result).await;
         }
         DaemonCommand::InstallDep {
@@ -396,13 +397,24 @@ async fn save_library_versioned(
     }
 }
 
-fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::Sender<DaemonEvent>) {
+fn spawn_signal_forwarders(
+    proxy: &LeyenProxy<'static>,
+    evt_tx: async_channel::Sender<DaemonEvent>,
+) {
     // SessionsChanged
     {
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("SessionsChanged", proxy.receive_sessions_changed().await, &tx).await else { return };
+            let Some(mut stream) = subscribed(
+                "SessionsChanged",
+                proxy.receive_sessions_changed().await,
+                &tx,
+            )
+            .await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(args) = sig.args() {
                     let _ = tx.send(DaemonEvent::SessionsChanged(args.sessions)).await;
@@ -415,7 +427,11 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("LogsAppended", proxy.receive_logs_appended().await, &tx).await else { return };
+            let Some(mut stream) =
+                subscribed("LogsAppended", proxy.receive_logs_appended().await, &tx).await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(args) = sig.args() {
                     let _ = tx.send(DaemonEvent::LogsAppended(args.total_offset)).await;
@@ -428,7 +444,11 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("DepProgress", proxy.receive_dep_progress().await, &tx).await else { return };
+            let Some(mut stream) =
+                subscribed("DepProgress", proxy.receive_dep_progress().await, &tx).await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(a) = sig.args() {
                     let _ = tx
@@ -450,7 +470,11 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("DepFinished", proxy.receive_dep_finished().await, &tx).await else { return };
+            let Some(mut stream) =
+                subscribed("DepFinished", proxy.receive_dep_finished().await, &tx).await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(a) = sig.args() {
                     let _ = tx
@@ -469,7 +493,11 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("RuntimeStatus", proxy.receive_runtime_status().await, &tx).await else { return };
+            let Some(mut stream) =
+                subscribed("RuntimeStatus", proxy.receive_runtime_status().await, &tx).await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(a) = sig.args() {
                     let _ = tx
@@ -487,7 +515,11 @@ fn spawn_signal_forwarders(proxy: &LeyenProxy<'static>, evt_tx: async_channel::S
         let proxy = proxy.clone();
         let tx = evt_tx.clone();
         tokio::spawn(async move {
-            let Some(mut stream) = subscribed("LibraryChanged", proxy.receive_library_changed().await, &tx).await else { return };
+            let Some(mut stream) =
+                subscribed("LibraryChanged", proxy.receive_library_changed().await, &tx).await
+            else {
+                return;
+            };
             while let Some(sig) = stream.next().await {
                 if let Ok(args) = sig.args() {
                     LIBRARY_VERSION.store(args.version, Ordering::SeqCst);
@@ -723,8 +755,8 @@ pub fn run_event_dispatch(evt_rx: async_channel::Receiver<DaemonEvent>) {
 /// unwrapping.
 pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
     let (tx, rx) = async_channel::bounded(1);
-    std::thread::spawn(move || {
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+    std::thread::spawn(
+        move || match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
             Ok(value) => {
                 let _ = tx.send_blocking(value);
             }
@@ -736,7 +768,7 @@ pub async fn gio_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'sta
                     .unwrap_or_else(|| "unknown panic".to_string());
                 log::error!("gio_blocking: blocking task panicked: {msg}");
             }
-        }
-    });
+        },
+    );
     rx.recv().await.ok()
 }

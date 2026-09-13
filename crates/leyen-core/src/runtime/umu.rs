@@ -284,9 +284,8 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
         ));
     }
 
-    let release: Value = serde_json::from_slice(&api_output.stdout).map_err(|e| {
-        UmuError::VersionResolve(format!("Failed to parse release metadata: {e}"))
-    })?;
+    let release: Value = serde_json::from_slice(&api_output.stdout)
+        .map_err(|e| UmuError::VersionResolve(format!("Failed to parse release metadata: {e}")))?;
 
     let version = release
         .get("tag_name")
@@ -378,7 +377,12 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     // extracting in place would report "ready" (and let a launch use a
     // half-written zipapp) while tar is still running.
     let umu_dir = format!("{}/umu", dest_dir);
-    let staging = format!("{}/.extract.{}.{}", dest_dir, std::process::id(), uuid::Uuid::new_v4());
+    let staging = format!(
+        "{}/.extract.{}.{}",
+        dest_dir,
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    );
     fs::create_dir_all(&staging)?;
     let status = std::process::Command::new("tar")
         .args(["-xf", &tarball_path, "-C", &staging])
@@ -413,7 +417,9 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     let _ = fs::remove_dir_all(&umu_dir);
     if let Err(e) = fs::rename(&staged_umu, &umu_dir) {
         let _ = fs::remove_dir_all(&staging);
-        return Err(UmuError::Extraction(format!("Failed to move extracted umu into place: {e}")));
+        return Err(UmuError::Extraction(format!(
+            "Failed to move extracted umu into place: {e}"
+        )));
     }
     let _ = fs::remove_dir_all(&staging);
     let version_file = format!("{}/version", dest_dir);
@@ -459,7 +465,8 @@ mod tests {
 
     #[test]
     fn missing_asset_returns_none() {
-        let release = serde_json::json!({"assets": [{"name": "other.deb", "digest": "sha256:aaaa"}]});
+        let release =
+            serde_json::json!({"assets": [{"name": "other.deb", "digest": "sha256:aaaa"}]});
         assert!(find_release_asset(&release, "umu-launcher-1.4.1-zipapp.tar").is_none());
     }
 
@@ -475,4 +482,3 @@ mod tests {
         assert_eq!(asset_sha256_digest(&asset), None);
     }
 }
-

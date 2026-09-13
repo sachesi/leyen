@@ -106,8 +106,11 @@ async fn rebuild_running_games(
         let pid_label = gtk4::Label::builder()
             .label({
                 let tracked = snapshot.tracked_pid_count as u32;
-                let processes = ngettext("{} process", "{} processes", tracked)
-                    .replacen("{}", &tracked.to_string(), 1);
+                let processes = ngettext("{} process", "{} processes", tracked).replacen(
+                    "{}",
+                    &tracked.to_string(),
+                    1,
+                );
                 gettext("PID {} | tracking {}")
                     .replacen("{}", &snapshot.pid.to_string(), 1)
                     .replacen("{}", &processes, 1)
@@ -201,7 +204,11 @@ pub fn update_running_duration_labels(
     for (game_id, label) in running_duration_labels.borrow().iter() {
         if let Some(started_at) = snapshots.get(game_id) {
             let elapsed = now.saturating_sub(*started_at);
-            label.set_label(&gettext("Running for {}").replacen("{}", &format_duration_brief(elapsed), 1));
+            label.set_label(&gettext("Running for {}").replacen(
+                "{}",
+                &format_duration_brief(elapsed),
+                1,
+            ));
         }
     }
 }
@@ -213,10 +220,11 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     }
 
     if let Some(existing) = ACTIVE_RUNNING_GAMES_WINDOW.with(|w| w.borrow().clone())
-        && existing.is_visible() {
-            existing.present();
-            return;
-        }
+        && existing.is_visible()
+    {
+        existing.present();
+        return;
+    }
 
     let window = adw::Window::builder()
         .title(gettext("Leyen – Running Games"))
@@ -248,7 +256,9 @@ pub async fn show_running_games_window(parent: &adw::ApplicationWindow) {
     let empty_state = adw::StatusPage::builder()
         .icon_name("media-playback-stop-symbolic")
         .title(gettext("No running games"))
-        .description(gettext("Games you launch through Leyen will appear here while they are active."))
+        .description(gettext(
+            "Games you launch through Leyen will appear here while they are active.",
+        ))
         .build();
     let content_stack = gtk4::Stack::builder()
         .transition_type(gtk4::StackTransitionType::Crossfade)

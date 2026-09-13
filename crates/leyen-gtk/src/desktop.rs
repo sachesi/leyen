@@ -97,8 +97,7 @@ fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str)
     let display_name = display_name(game, group);
     let comment_name = sanitize_desktop_value(&display_name);
     let startup_wm_class = startup_wm_class(game);
-    let leyen_id = shlex::try_quote(&game.leyen_id)
-        .unwrap_or(Cow::Borrowed(&game.leyen_id));
+    let leyen_id = shlex::try_quote(&game.leyen_id).unwrap_or(Cow::Borrowed(&game.leyen_id));
 
     format!(
         "[Desktop Entry]\nVersion=1.0\nType=Application\nName={display_name}\nComment=Launch {comment_name} with Leyen\nExec=leyen run {leyen_id}\nIcon={icon}\nTerminal=false\nCategories=Game;\nStartupNotify=true\nStartupWMClass={startup_wm_class}\n"

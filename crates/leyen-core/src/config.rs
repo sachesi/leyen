@@ -86,9 +86,11 @@ impl Drop for FlockGuard {
     }
 }
 
+/// Runs `f` on the library under the lock and writes it back when `f` reports a
+/// change (`true` beside its result).
 fn with_library_exclusive<F, T>(f: F) -> Option<T>
 where
-    F: FnOnce(&mut Vec<LibraryItem>) -> T,
+    F: FnOnce(&mut Vec<LibraryItem>) -> (T, bool),
 {
     let _guard = match FlockGuard::lock(&config_lock_path(), Duration::from_secs(5)) {
         Ok(g) => g,
@@ -130,7 +132,11 @@ where
         }
     };
 
-    let result = f(&mut items);
+    let (result, changed) = f(&mut items);
+    if !changed {
+        update_library_cache(&items);
+        return Some(result);
+    }
 
     let data = match toml::to_string_pretty(&GamesConfig {
         version: GAMES_CONFIG_VERSION,
@@ -182,6 +188,7 @@ pub async fn save_library(items: Vec<LibraryItem>) {
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|lib| {
             *lib = items;
+            ((), true)
         });
     })
     .await
@@ -197,6 +204,7 @@ pub async fn save_library_merged(incoming: Vec<LibraryItem>) -> bool {
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|current| {
             *current = merge_authoritative_fields(incoming, current);
+            ((), true)
         })
         .is_some()
     })
@@ -271,10 +279,11 @@ pub async fn add_game_playtime(game_id: &str, seconds: u64) -> Option<u64> {
     let game_id = game_id.to_string();
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|items| {
-            find_game_mut(items, &game_id).map(|game| {
+            let total = find_game_mut(items, &game_id).map(|game| {
                 game.playtime_seconds += seconds;
                 game.playtime_seconds
-            })
+            });
+            (total, total.is_some())
         })
     })
     .await
@@ -286,9 +295,10 @@ pub async fn record_game_launch_start(game_id: &str, epoch_seconds: u64) -> bool
     let game_id = game_id.to_string();
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|items| {
-            find_game_mut(items, &game_id).map(|game| {
-                game.last_played_epoch_seconds = epoch_seconds;
-            })
+            let found = find_game_mut(items, &game_id)
+                .map(|game| game.last_played_epoch_seconds = epoch_seconds)
+                .is_some();
+            ((), found)
         })
         .is_some()
     })
@@ -301,10 +311,13 @@ pub async fn record_game_launch_result(game_id: &str, duration_seconds: u64, sta
     let status = status.to_string();
     tokio::task::spawn_blocking(move || {
         with_library_exclusive(|items| {
-            find_game_mut(items, &game_id).map(|game| {
-                game.last_run_duration_seconds = duration_seconds;
-                game.last_run_status = status;
-            })
+            let found = find_game_mut(items, &game_id)
+                .map(|game| {
+                    game.last_run_duration_seconds = duration_seconds;
+                    game.last_run_status = status;
+                })
+                .is_some();
+            ((), found)
         })
         .is_some()
     })

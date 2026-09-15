@@ -27,7 +27,7 @@ use leyen_model::deps::{
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
-/// How long to wait for a killed command's pipes to close before giving up.
+/// How long a stopped command gets to end after SIGTERM, and again after SIGKILL.
 const POST_KILL_WAIT: Duration = Duration::from_secs(5);
 
 /// Prefixes with a dependency install/uninstall in progress. Prevents two
@@ -125,58 +125,72 @@ fn join_err(e: tokio::task::JoinError) -> String {
     }
 }
 
-/// Runs a umu command to completion with a timeout, killing the whole process
-/// group if the operation is cancelled or times out. The command is put in its
-/// own process group via `setpgid` so the entire umu/wine tree is signalled.
+/// Runs a umu command to completion with a timeout, inside a transient systemd
+/// user scope like a game. Cancel and the timeout stop the whole scope — every
+/// process the command started, including those that left its process group
+/// (wineserver calls setsid) — with SIGTERM first and SIGKILL after a grace.
 pub(super) async fn run_umu_command(
-    mut cmd: AsyncCommand,
+    cmd: AsyncCommand,
     label: String,
     cancel: Arc<AtomicBool>,
 ) -> Result<std::process::Output, String> {
-    cmd.stdin(Stdio::null());
-    // Nothing reads stdout; piping it only buffered installer chatter in memory.
-    cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::piped());
-    unsafe {
-        cmd.pre_exec(|| {
-            if libc::setpgid(0, 0) == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
+    if !tokio::task::spawn_blocking(crate::launch::systemd_user_available)
+        .await
+        .unwrap_or(false)
+    {
+        return Err(gettext(
+            "A systemd user session is required to install or remove dependencies.",
+        ));
     }
+    let unit = format!("leyen-dep-{}.scope", uuid::Uuid::new_v4());
+    let mut scoped = in_scope(&cmd, &unit);
+    scoped.stdin(Stdio::null());
+    // Nothing reads stdout; piping it only buffered installer chatter in memory.
+    scoped.stdout(Stdio::null());
+    scoped.stderr(Stdio::piped());
 
     // Run on the Tokio runtime (not the GTK/glib executor) so the process and
     // timer drivers advance while the main loop stays responsive for Cancel.
-    tokio::spawn(run_umu_command_inner(cmd, label, cancel))
+    tokio::spawn(run_umu_command_inner(scoped, unit, label, cancel))
         .await
         .map_err(|e| format!("Command task panicked: {e}"))
         .and_then(|r| r)
 }
 
+/// `cmd` wrapped in `systemd-run --scope` as the unit `unit`, with its
+/// environment and working directory.
+fn in_scope(cmd: &AsyncCommand, unit: &str) -> AsyncCommand {
+    let cmd = cmd.as_std();
+    let mut scoped = AsyncCommand::new("systemd-run");
+    scoped.args(["--user", "--scope", "--quiet", "--collect"]);
+    scoped.arg(format!("--unit={unit}")).arg("--");
+    scoped.arg(cmd.get_program()).args(cmd.get_args());
+    for (key, value) in cmd.get_envs() {
+        match value {
+            Some(value) => scoped.env(key, value),
+            None => scoped.env_remove(key),
+        };
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        scoped.current_dir(dir);
+    }
+    scoped
+}
+
 async fn run_umu_command_inner(
     mut cmd: AsyncCommand,
+    unit: String,
     label: String,
     cancel: Arc<AtomicBool>,
 ) -> Result<std::process::Output, String> {
     let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to launch {}: {}", label, e))?;
-    let pid = child.id();
     let wait_fut = child.wait_with_output();
     tokio::pin!(wait_fut);
 
     let start = tokio::time::Instant::now();
     let timeout = Duration::from_secs(COMMAND_TIMEOUT_SECS);
-
-    let kill_group = || {
-        if let Some(pid) = pid {
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGKILL);
-            }
-        }
-    };
 
     loop {
         tokio::select! {
@@ -184,26 +198,34 @@ async fn run_umu_command_inner(
                 return out.map_err(|e| format!("Failed to run {}: {}", label, e));
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {
-                // After the kill, the wait ends only when every holder of the
-                // stderr pipe exits; a descendant that left the process group
-                // (wineserver calls setsid) could keep it open, so bound it.
-                if cancel.load(Ordering::Relaxed) {
-                    kill_group();
-                    let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
-                    return Err(gettext("Cancelled."));
-                }
-                if start.elapsed() >= timeout {
+                let error = if cancel.load(Ordering::Relaxed) {
+                    gettext("Cancelled.")
+                } else if start.elapsed() >= timeout {
                     warn!("[dep] '{}' timed out after {} seconds", label, COMMAND_TIMEOUT_SECS);
-                    kill_group();
+                    format!("'{}' timed out after {} seconds", label, COMMAND_TIMEOUT_SECS)
+                } else {
+                    continue;
+                };
+                // The wait ends once every holder of the stderr pipe is gone,
+                // which is every process in the scope.
+                signal_scope(&unit, "SIGTERM").await;
+                if tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await.is_err() {
+                    signal_scope(&unit, "SIGKILL").await;
                     let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
-                    return Err(format!(
-                        "'{}' timed out after {} seconds",
-                        label, COMMAND_TIMEOUT_SECS
-                    ));
                 }
+                return Err(error);
             }
         }
     }
+}
+
+/// Sends `signal` to every process of the scope `unit`.
+async fn signal_scope(unit: &str, signal: &'static str) {
+    let unit = unit.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        crate::launch::systemctl(&["kill", &format!("--signal={signal}"), &unit])
+    })
+    .await;
 }
 
 #[derive(Clone)]
@@ -1663,10 +1685,12 @@ fn remove_created_files(prefix_path: &str, files: &[String]) -> Result<(), Strin
 
     for relative in &files {
         // Tracked paths come from a state file inside the prefix; anything but
-        // plain relative components could reach outside it.
+        // plain relative components, or a folder on the way that is a link (Wine
+        // links the user folders to the home directory), could reach outside it.
         if !Path::new(relative)
             .components()
             .all(|c| matches!(c, std::path::Component::Normal(_)))
+            || passes_through_link(prefix_root, relative)
         {
             return Err(format!(
                 "Refusing to remove tracked file '{}': path escapes the prefix",
@@ -1690,6 +1714,18 @@ fn remove_created_files(prefix_path: &str, files: &[String]) -> Result<(), Strin
     Ok(())
 }
 
+/// Whether a folder between `prefix_root` and the file `relative` is a symlink.
+fn passes_through_link(prefix_root: &Path, relative: &str) -> bool {
+    let mut folder = prefix_root.to_path_buf();
+    let Some(parent) = Path::new(relative).parent() else {
+        return false;
+    };
+    parent.components().any(|component| {
+        folder.push(component);
+        fs::symlink_metadata(&folder).is_ok_and(|meta| meta.file_type().is_symlink())
+    })
+}
+
 fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
     let mut current = file_path.parent().map(PathBuf::from);
     while let Some(path) = current {
@@ -1705,5 +1741,70 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
             }
             Err(_) => break,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{in_scope, remove_created_files};
+    use std::ffi::OsStr;
+    use tokio::process::Command as AsyncCommand;
+
+    #[test]
+    fn a_command_keeps_its_arguments_environment_and_folder_in_its_scope() {
+        let mut cmd = AsyncCommand::new("umu-run");
+        cmd.args(["regedit.exe", "/S", "my file.reg"])
+            .env("WINEPREFIX", "/p")
+            .env_remove("DISPLAY")
+            .current_dir("/tmp");
+        let scoped = in_scope(&cmd, "leyen-dep-x.scope");
+        let scoped = scoped.as_std();
+
+        assert_eq!(scoped.get_program(), "systemd-run");
+        let args: Vec<&OsStr> = scoped.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                "--user",
+                "--scope",
+                "--quiet",
+                "--collect",
+                "--unit=leyen-dep-x.scope",
+                "--",
+                "umu-run",
+                "regedit.exe",
+                "/S",
+                "my file.reg"
+            ]
+        );
+        let envs: Vec<_> = scoped.get_envs().collect();
+        assert!(envs.contains(&(OsStr::new("WINEPREFIX"), Some(OsStr::new("/p")))));
+        assert!(envs.contains(&(OsStr::new("DISPLAY"), None)));
+        assert_eq!(scoped.get_current_dir(), Some(std::path::Path::new("/tmp")));
+    }
+
+    #[test]
+    fn a_tracked_file_behind_a_linked_folder_is_not_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let outside = home.path().join("save.dat");
+        std::fs::write(&outside, b"keep").unwrap();
+        let prefix = root.path().join("pfx");
+        std::fs::create_dir_all(prefix.join("drive_c/users/me")).unwrap();
+        std::os::unix::fs::symlink(home.path(), prefix.join("drive_c/users/me/Documents")).unwrap();
+        std::fs::write(prefix.join("drive_c/own.dll"), b"x").unwrap();
+
+        let prefix_str = prefix.to_str().unwrap();
+        assert!(
+            remove_created_files(
+                prefix_str,
+                &["drive_c/users/me/Documents/save.dat".to_string()]
+            )
+            .is_err()
+        );
+        assert!(outside.exists());
+
+        remove_created_files(prefix_str, &["drive_c/own.dll".to_string()]).unwrap();
+        assert!(!prefix.join("drive_c/own.dll").exists());
     }
 }

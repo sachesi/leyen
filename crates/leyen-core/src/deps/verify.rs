@@ -7,8 +7,8 @@ use super::engine::{configure_umu_command_async, run_umu_command};
 use crate::runtime::umu::get_umu_run_path;
 
 /// Queries `key_path` with `reg.exe` inside the prefix. Runs through the
-/// engine's command runner so Cancel and the timeout kill the whole wine
-/// process group; a timeout is an error, not a missing key.
+/// engine's command runner so Cancel and the timeout stop every wine process
+/// it started; a timeout is an error, not a missing key.
 pub async fn check_registry_key_exists(
     prefix_path: &str,
     proton_path: &str,

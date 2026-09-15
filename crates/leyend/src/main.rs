@@ -668,8 +668,9 @@ async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
         warn!("leyend: failed to release bus name: {e}");
     }
     // Flip every in-flight dep job's cancel flag: `run_umu_command_inner`
-    // notices within ~200ms and kills the process group, so this turns a
-    // SIGTERM mid-install into a clean cancel instead of an orphaned child.
+    // notices within ~200ms and stops the command's scope (SIGTERM, then
+    // SIGKILL after 5s), so this turns a SIGTERM mid-install into a clean
+    // cancel instead of orphaned wine processes.
     let cancelled = dep_jobs
         .lock()
         .map(|jobs| {
@@ -682,7 +683,8 @@ async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
     if cancelled > 0 {
         info!("leyend: cancelling {cancelled} in-flight dependency job(s) for shutdown");
     }
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Long enough for a cancelled command to reach its SIGKILL.
+    let deadline = Instant::now() + Duration::from_secs(12);
     while ACTIVE_WORK.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

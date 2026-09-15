@@ -1228,7 +1228,7 @@ static SYSTEMD_AVAILABLE: AtomicU8 = AtomicU8::new(0);
 
 /// True when a usable systemd user manager is reachable — required for the
 /// transient-scope launch backend. Cached after the first successful probe.
-fn systemd_user_available() -> bool {
+pub(crate) fn systemd_user_available() -> bool {
     if SYSTEMD_AVAILABLE.load(Ordering::Relaxed) == 1 {
         return true;
     }

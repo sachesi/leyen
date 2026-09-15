@@ -18,7 +18,7 @@ use leyen_model::models::{Game, GameGroup, LibraryItem};
 use libadwaita as adw;
 
 use crate::daemon::{self, DaemonEvent};
-use crate::desktop::remove_game_desktop_entry;
+use crate::desktop::{remove_game_desktop_entries, remove_game_desktop_entry};
 use crate::dialogs::{GameDialog, GroupDialog};
 use crate::game_row::GameRow;
 use crate::group_row::GroupRow;
@@ -759,10 +759,10 @@ impl LeyenWindow {
             for game in &group.games {
                 let id = game.id.clone();
                 let _ = daemon::gio_blocking(move || clear_game_icon(&id)).await;
-                if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
-                    notice =
-                        Some(gettext("Failed to remove a menu entry: {}").replacen("{}", &err, 1));
-                }
+            }
+            let leyen_ids = group.games.iter().map(|g| g.leyen_id.clone()).collect();
+            if let Err(err) = remove_game_desktop_entries(leyen_ids).await {
+                notice = Some(gettext("Failed to remove a menu entry: {}").replacen("{}", &err, 1));
             }
             Some(group.title)
         } else {

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::daemon::gio_blocking;
 use leyen_model::i18n::gettext;
@@ -17,21 +18,8 @@ pub async fn create_game_desktop_entry(
     group: Option<GameGroup>,
 ) -> Result<PathBuf, String> {
     gio_blocking(move || {
-        let path = desired_desktop_entry_path(&game, group.as_ref());
-        ensure_applications_dir()?;
-        for existing in desktop_entry_paths_for_leyen_id(&game.leyen_id) {
-            if existing != path && existing.exists() {
-                fs::remove_file(&existing)
-                    .map_err(|err| format!("{}: {err}", existing.display()))?;
-            }
-        }
-        let icon = desktop_icon(&game);
-        leyen_model::paths::atomic_write(
-            &path,
-            &render_game_desktop_entry(&game, group.as_ref(), &icon),
-        )
-        .map_err(|err| format!("{}: {err}", path.display()))?;
-        Ok(path)
+        let existing = desktop_entry_paths_for_leyen_id(&game.leyen_id);
+        write_game_desktop_entry(&game, group.as_ref(), &existing)
     })
     .await
     .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
@@ -41,26 +29,52 @@ pub async fn update_game_desktop_entry_if_present(
     game: Game,
     group: Option<GameGroup>,
 ) -> Result<bool, String> {
-    let leyen_id = game.leyen_id.clone();
-    if !gio_blocking(move || desktop_entry_exists(&leyen_id))
-        .await
-        .unwrap_or(false)
-    {
-        return Ok(false);
-    }
-
-    create_game_desktop_entry(game, group).await?;
-    Ok(true)
+    gio_blocking(move || {
+        let existing = desktop_entry_paths_for_leyen_id(&game.leyen_id);
+        if existing.is_empty() {
+            return Ok(false);
+        }
+        write_game_desktop_entry(&game, group.as_ref(), &existing).map(|_| true)
+    })
+    .await
+    .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
+/// Rewrites the menu entries of the group's games that have one, reading the
+/// applications folder once for all of them.
 pub async fn update_group_desktop_entries_if_present(group: GameGroup) -> Result<usize, String> {
-    let mut updated = 0usize;
-    for game in group.games.clone() {
-        if update_game_desktop_entry_if_present(game, Some(group.clone())).await? {
-            updated += 1;
+    gio_blocking(move || {
+        let mut owned = owned_desktop_entries();
+        let mut updated = 0usize;
+        for game in &group.games {
+            if let Some(existing) = owned.remove(game.leyen_id.trim()) {
+                write_game_desktop_entry(game, Some(&group), &existing)?;
+                updated += 1;
+            }
+        }
+        Ok(updated)
+    })
+    .await
+    .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
+}
+
+/// Writes the game's menu entry and removes any other file that was its entry.
+fn write_game_desktop_entry(
+    game: &Game,
+    group: Option<&GameGroup>,
+    existing: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let path = desired_desktop_entry_path(game, group);
+    ensure_applications_dir()?;
+    for old in existing {
+        if *old != path && old.exists() {
+            fs::remove_file(old).map_err(|err| format!("{}: {err}", old.display()))?;
         }
     }
-    Ok(updated)
+    let icon = desktop_icon(game);
+    leyen_model::paths::atomic_write(&path, &render_game_desktop_entry(game, group, &icon))
+        .map_err(|err| format!("{}: {err}", path.display()))?;
+    Ok(path)
 }
 
 pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String> {
@@ -77,9 +91,31 @@ pub async fn remove_game_desktop_entry(leyen_id: String) -> Result<bool, String>
     .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
 }
 
+/// Removes the menu entries of all these games, reading the applications folder
+/// once. Keeps going past a file that cannot be removed and reports the last one.
+pub async fn remove_game_desktop_entries(leyen_ids: Vec<String>) -> Result<(), String> {
+    gio_blocking(move || {
+        let mut owned = owned_desktop_entries();
+        let mut result = Ok(());
+        for path in leyen_ids
+            .iter()
+            .filter_map(|id| owned.remove(id.trim()))
+            .flatten()
+        {
+            if let Err(err) = fs::remove_file(&path) {
+                result = Err(format!("{}: {err}", path.display()));
+            }
+        }
+        result
+    })
+    .await
+    .unwrap_or_else(|| Err(gettext("Internal error: background task failed")))
+}
+
 fn render_game_desktop_entry(game: &Game, group: Option<&GameGroup>, icon: &str) -> String {
-    let display_name = display_name(game, group);
-    let comment_name = sanitize_desktop_value(&display_name);
+    // A backslash starts an escape in a desktop entry value.
+    let display_name = display_name(game, group).replace('\\', "\\\\");
+    let comment_name = &display_name;
     let startup_wm_class = startup_wm_class(game);
     let leyen_id = shlex::try_quote(&game.leyen_id).unwrap_or(Cow::Borrowed(&game.leyen_id));
 
@@ -153,47 +189,44 @@ fn applications_dir_path() -> PathBuf {
 }
 
 fn desktop_entry_paths_for_leyen_id(leyen_id: &str) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(applications_dir_path()) else {
-        return Vec::new();
-    };
-
-    let mut result = Vec::new();
-
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let is_desktop = path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"));
-        if is_desktop
-            && let Ok(content) = fs::read_to_string(&path)
-            && content_owns_leyen_id(&content, leyen_id)
-        {
-            result.push(path);
-        }
-    }
-    result
+    owned_desktop_entries()
+        .remove(leyen_id.trim())
+        .unwrap_or_default()
 }
 
 /// Every menu entry Leyen wrote, whichever game it launches.
 pub fn owned_desktop_entry_paths() -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(applications_dir_path()) else {
-        return Vec::new();
+    owned_desktop_entries().into_values().flatten().collect()
+}
+
+/// The menu entries Leyen wrote, by the Leyen ID their `Exec=leyen run` line
+/// launches, from one pass over the applications folder.
+fn owned_desktop_entries() -> HashMap<String, Vec<PathBuf>> {
+    owned_desktop_entries_in(&applications_dir_path())
+}
+
+fn owned_desktop_entries_in(dir: &Path) -> HashMap<String, Vec<PathBuf>> {
+    let mut owned: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return owned;
     };
-    entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"))
-                && fs::read_to_string(path).is_ok_and(|content| {
-                    content
-                        .lines()
-                        .any(|line| line.trim().starts_with("Exec=leyen run "))
-                })
-        })
-        .collect()
+    for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
+        let is_desktop = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("desktop"));
+        let Some(content) = is_desktop.then(|| fs::read_to_string(&path).ok()).flatten() else {
+            continue;
+        };
+        let ids: HashSet<&str> = content
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("Exec=leyen run "))
+            .collect();
+        for id in ids {
+            owned.entry(id.to_string()).or_default().push(path.clone());
+        }
+    }
+    owned
 }
 
 fn content_owns_leyen_id(content: &str, leyen_id: &str) -> bool {
@@ -226,8 +259,8 @@ fn sanitize_desktop_file_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        desktop_entry_file_name, desktop_icon, disambiguate_file_name, render_game_desktop_entry,
-        startup_wm_class,
+        desktop_entry_file_name, desktop_icon, disambiguate_file_name, owned_desktop_entries_in,
+        render_game_desktop_entry, startup_wm_class,
     };
     use leyen_model::models::{Game, GameGroup, GroupLaunchDefaults};
 
@@ -267,6 +300,32 @@ mod tests {
         assert!(rendered.contains("Exec=leyen run ly-1234"));
         assert!(rendered.contains("Name=Nier Replicant"));
         assert!(rendered.contains("StartupWMClass=steam_app_ly1234"));
+    }
+
+    #[test]
+    fn a_backslash_in_a_title_is_escaped() {
+        let mut game = sample_game();
+        game.title = "C:\\Games\\Nier".to_string();
+        let rendered = render_game_desktop_entry(&game, None, leyen_model::APP_ID);
+        assert!(rendered.contains("Name=C:\\\\Games\\\\Nier\n"));
+        assert!(rendered.contains("Comment=Launch C:\\\\Games\\\\Nier with Leyen\n"));
+    }
+
+    #[test]
+    fn menu_entries_are_found_by_the_game_they_launch() {
+        let dir = std::env::temp_dir().join(format!("leyen-menu-entries-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, content: &str| std::fs::write(dir.join(name), content).unwrap();
+        write("A.desktop", "[Desktop Entry]\nExec=leyen run ly-1\n");
+        write("B.desktop", "[Desktop Entry]\n  Exec=leyen run ly-2  \n");
+        write("Other.desktop", "[Desktop Entry]\nExec=other-app\n");
+        write("notes.txt", "Exec=leyen run ly-3\n");
+
+        let owned = owned_desktop_entries_in(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(owned.len(), 2);
+        assert_eq!(owned["ly-1"], [dir.join("A.desktop")]);
+        assert_eq!(owned["ly-2"], [dir.join("B.desktop")]);
     }
 
     #[test]

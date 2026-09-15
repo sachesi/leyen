@@ -66,8 +66,12 @@ fn write_game_desktop_entry(
 ) -> Result<PathBuf, String> {
     let path = desired_desktop_entry_path(game, group);
     ensure_applications_dir()?;
+    // `existing` may come from one read for a whole group, before earlier games
+    // were written: remove a file only while it is still this game's entry.
     for old in existing {
-        if *old != path && old.exists() {
+        if *old != path
+            && fs::read_to_string(old).is_ok_and(|c| content_owns_leyen_id(&c, &game.leyen_id))
+        {
             fs::remove_file(old).map_err(|err| format!("{}: {err}", old.display()))?;
         }
     }

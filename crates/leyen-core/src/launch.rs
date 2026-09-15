@@ -667,7 +667,7 @@ pub fn set_work_guard_source(source: impl Fn() -> Box<dyn Send> + Send + Sync + 
     let _ = WORK_GUARD_SOURCE.set(Box::new(source));
 }
 
-pub(crate) fn acquire_work_guard() -> Option<Box<dyn Send>> {
+fn acquire_work_guard() -> Option<Box<dyn Send>> {
     WORK_GUARD_SOURCE.get().map(|source| source())
 }
 

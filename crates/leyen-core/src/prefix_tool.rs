@@ -13,9 +13,7 @@ use leyen_model::i18n::gettext;
 use log::info;
 use tokio::process::Command as AsyncCommand;
 
-use crate::launch::{
-    acquire_work_guard, for_each_output_line, in_scope, systemd_user_available, unit_is_active,
-};
+use crate::launch::{for_each_output_line, in_scope, systemd_user_available, unit_is_active};
 use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
 
 /// Scope unit → prefix, for every program running in a prefix.
@@ -27,12 +25,14 @@ fn running() -> MutexGuard<'static, HashMap<String, String>> {
         .unwrap_or_else(|e| e.into_inner())
 }
 
-/// Whether a program is running in `prefix`.
+/// Whether a program is running in `prefix`. Paths compare by component, so
+/// `/x/pfx/` and `/x/pfx` are one prefix.
 pub fn is_running_in(prefix: &str) -> bool {
-    running().values().any(|p| p == prefix.trim())
+    let prefix = Path::new(prefix.trim());
+    running().values().any(|p| Path::new(p) == prefix)
 }
 
-/// Whether a program is running in any prefix.
+/// Whether a program is running in any prefix. The daemon does not exit while one does.
 pub fn any_running() -> bool {
     !running().is_empty()
 }
@@ -112,9 +112,8 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
             .replacen("{}", &e.to_string(), 1)
     })?;
 
+    // Also what keeps the daemon from exiting while the program runs.
     running().insert(unit.clone(), prefix.clone());
-    // Keeps the daemon from exiting while the program runs.
-    let work_guard = acquire_work_guard();
     info!("Launched '{label}' inside prefix '{prefix}'");
 
     if let Some(stdout) = child.stdout.take() {
@@ -125,7 +124,6 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     }
 
     tokio::spawn(async move {
-        let _work_guard = work_guard;
         let _ = child.wait().await;
         // The program itself has ended, but what it started (wineserver, an
         // installer's own processes) can live on in its scope; the prefix is free

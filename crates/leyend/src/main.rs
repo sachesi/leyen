@@ -421,6 +421,12 @@ impl Manager {
                     "A dependency operation is in progress; try again when it finishes".to_string(),
                 ));
             }
+            // A launch not yet registered as running is not seen below.
+            if LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0 {
+                return Err(leyen_ipc::Error::Failed(
+                    "Cannot run a program in a prefix while a game is running".to_string(),
+                ));
+            }
             LaunchGuard::new()
         };
         if leyen_core::launch::is_any_game_running() {
@@ -900,13 +906,17 @@ fn spawn_runtime_status_watcher(connection: Connection) {
 /// Requests shutdown when no game runs, no work is in flight and no request
 /// has arrived for `IDLE_EXIT_SECONDS`. The daemon must outlive any running
 /// game (it owns output capture + playtime finalize), so `is_any_game_running`
-/// gates the timer; `ACTIVE_WORK` gates it for game-less work (dependency
-/// jobs, deferred launches, in-flight method calls).
+/// gates the timer, and so does a program running in a prefix (it keeps the
+/// prefix in use); `ACTIVE_WORK` gates it for game-less work (dependency jobs,
+/// deferred launches, in-flight method calls).
 fn spawn_idle_exit(last_activity: Arc<Mutex<Instant>>, shutdown: Arc<tokio::sync::Notify>) {
     spawn_supervised("idle-exit", async move {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
-            if leyen_core::launch::is_any_game_running() || ACTIVE_WORK.load(Ordering::SeqCst) > 0 {
+            if leyen_core::launch::is_any_game_running()
+                || leyen_core::prefix_tool::any_running()
+                || ACTIVE_WORK.load(Ordering::SeqCst) > 0
+            {
                 continue;
             }
             let idle = last_activity

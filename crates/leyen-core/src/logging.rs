@@ -6,9 +6,9 @@
 //! `LogsAppended` from the [`set_logs_appended_listener`] hook.
 
 use std::collections::VecDeque;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::thread::JoinHandle;
@@ -61,6 +61,18 @@ pub fn set_logs_appended_listener(listener: impl Fn(u64) + Send + Sync + 'static
 
 fn log_path() -> PathBuf {
     get_config_dir().join("logs.jsonl")
+}
+
+/// Opens the log for appending, created readable by you alone: it holds every
+/// launch command, with the environment set in the launch arguments.
+fn open_log_file(path: &Path) -> Option<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)
+        .ok()
 }
 
 /// Sends `entry` on `tx` without blocking. A log call happens on arbitrary
@@ -168,11 +180,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
 
     let handle = std::thread::spawn(move || {
         let path = log_path();
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .ok();
+        let mut file = open_log_file(&path);
         let mut lines_since_check = 0;
         let mut lines_since_sync = 0;
 
@@ -216,11 +224,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
                     let mut old_path = path.clone();
                     old_path.set_extension("jsonl.old");
                     let _ = fs::rename(&path, &old_path);
-                    file = OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(&path)
-                        .ok();
+                    file = open_log_file(&path);
                 }
             }
 
@@ -229,11 +233,7 @@ pub fn init() -> Result<(), log::SetLoggerError> {
             }
 
             if file.is_none() {
-                file = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                    .ok();
+                file = open_log_file(&path);
             }
 
             if let Some(ref mut f) = file

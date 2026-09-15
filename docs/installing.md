@@ -11,7 +11,7 @@ blueprint-compiler just gettext`, on a release that ships GTK 4.22 and libadwait
 
 To run: GTK 4.22, libadwaita 1.9, a session bus and a systemd user session. Every game
 runs in a transient systemd scope, which is how Leyen knows what belongs to it and what to
-stop; without `systemctl --user` a launch is refused. `curl` and `tar` fetch umu-launcher
+stop; without `systemctl --user` a launch or a dependency install is refused. `curl` and `tar` fetch umu-launcher
 and winetricks the first time they are needed, unless `umu-run` and `winetricks` are
 already in `PATH`. MangoHud and GameMode are optional: their switches appear once
 `mangohud` and `gamemoderun` are installed.

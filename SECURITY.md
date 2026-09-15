@@ -12,10 +12,10 @@ Only the latest release gets fixes.
 Leyen runs programs you point it at, so a game doing what games do is not a vulnerability.
 The parts where a mistake matters:
 
-- What Leyen downloads and runs by itself: umu-launcher, checked against the SHA-256 digest
-  GitHub publishes for the release before it is unpacked, and winetricks, pinned to a
-  release. Both are fetched over HTTPS only. A way to make Leyen run something other than
-  what it meant to fetch is a vulnerability.
+- What Leyen downloads and runs by itself: umu-launcher and winetricks, each pinned to a
+  release and checked against its SHA-256 before it is unpacked or installed, and fetched
+  over HTTPS only. A way to make Leyen run something other than what it meant to fetch is
+  a vulnerability.
 - Files it reads that someone else wrote: the icons it extracts from game executables and
   the custom icons it is given are decoded with size limits; a file that makes Leyen crash,
   hang or write outside its icon directory is a vulnerability.

@@ -13,7 +13,8 @@ container or over plain SSH there usually is none.
 ## "Downloading umu-launcher…" does not go away
 
 The daemon fetches umu-launcher and winetricks with `curl` and unpacks them with `tar`, into
-`~/.local/share/leyen/core`, the first time it starts without them. Check the log for the
+`~/.local/share/leyen/core`, the first time it starts without them. Each is a release
+pinned in Leyen and is refused if its SHA-256 does not match. Check the log for the
 download; without network, install `umu-launcher` and `winetricks` from the distribution
 instead, and Leyen uses the ones in `PATH`.
 

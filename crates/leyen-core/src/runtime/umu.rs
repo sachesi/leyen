@@ -1,5 +1,4 @@
 use log::{info, warn};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -49,8 +48,6 @@ pub fn claim_download(started: &AtomicBool, downloading: &AtomicBool) -> bool {
 pub enum UmuError {
     #[error("Failed to create directory: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Failed to resolve latest version: {0}")]
-    VersionResolve(String),
     #[error("Download failed: {0}")]
     Download(String),
     #[error("Extraction failed: {0}")]
@@ -77,23 +74,74 @@ pub(crate) fn hash_file_hex<D: Digest>(path: &Path) -> std::io::Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// GitHub computes and publishes a SHA-256 `digest` for every release asset
-/// via the Releases API; umu-launcher does not additionally publish a
-/// standalone checksums file, so this is the checksum source for its tarball.
-const UMU_LATEST_RELEASE_API_URL: &str =
-    "https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest";
+/// umu-launcher release fetched when it is not installed. Bump by hand, with its
+/// digest: the `digest` GitHub publishes for the `-zipapp.tar` asset of the
+/// release, checked against a download of your own.
+const UMU_VERSION: &str = "1.4.4";
+const UMU_TARBALL_SHA256: &str = "eb590691841f7fad3fc3ad8fd5db4ccb87849fe7948e62b28ece7a4ee48cc851";
 
-/// Winetricks release tag pinned for reproducible, verifiable downloads.
-/// Bump manually after checking the new tag's script against upstream.
+/// Winetricks release fetched when it is not installed, and the SHA-256 of its
+/// `src/winetricks` at that tag. Bump both by hand after checking the script
+/// against upstream.
 const WINETRICKS_PINNED_TAG: &str = "20260125";
+const WINETRICKS_SHA256: &str = "431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b";
 
-/// Downloads the latest winetricks script from GitHub into the local data directory.
+/// `curl` options every download uses: HTTPS only, redirects included.
+const CURL_HTTPS_ONLY: [&str; 13] = [
+    "--proto",
+    "=https",
+    "--proto-redir",
+    "=https",
+    "--tlsv1.2",
+    "--silent",
+    "--show-error",
+    "--location",
+    "--fail",
+    "--connect-timeout",
+    "15",
+    "--max-time",
+    "300",
+];
+
+/// Downloads `url` to `dest` with retries, then keeps it only if its SHA-256 is
+/// `sha256`; a failed or mismatched download leaves nothing behind.
+fn download_verified(url: &str, dest: &str, sha256: &str) -> Result<(), UmuError> {
+    let status = std::process::Command::new("curl")
+        .args(CURL_HTTPS_ONLY)
+        .args(["--retry", "3", "--retry-delay", "1", "-o", dest, url])
+        .status()
+        .map_err(|e| UmuError::Download(e.to_string()))?;
+    if !status.success() {
+        let _ = fs::remove_file(dest);
+        return Err(UmuError::Download(format!("Failed to download {url}")));
+    }
+    keep_if_sha256(Path::new(dest), sha256)
+}
+
+/// Removes `path` unless its SHA-256 is `sha256`.
+fn keep_if_sha256(path: &Path, sha256: &str) -> Result<(), UmuError> {
+    let result = match hash_file_hex::<Sha256>(path) {
+        Ok(actual) if actual.eq_ignore_ascii_case(sha256) => return Ok(()),
+        Ok(actual) => Err(UmuError::Checksum(format!(
+            "{}: expected {sha256}, got {actual}; download rejected",
+            path.display()
+        ))),
+        Err(e) => Err(UmuError::Checksum(format!(
+            "Failed to read {} for verification: {e}",
+            path.display()
+        ))),
+    };
+    let _ = fs::remove_file(path);
+    result
+}
+
+/// Downloads the pinned winetricks script from GitHub into the local data directory.
 pub fn download_winetricks() -> Result<(), UmuError> {
     let dest_dir = get_winetricks_dir();
     fs::create_dir_all(&dest_dir)?;
     let dest_path = format!("{}/winetricks", dest_dir);
     // Download to a uniquely-named temp file first and rename into place only
-    // once curl succeeds — a process dying mid-download must not leave a
+    // once it is verified — a process dying mid-download must not leave a
     // truncated script that `Path::exists()` treats as installed forever.
     let temp_path = format!(
         "{}/winetricks.tmp.{}.{}",
@@ -106,37 +154,7 @@ pub fn download_winetricks() -> Result<(), UmuError> {
         "https://raw.githubusercontent.com/Winetricks/winetricks/{}/src/winetricks",
         WINETRICKS_PINNED_TAG
     );
-
-    let status = std::process::Command::new("curl")
-        .args([
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--fail",
-            "--connect-timeout",
-            "15",
-            "--max-time",
-            "300",
-            "--retry",
-            "3",
-            "--retry-delay",
-            "1",
-            "-o",
-            &temp_path,
-            &winetricks_url,
-        ])
-        .status()
-        .map_err(|e| UmuError::Download(e.to_string()))?;
-
-    if !status.success() {
-        let _ = fs::remove_file(&temp_path);
-        return Err(UmuError::Download(
-            "Failed to download winetricks".to_string(),
-        ));
-    }
+    download_verified(&winetricks_url, &temp_path, WINETRICKS_SHA256)?;
 
     #[cfg(unix)]
     {
@@ -161,7 +179,7 @@ pub fn download_winetricks() -> Result<(), UmuError> {
 /// Checks whether `umu-run` is available.
 /// If it is not found in the system
 /// PATH or in the local leyen data directory, spawns a background thread that
-/// downloads the latest zipapp release from the umu-launcher GitHub repository
+/// downloads the pinned zipapp release from the umu-launcher GitHub repository
 /// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
 pub async fn check_or_install_umu() {
     // If we're on NixOS, we expect umu-run to be provided by the system/flake.
@@ -210,7 +228,7 @@ pub async fn check_or_install_umu() {
 
 /// Checks whether `winetricks` is available.
 /// If it is not found in the system PATH or in the local leyen data directory,
-/// spawns a background thread that downloads the latest winetricks script
+/// spawns a background thread that downloads the pinned winetricks script
 /// from GitHub to `~/.local/share/leyen/core/winetricks/`.
 pub async fn check_or_install_winetricks() {
     if is_nixos() {
@@ -248,128 +266,19 @@ pub async fn check_or_install_winetricks() {
     });
 }
 
-/// Downloads the latest umu-launcher zipapp tarball and extracts it into
+/// Downloads the pinned umu-launcher zipapp tarball and extracts it into
 /// `dest_dir`.
 fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     fs::create_dir_all(dest_dir)?;
-    info!("[dbg] download_and_install_umu: resolving latest release metadata");
-
-    // Resolve the latest release via the GitHub API — this also gives us the
-    // per-asset SHA-256 `digest` GitHub computes for every release asset,
-    // which umu-launcher does not publish as a separate checksums file.
-    let api_output = std::process::Command::new("curl")
-        .args([
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--fail",
-            "--connect-timeout",
-            "15",
-            "--max-time",
-            "300",
-            "-H",
-            "Accept: application/vnd.github+json",
-            UMU_LATEST_RELEASE_API_URL,
-        ])
-        .output()
-        .map_err(|e| UmuError::VersionResolve(e.to_string()))?;
-
-    if !api_output.status.success() {
-        return Err(UmuError::VersionResolve(
-            "Failed to fetch latest release metadata".to_string(),
-        ));
-    }
-
-    let release: Value = serde_json::from_slice(&api_output.stdout)
-        .map_err(|e| UmuError::VersionResolve(format!("Failed to parse release metadata: {e}")))?;
-
-    let version = release
-        .get("tag_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    if version.is_empty() {
-        return Err(UmuError::VersionResolve(
-            "Resolved version tag is empty".to_string(),
-        ));
-    }
-
-    info!("[dbg] download_and_install_umu: resolved version={version}");
-    let tarball_name = format!("umu-launcher-{}-zipapp.tar", version);
-
-    let asset = find_release_asset(&release, &tarball_name).ok_or_else(|| {
-        UmuError::VersionResolve(format!(
-            "Release asset '{tarball_name}' not found in latest release metadata"
-        ))
-    })?;
-
-    let download_url = asset
-        .get("browser_download_url")
-        .and_then(|u| u.as_str())
-        .ok_or_else(|| {
-            UmuError::VersionResolve(format!(
-                "Release asset '{tarball_name}' has no download URL"
-            ))
-        })?
-        .to_string();
-
-    // Fail closed: an asset with no digest cannot be verified, so refuse to
-    // install it rather than falling back to TLS-only trust.
-    let expected_sha256 = asset_sha256_digest(asset).ok_or_else(|| {
-        UmuError::Checksum(format!(
-            "No checksum published for '{tarball_name}'; refusing to install an unverified download"
-        ))
-    })?;
-
+    let version = UMU_VERSION;
+    let tarball_name = format!("umu-launcher-{version}-zipapp.tar");
+    let download_url = format!(
+        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/{version}/{tarball_name}"
+    );
     let tarball_path = format!("{}/{}", dest_dir, tarball_name);
 
     info!("[dbg] download_and_install_umu: downloading {download_url}");
-    let ok = std::process::Command::new("curl")
-        .args([
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--fail",
-            "--connect-timeout",
-            "15",
-            "--max-time",
-            "300",
-            "--retry",
-            "3",
-            "--retry-delay",
-            "1",
-            "-o",
-            &tarball_path,
-            &download_url,
-        ])
-        .status()
-        .map_err(|e| UmuError::Download(e.to_string()))?
-        .success();
-
-    if !ok {
-        let _ = fs::remove_file(&tarball_path);
-        return Err(UmuError::Download("Download failed".to_string()));
-    }
-
-    info!("[dbg] download_and_install_umu: download done, verifying checksum");
-    let actual_sha256 = hash_file_hex::<Sha256>(Path::new(&tarball_path)).map_err(|e| {
-        UmuError::Checksum(format!(
-            "Failed to read downloaded tarball for verification: {e}"
-        ))
-    })?;
-    if !actual_sha256.eq_ignore_ascii_case(&expected_sha256) {
-        let _ = fs::remove_file(&tarball_path);
-        return Err(UmuError::Checksum(format!(
-            "Checksum mismatch for '{tarball_name}': expected {expected_sha256}, got {actual_sha256}; download rejected"
-        )));
-    }
+    download_verified(&download_url, &tarball_path, UMU_TARBALL_SHA256)?;
     info!("[dbg] download_and_install_umu: checksum verified, extracting");
     // Extract into a staging directory and rename `umu/` into place at the
     // end: availability is just `Path::exists()` on `umu/umu-run`, so
@@ -426,58 +335,23 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
     Ok(())
 }
 
-/// Finds the release asset named `file_name` in a GitHub Releases API
-/// response's `assets` array.
-fn find_release_asset<'a>(release: &'a Value, file_name: &str) -> Option<&'a Value> {
-    release
-        .get("assets")?
-        .as_array()?
-        .iter()
-        .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(file_name))
-}
-
-/// Extracts and lowercases the SHA-256 hex digest from a release asset's
-/// `digest` field (GitHub's format is `sha256:<hex>`).
-fn asset_sha256_digest(asset: &Value) -> Option<String> {
-    asset
-        .get("digest")?
-        .as_str()?
-        .strip_prefix("sha256:")
-        .map(|s| s.to_ascii_lowercase())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::keep_if_sha256;
 
     #[test]
-    fn finds_matching_asset_by_name() {
-        let release = serde_json::json!({
-            "assets": [
-                {"name": "other.deb", "digest": "sha256:aaaa"},
-                {"name": "umu-launcher-1.4.1-zipapp.tar", "digest": "sha256:BBBB"},
-            ]
-        });
-        let asset = find_release_asset(&release, "umu-launcher-1.4.1-zipapp.tar").unwrap();
-        assert_eq!(asset_sha256_digest(asset), Some("bbbb".to_string()));
-    }
+    fn a_download_is_kept_only_with_the_pinned_digest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("winetricks");
+        // SHA-256 of "abc".
+        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
-    #[test]
-    fn missing_asset_returns_none() {
-        let release =
-            serde_json::json!({"assets": [{"name": "other.deb", "digest": "sha256:aaaa"}]});
-        assert!(find_release_asset(&release, "umu-launcher-1.4.1-zipapp.tar").is_none());
-    }
+        std::fs::write(&path, b"abc").unwrap();
+        keep_if_sha256(&path, abc).unwrap();
+        assert!(path.exists());
 
-    #[test]
-    fn asset_without_digest_returns_none() {
-        let asset = serde_json::json!({"name": "umu-launcher-1.4.1-zipapp.tar"});
-        assert_eq!(asset_sha256_digest(&asset), None);
-    }
-
-    #[test]
-    fn malformed_digest_prefix_returns_none() {
-        let asset = serde_json::json!({"name": "x", "digest": "md5:aaaa"});
-        assert_eq!(asset_sha256_digest(&asset), None);
+        std::fs::write(&path, b"abd").unwrap();
+        assert!(keep_if_sha256(&path, abc).is_err());
+        assert!(!path.exists(), "a mismatched download is removed");
     }
 }

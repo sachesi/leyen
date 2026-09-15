@@ -29,6 +29,13 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.9.0" date="2026-09-15">
+      <description>
+        <p>A launch whose first command cannot start, such as a wrapper in the launch arguments that is not installed, no longer shows as running for good. Stopping a game signals only that game's processes, even beside one with a similar executable name on the same prefix, and a game's output keeps reaching the log when it prints text that is not UTF-8.</p>
+        <p>Wine Configuration, the Registry Editor and programs run in a prefix are tracked by the daemon: while they, or anything they started, run, no game starts on that prefix and no dependency is installed or removed, and what they print is in the log. Cancelling a dependency install stops every process it started, Wine's server included. Installing dependencies needs the systemd user session, as launching games does.</p>
+        <p>The umu-launcher and winetricks that Leyen downloads are releases pinned in it, refused unless their SHA-256 matches. The log file is readable by you alone, icons are read faster from executables that carry many images, and editing a group updates its menu entries in one pass.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-09-13">
       <description>
         <p>The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a page of its own that the back button, Escape or a swipe leave, and the library is updated in place, so it no longer flickers or jumps when a game starts or stops. Icons are larger and centred in their rows, and a logo on a transparent background is shown whole instead of cropped. Search filters what is loaded as it is typed and says when nothing matches, Enter launches the game under the keyboard, and screen readers name every row. The log follows new lines smoothly while it is at the end and stays where it was scrolled to.</p>

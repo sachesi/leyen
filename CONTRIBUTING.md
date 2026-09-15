@@ -22,8 +22,9 @@ The workspace has one crate per program and two shared ones:
                            and their files, the dependency catalogue, where things live,
                            gettext setup. No tokio, no GTK.
     crates/leyen-core      the engine, used by the daemon: launching games in systemd
-                           scopes and tracking them (launch.rs), umu-launcher and winetricks
-                           (runtime/), dependency installs (deps/), the log (logging.rs)
+                           scopes and tracking them (launch.rs), the prefix tools' programs
+                           (prefix_tool.rs), umu-launcher and winetricks (runtime/),
+                           dependency installs (deps/), the log (logging.rs)
     crates/leyen-ipc       the D-Bus interface: the proxy, the types on the wire, the errors;
                            the XML beside it describes the same interface
     crates/leyend          the daemon: owns the session bus name, serves the interface,
@@ -48,7 +49,7 @@ And in `leyen-gtk`:
     src/daemon.rs          the bridge to the daemon (below)
     src/playback.rs        launching and stopping, one request per game at a time
     src/desktop.rs         menu entries; icons.rs the icons read from executables
-    src/prefix_tools.rs    winecfg, regedit and programs run in a prefix
+    src/prefix_tools.rs    winecfg, regedit and programs run in a prefix, through the daemon
     src/migrate.rs         the move from the com.github application id
 
 Widgets are GObject subclasses with composite templates from the Blueprint files. Actions

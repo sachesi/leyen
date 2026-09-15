@@ -7,5 +7,6 @@ pub mod config;
 pub mod deps;
 pub mod launch;
 pub mod logging;
+pub mod prefix_tool;
 pub mod runtime;
 pub mod tools;

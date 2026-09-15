@@ -122,6 +122,12 @@ pub trait Leyen {
     /// Request cancellation of an in-flight dependency job.
     fn cancel_dep(&self, job_id: &str) -> zbus::Result<bool>;
 
+    /// Start `program` (`winecfg`, `regedit` or the absolute path of a file) in
+    /// `prefix` with `proton_path`, in a scope of its own. While it or anything
+    /// it started runs, no game launches on that prefix and no dependency job
+    /// starts; its output goes to the log.
+    fn run_in_prefix(&self, prefix: &str, proton_path: &str, program: &str) -> zbus::Result<()>;
+
     /// Installed dependencies tracked for `prefix`.
     fn get_dep_status(&self, prefix: &str) -> zbus::Result<DepStatus>;
 

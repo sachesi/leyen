@@ -69,7 +69,9 @@ for the default prefix have the same tools:
 - **Run a Program…** runs a Windows program in the prefix, an installer say.
 
 None of them run while a game does: a prefix changing under a running game is how prefixes
-break. A game that uses its group's or the default prefix points there instead of offering
+break. The other way round too: while Wine Configuration, the Registry Editor or a program
+run, and until everything they started has ended, no game starts on that prefix and no
+dependency is installed or removed. What they print is in the log. A game that uses its group's or the default prefix points there instead of offering
 the tools, and a group whose games keep prefixes of their own names them.
 
 ## Running games and logs

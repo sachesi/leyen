@@ -143,7 +143,7 @@ pub(super) async fn run_umu_command(
         ));
     }
     let unit = format!("leyen-dep-{}.scope", uuid::Uuid::new_v4());
-    let mut scoped = in_scope(&cmd, &unit);
+    let mut scoped = crate::launch::in_scope(&cmd, &unit);
     scoped.stdin(Stdio::null());
     // Nothing reads stdout; piping it only buffered installer chatter in memory.
     scoped.stdout(Stdio::null());
@@ -155,26 +155,6 @@ pub(super) async fn run_umu_command(
         .await
         .map_err(|e| format!("Command task panicked: {e}"))
         .and_then(|r| r)
-}
-
-/// `cmd` wrapped in `systemd-run --scope` as the unit `unit`, with its
-/// environment and working directory.
-fn in_scope(cmd: &AsyncCommand, unit: &str) -> AsyncCommand {
-    let cmd = cmd.as_std();
-    let mut scoped = AsyncCommand::new("systemd-run");
-    scoped.args(["--user", "--scope", "--quiet", "--collect"]);
-    scoped.arg(format!("--unit={unit}")).arg("--");
-    scoped.arg(cmd.get_program()).args(cmd.get_args());
-    for (key, value) in cmd.get_envs() {
-        match value {
-            Some(value) => scoped.env(key, value),
-            None => scoped.env_remove(key),
-        };
-    }
-    if let Some(dir) = cmd.get_current_dir() {
-        scoped.current_dir(dir);
-    }
-    scoped
 }
 
 async fn run_umu_command_inner(
@@ -1746,42 +1726,7 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::{in_scope, remove_created_files};
-    use std::ffi::OsStr;
-    use tokio::process::Command as AsyncCommand;
-
-    #[test]
-    fn a_command_keeps_its_arguments_environment_and_folder_in_its_scope() {
-        let mut cmd = AsyncCommand::new("umu-run");
-        cmd.args(["regedit.exe", "/S", "my file.reg"])
-            .env("WINEPREFIX", "/p")
-            .env_remove("DISPLAY")
-            .current_dir("/tmp");
-        let scoped = in_scope(&cmd, "leyen-dep-x.scope");
-        let scoped = scoped.as_std();
-
-        assert_eq!(scoped.get_program(), "systemd-run");
-        let args: Vec<&OsStr> = scoped.get_args().collect();
-        assert_eq!(
-            args,
-            [
-                "--user",
-                "--scope",
-                "--quiet",
-                "--collect",
-                "--unit=leyen-dep-x.scope",
-                "--",
-                "umu-run",
-                "regedit.exe",
-                "/S",
-                "my file.reg"
-            ]
-        );
-        let envs: Vec<_> = scoped.get_envs().collect();
-        assert!(envs.contains(&(OsStr::new("WINEPREFIX"), Some(OsStr::new("/p")))));
-        assert!(envs.contains(&(OsStr::new("DISPLAY"), None)));
-        assert_eq!(scoped.get_current_dir(), Some(std::path::Path::new("/tmp")));
-    }
+    use super::remove_created_files;
 
     #[test]
     fn a_tracked_file_behind_a_linked_folder_is_not_removed() {

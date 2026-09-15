@@ -48,6 +48,11 @@
       <arg name="job_id" type="s" direction="in"/>
       <arg type="b" direction="out"/>
     </method>
+    <method name="RunInPrefix">
+      <arg name="prefix" type="s" direction="in"/>
+      <arg name="proton_path" type="s" direction="in"/>
+      <arg name="program" type="s" direction="in"/>
+    </method>
     <method name="GetDepStatus">
       <arg name="prefix" type="s" direction="in"/>
       <arg type="(as)" direction="out"/>

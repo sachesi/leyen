@@ -41,6 +41,12 @@ again on the next install.
 Nothing changes a prefix while a game runs, whichever prefix it uses: close the games first,
 or stop them from Running Games.
 
+## A game says a program is running in its prefix
+
+Wine Configuration, the Registry Editor or a program run from the prefix tools is still open,
+or something it started is: an installer often leaves a helper behind for a few seconds.
+Close them and try again.
+
 ## A game still shows the old icon or name in the applications menu
 
 The menu entry is rewritten when the game or its group is saved. Some menus cache icons

@@ -46,6 +46,12 @@ enum DaemonCommand {
         reply: Reply<Result<String, String>>,
     },
     CancelDep(String, Reply<Result<bool, String>>),
+    RunInPrefix {
+        prefix: String,
+        proton: String,
+        program: String,
+        reply: Reply<Result<(), String>>,
+    },
 }
 
 /// Daemon signals forwarded to the glib loop. Some fields mirror the D-Bus
@@ -356,6 +362,20 @@ async fn handle_command(
         }
         DaemonCommand::CancelDep(job, reply) => {
             let result = bounded("CancelDep", QUERY_TIMEOUT, proxy.cancel_dep(&job)).await;
+            let _ = reply.send(result).await;
+        }
+        DaemonCommand::RunInPrefix {
+            prefix,
+            proton,
+            program,
+            reply,
+        } => {
+            let result = bounded(
+                "RunInPrefix",
+                ACTION_TIMEOUT,
+                proxy.run_in_prefix(&prefix, &proton, &program),
+            )
+            .await;
             let _ = reply.send(result).await;
         }
     }
@@ -688,6 +708,19 @@ pub async fn cancel_dep(job_id: &str) -> bool {
         .await
         .and_then(Result::ok)
         .unwrap_or(false)
+}
+
+/// Starts `program` (`winecfg`, `regedit` or the path of a file) in `prefix`
+/// through the daemon, which tracks it until everything it started has ended.
+pub async fn run_in_prefix(prefix: &str, proton: &str, program: &str) -> Result<(), String> {
+    call(|reply| DaemonCommand::RunInPrefix {
+        prefix: prefix.to_string(),
+        proton: proton.to_string(),
+        program: program.to_string(),
+        reply,
+    })
+    .await
+    .unwrap_or_else(|| Err(bridge_down_message()))
 }
 
 /// The error every action call collapses to when the bridge itself is gone

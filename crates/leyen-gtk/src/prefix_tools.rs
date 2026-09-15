@@ -1,18 +1,15 @@
-//! Untracked "run something in this prefix" helpers (winecfg / regedit / pick a
-//! program). These are fire-and-forget umu-run invocations from the client — not
-//! managed games — so they don't go through the daemon's scope tracking. They are
-//! gated on "no game running" (via the daemon) and umu availability. Each returns
-//! the message to show, whether it worked or not.
-
-use std::path::Path;
-use std::process::{Command, Stdio};
+//! "Run something in this prefix" (winecfg / regedit / pick a program). The
+//! daemon runs them in a scope of their own and keeps the prefix in use until
+//! everything they started has ended, so no game launches on it and no
+//! dependency job starts meanwhile. They are gated on "no game running" and umu
+//! availability here first, for the messages. Each returns the message to show,
+//! whether it worked or not.
 
 use gtk4::prelude::*;
 use leyen_model::i18n::gettext;
-use leyen_model::runtime::{get_umu_run_path, is_umu_run_available};
-use log::info;
+use leyen_model::runtime::is_umu_run_available;
 
-use crate::daemon::{gio_blocking, running_games_snapshot};
+use crate::daemon::{self, gio_blocking, running_games_snapshot};
 use crate::dialogs::windows_programs_filter;
 
 /// Why a tool cannot run now, if it cannot.
@@ -63,39 +60,12 @@ async fn run_wine_tool(
     if let Some(reason) = preflight(blocked_msg, prefix_path).await {
         return reason;
     }
-    let prefix = prefix_path.trim().to_string();
-    let proton = proton_path.trim().to_string();
-    let result = gio_blocking(move || launch_wine_command(name, &prefix, &proton))
-        .await
-        .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
-    match result {
+    match daemon::run_in_prefix(prefix_path.trim(), proton_path.trim(), name).await {
         Ok(()) => launched_msg,
         Err(err) => gettext("Failed to run {}: {}")
             .replacen("{}", name, 1)
             .replacen("{}", &err, 1),
     }
-}
-
-fn launch_wine_command(name: &str, prefix_path: &str, proton_path: &str) -> Result<(), String> {
-    let mut cmd = Command::new(get_umu_run_path());
-    cmd.arg(name);
-    cmd.env("WINEPREFIX", prefix_path);
-    if !proton_path.is_empty() {
-        cmd.env("PROTONPATH", proton_path);
-    }
-    cmd.env("GAMEID", format!("leyen-{name}"));
-    cmd.env(
-        "WINEDLLOVERRIDES",
-        "mscoree=b;mshtml=b;winemenubuilder.exe=d",
-    );
-    cmd.env("WINEDEBUG", "fixme-all");
-    cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    let mut child = cmd.spawn().map_err(|err| err.to_string())?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    info!("Launched '{}' inside prefix '{}'", name, prefix_path);
-    Ok(())
 }
 
 /// Asks for a program and runs it in the prefix. `None` when the choice was cancelled.
@@ -124,50 +94,11 @@ pub async fn pick_and_run(
         return Some(gettext("Selected file has no local path"));
     };
 
-    let prefix = prefix_path.trim().to_string();
-    let proton = proton_path.trim().to_string();
-    let result = gio_blocking(move || launch_path_in_prefix(&path, &prefix, &proton))
-        .await
-        .unwrap_or_else(|| Err(gettext("Internal error: background task failed")));
-    Some(match result {
-        Ok(()) => gettext("Launched in prefix"),
-        Err(err) => gettext("Failed to run in prefix: {}").replacen("{}", &err, 1),
-    })
-}
-
-fn launch_path_in_prefix(path: &Path, prefix_path: &str, proton_path: &str) -> Result<(), String> {
-    if !path.is_file() {
-        return Err(gettext("“{}” is not a file").replacen("{}", &path.display().to_string(), 1));
-    }
-
-    let mut cmd = Command::new(get_umu_run_path());
-    cmd.arg(path.as_os_str());
-    cmd.env("WINEPREFIX", prefix_path);
-    if !proton_path.is_empty() {
-        cmd.env("PROTONPATH", proton_path);
-    }
-    cmd.env("GAMEID", "leyen-prefix-run");
-    cmd.env(
-        "WINEDLLOVERRIDES",
-        "mscoree=b;mshtml=b;winemenubuilder.exe=d",
-    );
-    cmd.env("WINEDEBUG", "fixme-all");
-    if let Some(parent) = path.parent()
-        && parent.is_dir()
-    {
-        cmd.current_dir(parent);
-    }
-    cmd.stdout(Stdio::null()).stderr(Stdio::null());
-
-    let mut child = cmd.spawn().map_err(|err| err.to_string())?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-
-    info!(
-        "Launched '{}' inside prefix '{}'",
-        path.display(),
-        prefix_path
-    );
-    Ok(())
+    let program = path.to_string_lossy();
+    Some(
+        match daemon::run_in_prefix(prefix_path.trim(), proton_path.trim(), &program).await {
+            Ok(()) => gettext("Launched in prefix"),
+            Err(err) => gettext("Failed to run in prefix: {}").replacen("{}", &err, 1),
+        },
+    )
 }

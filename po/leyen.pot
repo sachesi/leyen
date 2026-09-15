@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.8.0\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-15 12:52+0300\n"
+"POT-Creation-Date: 2026-09-15 13:03+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -19,15 +19,15 @@ msgstr ""
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
 #: crates/leyen-core/src/deps/engine.rs:114
-#: crates/leyen-core/src/deps/engine.rs:202
-#: crates/leyen-core/src/deps/engine.rs:387
-#: crates/leyen-core/src/deps/engine.rs:454
-#: crates/leyen-core/src/deps/engine.rs:892
-#: crates/leyen-core/src/deps/engine.rs:893
-#: crates/leyen-core/src/deps/engine.rs:902
-#: crates/leyen-core/src/deps/engine.rs:923
-#: crates/leyen-core/src/deps/engine.rs:1150
-#: crates/leyen-core/src/deps/engine.rs:1297
+#: crates/leyen-core/src/deps/engine.rs:182
+#: crates/leyen-core/src/deps/engine.rs:367
+#: crates/leyen-core/src/deps/engine.rs:434
+#: crates/leyen-core/src/deps/engine.rs:872
+#: crates/leyen-core/src/deps/engine.rs:873
+#: crates/leyen-core/src/deps/engine.rs:882
+#: crates/leyen-core/src/deps/engine.rs:903
+#: crates/leyen-core/src/deps/engine.rs:1130
+#: crates/leyen-core/src/deps/engine.rs:1277
 #, no-c-format
 msgid "Cancelled."
 msgstr ""
@@ -37,125 +37,153 @@ msgstr ""
 msgid "A systemd user session is required to install or remove dependencies."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:760
-#: crates/leyen-core/src/deps/engine.rs:1075
+#: crates/leyen-core/src/deps/engine.rs:740
+#: crates/leyen-core/src/deps/engine.rs:1055
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:771
+#: crates/leyen-core/src/deps/engine.rs:751
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:791
-#: crates/leyen-core/src/deps/engine.rs:1088
+#: crates/leyen-core/src/deps/engine.rs:771
+#: crates/leyen-core/src/deps/engine.rs:1068
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:797
+#: crates/leyen-core/src/deps/engine.rs:777
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1045
+#: crates/leyen-core/src/deps/engine.rs:1025
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1094
+#: crates/leyen-core/src/deps/engine.rs:1074
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1098
+#: crates/leyen-core/src/deps/engine.rs:1078
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1220
+#: crates/leyen-core/src/deps/engine.rs:1200
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
 "reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1223
+#: crates/leyen-core/src/deps/engine.rs:1203
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
 "were not reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1225
+#: crates/leyen-core/src/deps/engine.rs:1205
 #, no-c-format
 msgid "Removed from tracking."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1240
-#: crates/leyen-core/src/launch.rs:1793
+#: crates/leyen-core/src/deps/engine.rs:1220
+#: crates/leyen-core/src/launch.rs:1813
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1252
-#: crates/leyen-core/src/launch.rs:1806 crates/leyen-gtk/src/prefix_tools.rs:25
+#: crates/leyen-core/src/deps/engine.rs:1232
+#: crates/leyen-core/src/launch.rs:1826 crates/leyen-core/src/prefix_tool.rs:77
+#: crates/leyen-gtk/src/prefix_tools.rs:22
 #, no-c-format
 msgid ""
 "umu-launcher is not installed. Please check your internet connection and "
 "restart."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1260
+#: crates/leyen-core/src/deps/engine.rs:1240
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1271 crates/leyen-gtk/src/window.rs:473
+#: crates/leyen-core/src/deps/engine.rs:1251 crates/leyen-gtk/src/window.rs:473
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1287
+#: crates/leyen-core/src/deps/engine.rs:1267
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1817
+#: crates/leyen-core/src/launch.rs:1837
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1830 crates/leyen-core/src/launch.rs:1836
-#: crates/leyen-core/src/launch.rs:2189
+#: crates/leyen-core/src/launch.rs:1850 crates/leyen-core/src/launch.rs:1861
+#: crates/leyen-core/src/launch.rs:2214
 #, no-c-format
 msgid "This game is already running"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1851
+#: crates/leyen-core/src/launch.rs:1854
+#, no-c-format
+msgid "A program is running in this game's prefix; close it first."
+msgstr ""
+
+#: crates/leyen-core/src/launch.rs:1876
 #, no-c-format
 msgid "Game executable was not found"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1877
+#: crates/leyen-core/src/launch.rs:1902
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:1966
+#: crates/leyen-core/src/launch.rs:1991
 #, no-c-format
 msgid "Prefix is already in use. Launching with shared-container fallback."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:2016 crates/leyen-core/src/launch.rs:2243
+#: crates/leyen-core/src/launch.rs:2041 crates/leyen-core/src/launch.rs:2268
 #, no-c-format
 msgid "Launching {}..."
 msgstr ""
 
-#: crates/leyen-core/src/launch.rs:2145
+#: crates/leyen-core/src/launch.rs:2170
 #, no-c-format
 msgid "Failed to get child PID"
+msgstr ""
+
+#: crates/leyen-core/src/prefix_tool.rs:48
+#: crates/leyen-gtk/src/prefix_tools.rs:26
+#, no-c-format
+msgid "Prefix path is required"
+msgstr ""
+
+#: crates/leyen-core/src/prefix_tool.rs:59
+#, no-c-format
+msgid "“{}” is not a file"
+msgstr ""
+
+#: crates/leyen-core/src/prefix_tool.rs:85
+#, no-c-format
+msgid "A systemd user session is required to run programs in a prefix."
+msgstr ""
+
+#: crates/leyen-core/src/prefix_tool.rs:110
+#: crates/leyen-gtk/src/prefix_tools.rs:65
+#, no-c-format
+msgid "Failed to run {}: {}"
 msgstr ""
 
 #: crates/leyen-gtk/src/application.rs:104
@@ -171,33 +199,33 @@ msgstr ""
 msgid "translator-credits"
 msgstr ""
 
-#: crates/leyen-gtk/src/daemon.rs:115
+#: crates/leyen-gtk/src/daemon.rs:121
 #, no-c-format
 msgid "Leyen's daemon is not running and could not be started"
 msgstr ""
 
-#: crates/leyen-gtk/src/daemon.rs:119
+#: crates/leyen-gtk/src/daemon.rs:125
 #, no-c-format
 msgid "Leyen's daemon did not answer in time"
 msgstr ""
 
-#: crates/leyen-gtk/src/daemon.rs:191
+#: crates/leyen-gtk/src/daemon.rs:197
 #, no-c-format
 msgid ""
 "Cannot reach the session bus; daemon features unavailable until it returns"
 msgstr ""
 
-#: crates/leyen-gtk/src/daemon.rs:563
+#: crates/leyen-gtk/src/daemon.rs:583
 #, no-c-format
 msgid ""
 "Lost the daemon's {} updates; restart Leyen if the view stops refreshing"
 msgstr ""
 
-#: crates/leyen-gtk/src/daemon.rs:593 crates/leyen-gtk/src/desktop.rs:37
-#: crates/leyen-gtk/src/desktop.rs:77 crates/leyen-gtk/src/dialogs/mod.rs:159
+#: crates/leyen-gtk/src/daemon.rs:613 crates/leyen-gtk/src/desktop.rs:25
+#: crates/leyen-gtk/src/desktop.rs:40 crates/leyen-gtk/src/desktop.rs:58
+#: crates/leyen-gtk/src/desktop.rs:91 crates/leyen-gtk/src/desktop.rs:112
+#: crates/leyen-gtk/src/dialogs/mod.rs:159
 #: crates/leyen-gtk/src/dialogs/mod.rs:175
-#: crates/leyen-gtk/src/prefix_tools.rs:70
-#: crates/leyen-gtk/src/prefix_tools.rs:131
 #, no-c-format
 msgid "Internal error: background task failed"
 msgstr ""
@@ -721,64 +749,49 @@ msgstr ""
 msgid "Failed to launch {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:29
-#, no-c-format
-msgid "Prefix path is required"
-msgstr ""
-
-#: crates/leyen-gtk/src/prefix_tools.rs:37
+#: crates/leyen-gtk/src/prefix_tools.rs:34
 #, no-c-format
 msgid "Blocked: Cannot run winecfg while games are running."
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:38
+#: crates/leyen-gtk/src/prefix_tools.rs:35
 #, no-c-format
 msgid "Wine Configuration launched"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:48
+#: crates/leyen-gtk/src/prefix_tools.rs:45
 #, no-c-format
 msgid "Blocked: Cannot run regedit while games are running."
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:49
+#: crates/leyen-gtk/src/prefix_tools.rs:46
 #, no-c-format
 msgid "Registry Editor launched"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:73
-#, no-c-format
-msgid "Failed to run {}: {}"
-msgstr ""
-
-#: crates/leyen-gtk/src/prefix_tools.rs:108
+#: crates/leyen-gtk/src/prefix_tools.rs:78
 #, no-c-format
 msgid "Blocked: Cannot run programs in prefix while games are running."
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:117
+#: crates/leyen-gtk/src/prefix_tools.rs:87
 #, no-c-format
 msgid "Select Program"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:124
+#: crates/leyen-gtk/src/prefix_tools.rs:94
 #, no-c-format
 msgid "Selected file has no local path"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:133
+#: crates/leyen-gtk/src/prefix_tools.rs:100
 #, no-c-format
 msgid "Launched in prefix"
 msgstr ""
 
-#: crates/leyen-gtk/src/prefix_tools.rs:134
+#: crates/leyen-gtk/src/prefix_tools.rs:101
 #, no-c-format
 msgid "Failed to run in prefix: {}"
-msgstr ""
-
-#: crates/leyen-gtk/src/prefix_tools.rs:140
-#, no-c-format
-msgid "“{}” is not a file"
 msgstr ""
 
 #: crates/leyen-gtk/src/running_games.rs:79
@@ -862,7 +875,7 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: crates/leyen-gtk/src/window.rs:764
+#: crates/leyen-gtk/src/window.rs:765
 #, no-c-format
 msgid "Failed to remove a menu entry: {}"
 msgstr ""

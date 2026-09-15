@@ -312,6 +312,11 @@ impl Manager {
             // under the same lock, so a launch can't slip in between the
             // running check and the job becoming visible.
             let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if leyen_core::prefix_tool::any_running() {
+                return Err(leyen_ipc::Error::Failed(
+                    "Cannot install dependencies while a program runs in a prefix".to_string(),
+                ));
+            }
             if leyen_core::launch::is_any_game_running()
                 || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
             {
@@ -356,6 +361,11 @@ impl Manager {
         {
             // Same atomic check-and-insert as `install_dep`.
             let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if leyen_core::prefix_tool::any_running() {
+                return Err(leyen_ipc::Error::Failed(
+                    "Cannot uninstall dependencies while a program runs in a prefix".to_string(),
+                ));
+            }
             if leyen_core::launch::is_any_game_running()
                 || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
             {
@@ -392,6 +402,38 @@ impl Manager {
             return true;
         }
         false
+    }
+
+    async fn run_in_prefix(
+        &self,
+        prefix: &str,
+        proton_path: &str,
+        program: &str,
+    ) -> Result<(), leyen_ipc::Error> {
+        let _work = ActivityGuard::new();
+        self.touch();
+        // Same exclusion as a launch: no dependency job may be changing the
+        // prefix, and none may start until the program is registered.
+        let _launch = {
+            let jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
+            if !jobs.is_empty() {
+                return Err(leyen_ipc::Error::Failed(
+                    "A dependency operation is in progress; try again when it finishes".to_string(),
+                ));
+            }
+            LaunchGuard::new()
+        };
+        if leyen_core::launch::is_any_game_running() {
+            return Err(leyen_ipc::Error::Failed(
+                "Cannot run a program in a prefix while a game is running".to_string(),
+            ));
+        }
+        leyen_core::prefix_tool::run_in_prefix(program, prefix, proton_path)
+            .await
+            .map_err(|e| {
+                warn!("RunInPrefix '{program}' in '{prefix}' failed: {e}");
+                leyen_ipc::Error::Failed(e)
+            })
     }
 
     async fn get_dep_status(&self, prefix: &str) -> leyen_ipc::DepStatus {

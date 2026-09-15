@@ -667,7 +667,7 @@ pub fn set_work_guard_source(source: impl Fn() -> Box<dyn Send> + Send + Sync + 
     let _ = WORK_GUARD_SOURCE.set(Box::new(source));
 }
 
-fn acquire_work_guard() -> Option<Box<dyn Send>> {
+pub(crate) fn acquire_work_guard() -> Option<Box<dyn Send>> {
     WORK_GUARD_SOURCE.get().map(|source| source())
 }
 
@@ -1178,6 +1178,26 @@ pub(crate) fn systemctl(args: &[&str]) -> bool {
     wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT).is_some_and(|s| s.success())
 }
 
+/// `cmd` wrapped in `systemd-run --scope` as the unit `unit`, with its
+/// environment and working directory.
+pub(crate) fn in_scope(cmd: &tokio::process::Command, unit: &str) -> tokio::process::Command {
+    let cmd = cmd.as_std();
+    let mut scoped = tokio::process::Command::new("systemd-run");
+    scoped.args(["--user", "--scope", "--quiet", "--collect"]);
+    scoped.arg(format!("--unit={unit}")).arg("--");
+    scoped.arg(cmd.get_program()).args(cmd.get_args());
+    for (key, value) in cmd.get_envs() {
+        match value {
+            Some(value) => scoped.env(key, value),
+            None => scoped.env_remove(key),
+        };
+    }
+    if let Some(dir) = cmd.get_current_dir() {
+        scoped.current_dir(dir);
+    }
+    scoped
+}
+
 /// Stops a scope and verifies it actually wound down, escalating to SIGKILL if
 /// it lingers. `systemctl stop` can return before the cgroup is empty (or fail
 /// outright on a half-started unit), which would leak the scope and its
@@ -1327,7 +1347,7 @@ fn scope_alive(session: &mut RunningGameSession) -> Option<bool> {
 /// `systemctl --user is-active` for `unit`: `Some(false)` only when the user
 /// manager says the unit is inactive or unknown, `None` when it gave no answer
 /// (timeout, spawn failure, no bus), so a stalled manager never ends a live game.
-fn unit_is_active(unit: &str) -> Option<bool> {
+pub(crate) fn unit_is_active(unit: &str) -> Option<bool> {
     let mut child = StdCommand::new("systemctl")
         .args(["--user", "is-active", "--quiet", unit])
         .stdin(Stdio::null())
@@ -1829,6 +1849,11 @@ async fn launch_game_managed(
     if is_game_running(&game.id) {
         return Err(LaunchError::Other(gettext("This game is already running")));
     }
+    if crate::prefix_tool::is_running_in(&prefix_path) {
+        return Err(LaunchError::Other(gettext(
+            "A program is running in this game's prefix; close it first.",
+        )));
+    }
 
     // Held until the session is registered (or the launch fails); covers the
     // whole pre-registration window the running check above can't see.
@@ -2248,10 +2273,46 @@ async fn finish_launch(
 mod tests {
     use super::{
         LaunchClaim, MAX_OUTPUT_LINE, active_from_exit_code, cgroup_within, claim_session_finalize,
-        current_epoch_seconds, for_each_output_line, mark_session_finalized,
+        current_epoch_seconds, for_each_output_line, in_scope, mark_session_finalized,
         process_matches_cmdline, session_finalize_done, shared_container_bus_name,
         signal_pid_in_cgroups,
     };
+
+    #[test]
+    fn a_command_keeps_its_arguments_environment_and_folder_in_its_scope() {
+        let mut cmd = tokio::process::Command::new("umu-run");
+        cmd.args(["regedit.exe", "/S", "my file.reg"])
+            .env("WINEPREFIX", "/p")
+            .env_remove("DISPLAY")
+            .current_dir("/tmp");
+        let scoped = in_scope(&cmd, "leyen-dep-x.scope");
+        let scoped = scoped.as_std();
+
+        assert_eq!(scoped.get_program(), "systemd-run");
+        let args: Vec<&std::ffi::OsStr> = scoped.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                "--user",
+                "--scope",
+                "--quiet",
+                "--collect",
+                "--unit=leyen-dep-x.scope",
+                "--",
+                "umu-run",
+                "regedit.exe",
+                "/S",
+                "my file.reg"
+            ]
+        );
+        let envs: Vec<_> = scoped.get_envs().collect();
+        assert!(envs.contains(&(
+            std::ffi::OsStr::new("WINEPREFIX"),
+            Some(std::ffi::OsStr::new("/p"))
+        )));
+        assert!(envs.contains(&(std::ffi::OsStr::new("DISPLAY"), None)));
+        assert_eq!(scoped.get_current_dir(), Some(std::path::Path::new("/tmp")));
+    }
 
     #[test]
     fn a_unit_systemd_no_longer_knows_is_not_active() {

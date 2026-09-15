@@ -991,8 +991,8 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
 
         // Graceful first: SIGTERM the game's real processes (wherever they run) and
         // its own launcher scope so Wine/Proton can flush and save state.
-        let signaled =
-            signal_pids(&matched, libc::SIGTERM) | systemctl(&["kill", "--signal=SIGTERM", &unit]);
+        let signaled = signal_pids(&matched, &all, libc::SIGTERM)
+            | systemctl(&["kill", "--signal=SIGTERM", &unit]);
         info!(
             target: &format!("game:{}", game_id_clone),
             "Sent SIGTERM to {} process(es) of {}", matched.len(), unit
@@ -1003,7 +1003,7 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
         matched = wait_for_session_pids(&target, &mut all, 15);
 
         if !matched.is_empty() {
-            let forced = signal_pids(&matched, libc::SIGKILL);
+            let forced = signal_pids(&matched, &all, libc::SIGKILL);
             // Sole occupant: tear the scope down atomically for a clean container
             // shutdown. Shared: leave it — a co-tenant needs the container.
             if !shared {
@@ -1164,23 +1164,18 @@ fn wait_with_timeout(
 
 /// Runs `systemctl --user <args>` with a timeout and reports success. Output is
 /// discarded; callers only need the status.
-fn systemctl(args: &[&str]) -> bool {
-    systemctl_status(args).unwrap_or(false)
-}
-
-/// Like [`systemctl`] but distinguishes "the command ran and failed"
-/// (`Some(false)`) from "no answer" (`None`: spawn failure or timeout), so a
-/// stalled user manager is not mistaken for an inactive unit.
-fn systemctl_status(args: &[&str]) -> Option<bool> {
-    let mut child = StdCommand::new("systemctl")
+pub(crate) fn systemctl(args: &[&str]) -> bool {
+    let Ok(mut child) = StdCommand::new("systemctl")
         .arg("--user")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .ok()?;
-    wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT).map(|s| s.success())
+    else {
+        return false;
+    };
+    wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT).is_some_and(|s| s.success())
 }
 
 /// Stops a scope and verifies it actually wound down, escalating to SIGKILL if
@@ -1323,9 +1318,33 @@ fn scope_alive(session: &mut RunningGameSession) -> Option<bool> {
     match resolve_cgroup_dir(session) {
         Some(dir) => match read_cgroup_populated(Path::new(&dir)) {
             Some(populated) => Some(populated),
-            None => systemctl_status(&["is-active", "--quiet", &session.unit]),
+            None => unit_is_active(&session.unit),
         },
-        None => systemctl_status(&["is-active", "--quiet", &session.unit]),
+        None => unit_is_active(&session.unit),
+    }
+}
+
+/// `systemctl --user is-active` for `unit`: `Some(false)` only when the user
+/// manager says the unit is inactive or unknown, `None` when it gave no answer
+/// (timeout, spawn failure, no bus), so a stalled manager never ends a live game.
+fn unit_is_active(unit: &str) -> Option<bool> {
+    let mut child = StdCommand::new("systemctl")
+        .args(["--user", "is-active", "--quiet", unit])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    active_from_exit_code(wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT)?.code())
+}
+
+/// Reads `systemctl is-active`'s exit status: 0 is active, 3 inactive and 4 an
+/// unknown unit (one that was collected); anything else is no answer.
+fn active_from_exit_code(code: Option<i32>) -> Option<bool> {
+    match code? {
+        0 => Some(true),
+        3 | 4 => Some(false),
+        _ => None,
     }
 }
 
@@ -1450,8 +1469,8 @@ fn cmdline_arg_signature(launch_args: &str) -> Option<String> {
     (!normalized.is_empty()).then_some(normalized)
 }
 
-/// A process cmdline belongs to a game launch when it contains the executable
-/// basename and (if recorded) the distinguishing launch-argument signature.
+/// A process cmdline belongs to a game launch when it names the executable and
+/// (if recorded) contains the distinguishing launch-argument signature.
 fn process_matches_cmdline(
     cmdline: &str,
     match_exe: Option<&str>,
@@ -1460,13 +1479,24 @@ fn process_matches_cmdline(
     let Some(exe) = match_exe.filter(|e| !e.is_empty()) else {
         return false;
     };
-    if !cmdline.contains(exe) {
+    if !names_executable(cmdline, exe) {
         return false;
     }
     match match_args.filter(|a| !a.is_empty()) {
         Some(args) => cmdline.contains(args),
         None => true,
     }
+}
+
+/// Whether `cmdline` holds `exe` as a whole file name: at the start or after a
+/// space or a path separator, and followed by a space or the end. `game.exe`
+/// must not match `mygame.exe` or `game.exe.bak`.
+fn names_executable(cmdline: &str, exe: &str) -> bool {
+    cmdline.match_indices(exe).any(|(start, _)| {
+        let before = cmdline[..start].chars().next_back();
+        let after = cmdline[start + exe.len()..].chars().next();
+        matches!(before, None | Some(' ' | '/' | '\\')) && matches!(after, None | Some(' '))
+    })
 }
 
 /// The leyen-managed PID universe: every PID found in any registered session's
@@ -1476,11 +1506,12 @@ fn process_matches_cmdline(
 /// leyen cgroups — never a whole-`/proc` scan, never a false positive outside.
 fn leyen_pid_cmdlines(sessions: &mut [RunningGameSession]) -> PidUniverse {
     // Per-PID cmdline cache. A process's cmdline is fixed for its lifetime, so
-    // each PID is read at most once instead of on every sync. Critically, a PID is
-    // recorded as `None` BEFORE the inline read and only upgraded to its value on
+    // each PID is read at most twice instead of on every sync. Critically, a PID
+    // is recorded as `None` BEFORE its read and only upgraded to its value on
     // success — so a process stuck in uninterruptible sleep inside a broken
     // pressure-vessel container costs at most ONE blocked thread, once, and is
-    // never read again. No per-PID watchdog threads: spawning ~100 of them per
+    // never read again. The reads run one at a time, each on a short-lived
+    // thread waited on for 200ms: starting ~100 watchdog threads at once for a
     // fresh container hammered the OS thread limit until tokio's blocking pool
     // could no longer spawn workers and every game action stalled.
     // Each entry is `(info, confirmed)`: a PID first seen between `fork()`
@@ -1571,14 +1602,16 @@ fn session_matched_pids(session: &RunningGameSession, universe: &PidUniverse) ->
 /// cmdline signature is recorded the game's real processes are matched in the
 /// universe (correct even inside a shared container); otherwise it falls back to
 /// the session's own scope cgroup.
-/// `None` = could not tell this pass (the session's cgroup is unresolved
-/// because systemd did not answer), so callers should keep the session.
+/// `None` = could not tell this pass (systemd did not answer), so callers
+/// should keep the session.
 fn session_is_live(session: &mut RunningGameSession, universe: &PidUniverse) -> Option<bool> {
     if session.match_exe.is_some() {
         let matched = session_matched_pids(session, universe);
         session.tracked_pid_count = matched.len();
         if matched.is_empty() && session.cgroup_dir.is_none() {
-            return None;
+            // No cgroup was ever read: the scope may be gone already (its first
+            // command failed to start and it was collected), so ask systemd.
+            return unit_is_active(&session.unit);
         }
         Some(!matched.is_empty())
     } else {
@@ -1606,15 +1639,115 @@ fn prefix_shared_with_other_live(
     })
 }
 
-/// Sends `signal` to each PID. Returns true if at least one `kill` was accepted.
-fn signal_pids(pids: &[u32], signal: libc::c_int) -> bool {
+/// Sends `signal` to each PID that is still in one of `sessions`' cgroups.
+/// Returns true if at least one signal was accepted.
+fn signal_pids(pids: &[u32], sessions: &[RunningGameSession], signal: libc::c_int) -> bool {
+    let cgroups: Vec<&str> = sessions
+        .iter()
+        .flat_map(|s| s.cgroup_dir.iter().chain(s.container_cgroup_dir.iter()))
+        .filter_map(|dir| dir.strip_prefix("/sys/fs/cgroup"))
+        .collect();
     let mut signaled = false;
     for &pid in pids {
-        if unsafe { libc::kill(pid as i32, signal) } == 0 {
-            signaled = true;
-        }
+        signaled |= signal_pid_in_cgroups(pid, &cgroups, signal);
     }
     signaled
+}
+
+/// Signals `pid` through a pidfd, and only while it is in one of `cgroups`. The PID
+/// was read from `cgroup.procs` a moment ago and may since belong to another
+/// process: membership is checked after the pidfd is open, so if the PID was
+/// reused the pidfd still names the old, exited process and the signal fails.
+fn signal_pid_in_cgroups(pid: u32, cgroups: &[&str], signal: libc::c_int) -> bool {
+    use std::os::fd::{FromRawFd, OwnedFd};
+
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
+    if fd < 0 {
+        // Kernels before 5.3 have no pidfd; the plain PID is all there is.
+        return io::Error::last_os_error().raw_os_error() == Some(libc::ENOSYS)
+            && unsafe { libc::kill(pid as libc::pid_t, signal) } == 0;
+    }
+    let pidfd = unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) };
+    if !process_in_cgroups(pid, cgroups) {
+        return false;
+    }
+    unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pidfd.as_raw_fd(),
+            signal,
+            std::ptr::null::<libc::siginfo_t>(),
+            0,
+        ) == 0
+    }
+}
+
+/// Whether `pid`'s cgroup (from `/proc/PID/cgroup`) is one of `cgroups` or below one.
+fn process_in_cgroups(pid: u32, cgroups: &[&str]) -> bool {
+    let Ok(data) = fs::read_to_string(format!("/proc/{pid}/cgroup")) else {
+        return false;
+    };
+    data.lines()
+        .find_map(|line| line.strip_prefix("0::"))
+        .is_some_and(|path| cgroup_within(path, cgroups))
+}
+
+fn cgroup_within(path: &str, cgroups: &[&str]) -> bool {
+    cgroups.iter().any(|cgroup| {
+        path.strip_prefix(cgroup)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
+
+/// Longest line of a process's output that is kept; the rest of a longer line is
+/// dropped, so output without newlines cannot grow the daemon without bound.
+const MAX_OUTPUT_LINE: usize = 16 * 1024;
+
+/// Calls `on_line` for every line of `reader` until it ends. Bytes that are not
+/// UTF-8 are replaced rather than ending the read: a reader that stops closes the
+/// pipe, and the process writing to it then gets EPIPE or is killed by SIGPIPE.
+pub(crate) async fn for_each_output_line<R>(reader: R, mut on_line: impl FnMut(String))
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut reader = AsyncBufReader::new(reader);
+    let mut line: Vec<u8> = Vec::new();
+    let mut truncated = false;
+    loop {
+        let chunk = match reader.fill_buf().await {
+            Ok(chunk) => chunk,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        };
+        if chunk.is_empty() {
+            break;
+        }
+        let (take, end_of_line) = match chunk.iter().position(|b| *b == b'\n') {
+            Some(newline) => (newline, true),
+            None => (chunk.len(), false),
+        };
+        let room = MAX_OUTPUT_LINE.saturating_sub(line.len());
+        line.extend_from_slice(&chunk[..take.min(room)]);
+        truncated |= take > room;
+        reader.consume(take + usize::from(end_of_line));
+        if end_of_line {
+            on_line(output_line_text(&line, truncated));
+            line.clear();
+            truncated = false;
+        }
+    }
+    if !line.is_empty() {
+        on_line(output_line_text(&line, truncated));
+    }
+}
+
+fn output_line_text(bytes: &[u8], truncated: bool) -> String {
+    let bytes = bytes.strip_suffix(b"\r").unwrap_or(bytes);
+    let mut text = String::from_utf8_lossy(bytes).into_owned();
+    if truncated {
+        text.push('…');
+    }
+    text
 }
 
 fn pipe_process_output<R>(reader: R, game_id: String, game_title: String, stream_name: &'static str)
@@ -1623,16 +1756,15 @@ where
 {
     let key = game_id.clone();
     let handle = tokio::spawn(async move {
-        let reader = AsyncBufReader::new(reader);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
+        for_each_output_line(reader, |line| {
             if !line.trim().is_empty() {
                 info!(
                     target: &format!("game:{}", game_id),
                     "[{}:{}] {}", game_title, stream_name, line
                 );
             }
-        }
+        })
+        .await;
     });
     // Registered so session finalization can abort the reader: a descendant
     // that inherited the pipe fds would otherwise keep it alive forever.
@@ -2115,9 +2247,108 @@ async fn finish_launch(
 #[cfg(test)]
 mod tests {
     use super::{
-        LaunchClaim, claim_session_finalize, current_epoch_seconds, mark_session_finalized,
-        session_finalize_done, shared_container_bus_name,
+        LaunchClaim, MAX_OUTPUT_LINE, active_from_exit_code, cgroup_within, claim_session_finalize,
+        current_epoch_seconds, for_each_output_line, mark_session_finalized,
+        process_matches_cmdline, session_finalize_done, shared_container_bus_name,
+        signal_pid_in_cgroups,
     };
+
+    #[test]
+    fn a_unit_systemd_no_longer_knows_is_not_active() {
+        assert_eq!(active_from_exit_code(Some(0)), Some(true));
+        assert_eq!(active_from_exit_code(Some(3)), Some(false));
+        assert_eq!(active_from_exit_code(Some(4)), Some(false));
+        // No bus, a timeout or a signal is no answer, not a dead game.
+        assert_eq!(active_from_exit_code(Some(1)), None);
+        assert_eq!(active_from_exit_code(None), None);
+    }
+
+    #[test]
+    fn a_game_is_matched_by_its_whole_file_name() {
+        let exe = Some("game.exe");
+        assert!(process_matches_cmdline(
+            "z:\\games\\x\\game.exe -w",
+            exe,
+            None
+        ));
+        assert!(process_matches_cmdline(
+            "/usr/bin/umu-run /games/game.exe",
+            exe,
+            None
+        ));
+        assert!(process_matches_cmdline("game.exe", exe, None));
+        assert!(!process_matches_cmdline("z:\\games\\mygame.exe", exe, None));
+        assert!(!process_matches_cmdline("/games/setup_game.exe", exe, None));
+        assert!(!process_matches_cmdline("/games/game.exe.bak", exe, None));
+        assert!(process_matches_cmdline(
+            "c:\\my games\\game.exe role:a",
+            exe,
+            Some("role:a")
+        ));
+        assert!(!process_matches_cmdline(
+            "c:\\my games\\game.exe role:b",
+            exe,
+            Some("role:a")
+        ));
+    }
+
+    #[test]
+    fn a_process_is_signalled_only_inside_the_given_cgroups() {
+        assert!(cgroup_within(
+            "/user.slice/a.scope",
+            &["/user.slice/a.scope"]
+        ));
+        assert!(cgroup_within(
+            "/user.slice/a.scope/sub",
+            &["/user.slice/a.scope"]
+        ));
+        assert!(!cgroup_within(
+            "/user.slice/a.scope2",
+            &["/user.slice/a.scope"]
+        ));
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let own = std::fs::read_to_string(format!("/proc/{pid}/cgroup")).unwrap();
+        let own = own.lines().find_map(|l| l.strip_prefix("0::")).unwrap();
+
+        assert!(!signal_pid_in_cgroups(
+            pid,
+            &["/elsewhere.scope"],
+            libc::SIGKILL
+        ));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "outside the cgroups: left alone"
+        );
+        assert!(signal_pid_in_cgroups(pid, &[own], libc::SIGKILL));
+        assert!(
+            child.wait().unwrap().code().is_none(),
+            "killed by the signal"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_survives_bytes_that_are_not_utf8_and_long_lines() {
+        let mut input = b"first\n\xcf\xf0\xe8\xe2\xe5\xf2\r\n".to_vec();
+        input.extend(std::iter::repeat_n(b'x', MAX_OUTPUT_LINE + 100));
+        input.extend_from_slice(b"\nlast");
+        let mut lines = Vec::new();
+        for_each_output_line(input.as_slice(), |line| lines.push(line)).await;
+
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "first");
+        assert_eq!(lines[1], "\u{fffd}".repeat(6));
+        assert_eq!(
+            lines[2].chars().filter(|c| *c == 'x').count(),
+            MAX_OUTPUT_LINE
+        );
+        assert!(lines[2].ends_with('…'));
+        assert_eq!(lines[3], "last");
+    }
 
     #[test]
     fn launch_claim_is_exclusive_until_dropped() {

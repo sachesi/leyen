@@ -166,6 +166,11 @@ async fn run_umu_command_inner(
     let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to launch {}: {}", label, e))?;
+    // Until systemd-run has registered the scope, the command is only reachable
+    // as this child.
+    let pidfd = child
+        .id()
+        .and_then(|pid| crate::launch::pidfd_open(pid).ok());
     let wait_fut = child.wait_with_output();
     tokio::pin!(wait_fut);
 
@@ -188,9 +193,9 @@ async fn run_umu_command_inner(
                 };
                 // The wait ends once every holder of the stderr pipe is gone,
                 // which is every process in the scope.
-                signal_scope(&unit, "SIGTERM").await;
+                signal_scope(&unit, pidfd.as_ref(), libc::SIGTERM).await;
                 if tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await.is_err() {
-                    signal_scope(&unit, "SIGKILL").await;
+                    signal_scope(&unit, pidfd.as_ref(), libc::SIGKILL).await;
                     let _ = tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await;
                 }
                 return Err(error);
@@ -199,11 +204,20 @@ async fn run_umu_command_inner(
     }
 }
 
-/// Sends `signal` to every process of the scope `unit`.
-async fn signal_scope(unit: &str, signal: &'static str) {
+/// Sends `signal` to every process of the scope `unit`, and to the command
+/// itself in case the scope is not there yet.
+async fn signal_scope(unit: &str, command: Option<&std::os::fd::OwnedFd>, signal: libc::c_int) {
+    if let Some(pidfd) = command {
+        crate::launch::pidfd_signal(pidfd, signal);
+    }
+    let name = if signal == libc::SIGKILL {
+        "SIGKILL"
+    } else {
+        "SIGTERM"
+    };
     let unit = unit.to_string();
     let _ = tokio::task::spawn_blocking(move || {
-        crate::launch::systemctl(&["kill", &format!("--signal={signal}"), &unit])
+        crate::launch::systemctl(&["kill", &format!("--signal={name}"), &unit])
     })
     .await;
 }

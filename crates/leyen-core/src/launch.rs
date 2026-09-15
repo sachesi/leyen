@@ -1679,18 +1679,29 @@ fn signal_pids(pids: &[u32], sessions: &[RunningGameSession], signal: libc::c_in
 /// process: membership is checked after the pidfd is open, so if the PID was
 /// reused the pidfd still names the old, exited process and the signal fails.
 fn signal_pid_in_cgroups(pid: u32, cgroups: &[&str], signal: libc::c_int) -> bool {
-    use std::os::fd::{FromRawFd, OwnedFd};
+    match pidfd_open(pid) {
+        Ok(pidfd) => process_in_cgroups(pid, cgroups) && pidfd_signal(&pidfd, signal),
+        // Kernels before 5.3 have no pidfd; the plain PID is all there is.
+        Err(e) => {
+            e.raw_os_error() == Some(libc::ENOSYS)
+                && unsafe { libc::kill(pid as libc::pid_t, signal) } == 0
+        }
+    }
+}
 
+/// A pidfd for the process `pid` is now: it keeps naming that process after it
+/// exits, so a signal through it can never reach a later owner of the PID.
+pub(crate) fn pidfd_open(pid: u32) -> io::Result<std::os::fd::OwnedFd> {
+    use std::os::fd::FromRawFd;
     let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
     if fd < 0 {
-        // Kernels before 5.3 have no pidfd; the plain PID is all there is.
-        return io::Error::last_os_error().raw_os_error() == Some(libc::ENOSYS)
-            && unsafe { libc::kill(pid as libc::pid_t, signal) } == 0;
+        return Err(io::Error::last_os_error());
     }
-    let pidfd = unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) };
-    if !process_in_cgroups(pid, cgroups) {
-        return false;
-    }
+    Ok(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as libc::c_int) })
+}
+
+/// Sends `signal` through `pidfd`; false once its process is gone.
+pub(crate) fn pidfd_signal(pidfd: &std::os::fd::OwnedFd, signal: libc::c_int) -> bool {
     unsafe {
         libc::syscall(
             libc::SYS_pidfd_send_signal,

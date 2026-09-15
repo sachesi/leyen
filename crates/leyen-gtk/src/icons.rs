@@ -176,8 +176,13 @@ fn decode_icon_blob(bytes: &[u8]) -> Option<image::DynamicImage> {
 }
 
 fn score_match(image: &image::DynamicImage, target_size: u32) -> u64 {
+    size_score(image.width(), image.height(), target_size)
+}
+
+/// How far `width`×`height` is from a `target_size` square; lower is better.
+fn size_score(width: u32, height: u32, target_size: u32) -> u64 {
     let target = u64::from(target_size);
-    u64::from(image.width()).abs_diff(target) + u64::from(image.height()).abs_diff(target)
+    u64::from(width).abs_diff(target) + u64::from(height).abs_diff(target)
 }
 
 #[derive(Clone, Copy)]
@@ -590,29 +595,43 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
+/// The embedded PNG closest to `size`. They are ranked by the size in their
+/// header and decoded best first, only until one decodes: an executable can carry
+/// hundreds of them, each up to 4096×4096.
 fn find_best_png_icon(bytes: &[u8], size: u32) -> Option<image::DynamicImage> {
-    let mut best_match: Option<(u64, image::DynamicImage)> = None;
+    let mut candidates: Vec<(u64, &[u8])> = Vec::new();
     let mut cursor = 0_usize;
 
     while let Some(start) = find_bytes(bytes, PNG_SIGNATURE, cursor) {
         if let Some(end) = parse_png_end(bytes, start)
             && let Some(blob) = bytes.get(start..end)
-            && let Some(decoded) = decode_icon_blob(blob)
+            && let Some((width, height)) = png_dimensions(blob)
         {
-            let score = score_match(&decoded, size);
-            if best_match
-                .as_ref()
-                .is_none_or(|(current_score, _)| score < *current_score)
-            {
-                best_match = Some((score, decoded));
-            }
+            candidates.push((size_score(width, height, size), blob));
             cursor = end;
             continue;
         }
         cursor = start.saturating_add(1);
     }
 
-    best_match.map(|(_, decoded)| decoded)
+    // Stable, so of two equally close the first in the file wins, as before.
+    candidates.sort_by_key(|(score, _)| *score);
+    candidates
+        .into_iter()
+        .find_map(|(_, blob)| decode_icon_blob(blob))
+}
+
+/// Width and height from a PNG's IHDR chunk, which must come first.
+fn png_dimensions(png: &[u8]) -> Option<(u32, u32)> {
+    if png.get(12..16)? != b"IHDR" {
+        return None;
+    }
+    Some((read_u32_be(png, 16)?, read_u32_be(png, 20)?))
+}
+
+fn read_u32_be(bytes: &[u8], offset: usize) -> Option<u32> {
+    let slice = bytes.get(offset..offset.checked_add(4)?)?;
+    Some(u32::from_be_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
 fn parse_png_end(bytes: &[u8], start: usize) -> Option<usize> {
@@ -763,6 +782,36 @@ mod tests {
         let decoded = decoded.unwrap_or_else(|| image::DynamicImage::new_rgba8(1, 1));
         assert_eq!(decoded.width(), 2);
         assert_eq!(decoded.height(), 2);
+    }
+
+    #[test]
+    fn the_closest_embedded_png_that_decodes_is_chosen() {
+        let png = |side: u32| {
+            let mut bytes = Vec::new();
+            image::DynamicImage::ImageRgba8(ImageBuffer::from_pixel(
+                side,
+                side,
+                Rgba([0_u8, 0, 255, 255]),
+            ))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+            bytes
+        };
+        // A 3×3 whose pixel data is broken: closest to the target, but it cannot
+        // be decoded, so the 4×4 is next in line and the 16×16 last.
+        let mut broken = png(3);
+        let idat = broken.windows(4).position(|w| w == b"IDAT").unwrap();
+        broken[idat + 4] ^= 0xff;
+
+        let mut payload = png(16);
+        payload.extend_from_slice(&broken);
+        payload.extend_from_slice(&png(4));
+
+        let decoded = find_best_png_icon(&payload, 3).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (4, 4));
     }
 
     #[test]

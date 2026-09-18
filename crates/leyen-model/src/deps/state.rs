@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use super::catalog::get_dep_profile;
 use crate::i18n::gettext;
 use crate::paths::get_data_dir;
 
@@ -125,16 +126,22 @@ pub fn get_installed_dep(prefix_path: &str, dep_id: &str) -> Option<InstalledDep
         .cloned()
 }
 
+/// The installed components that need `dep_id`: those that depend on it, and
+/// those it provides that were installed again on their own. Such a one owns no
+/// files, as they were `dep_id`'s already, so removing `dep_id` would take them.
 pub fn find_installed_dependents(state: &PrefixDependencyState, dep_id: &str) -> Vec<String> {
+    let provides = get_dep_profile(dep_id).map_or(&[][..], |profile| profile.provides);
     state
         .installed
         .iter()
         .filter(|(installed_id, installed)| {
             installed_id.as_str() != dep_id
-                && installed
+                && (installed
                     .dependencies
                     .iter()
                     .any(|dependency| dependency == dep_id)
+                    || (provides.contains(&installed_id.as_str())
+                        && installed.is_prefix_integration()))
         })
         .map(|(installed_id, _)| installed_id.clone())
         .collect::<BTreeSet<_>>()
@@ -178,6 +185,28 @@ mod tests {
         assert_eq!(
             find_installed_dependents(&state, "base"),
             vec!["child".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_provided_font_installed_again_keeps_its_provider() {
+        let stub = InstalledDependency::default();
+        let reinstalled = InstalledDependency {
+            touched_existing_files: true,
+            ..InstalledDependency::default()
+        };
+        let state = PrefixDependencyState {
+            version: DEP_STATE_VERSION,
+            installed: BTreeMap::from([
+                ("allfonts".to_string(), InstalledDependency::default()),
+                ("arial32".to_string(), reinstalled),
+                ("tahoma32".to_string(), stub),
+            ]),
+        };
+
+        assert_eq!(
+            find_installed_dependents(&state, "allfonts"),
+            vec!["arial32".to_string()]
         );
     }
 }

@@ -70,7 +70,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
         DepStep {
             description: "Downloading Visual C++ Redistributable (x86)…",
             action: DepStepAction::DownloadFile {
-                url: "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+                url: "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe",
                 file_name: "vcredist2022_x86.exe",
                 sha256: "0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64",
             },
@@ -86,7 +86,7 @@ fn vcredist2022_steps() -> Vec<DepStep> {
         DepStep {
             description: "Downloading Visual C++ Redistributable (x64)…",
             action: DepStepAction::DownloadFile {
-                url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+                url: "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
                 file_name: "vcredist2022_x64.exe",
                 sha256: "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
             },

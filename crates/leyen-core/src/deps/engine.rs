@@ -27,6 +27,8 @@ use leyen_model::deps::{
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;
+/// How many lines of a failed command's error output go into its message.
+const STDERR_TAIL_LINES: usize = 10;
 /// How long a stopped command gets to end after SIGTERM, and again after SIGKILL.
 const POST_KILL_WAIT: Duration = Duration::from_secs(5);
 
@@ -400,6 +402,7 @@ pub async fn execute_dep_step(
             ));
 
             let mut cmd = AsyncCommand::new("curl");
+            cmd.stdout(Stdio::null()).stderr(Stdio::piped());
             cmd.args([
                 "--proto",
                 "=https",
@@ -520,14 +523,13 @@ pub async fn execute_dep_step(
             let exit_code = output.status.code();
             info!("[dep] {} completed (exit code: {:?})", file_name, exit_code);
             if !output.status.success() && exit_code != Some(3010) {
-                let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
                     "Installer '{}' failed (code {}): {}",
                     file_name,
                     exit_code
                         .map(|c| c.to_string())
                         .unwrap_or_else(|| "unknown".to_string()),
-                    stderr.trim()
+                    stderr_tail(&output.stderr)
                 ));
             }
 
@@ -564,12 +566,11 @@ pub async fn execute_dep_step(
                 file_name, exit_code
             );
             if !output.status.success() && exit_code != Some(3010) {
-                let stderr = String::from_utf8_lossy(&output.stderr);
                 return Err(format!(
                     "MSI install '{}' failed (code {:?}): {}",
                     file_name,
                     exit_code,
-                    stderr.trim()
+                    stderr_tail(&output.stderr)
                 ));
             }
 
@@ -606,11 +607,21 @@ pub async fn execute_dep_step(
                 "[dep] Running winetricks {} (timeout: {}s)",
                 verb, COMMAND_TIMEOUT_SECS
             );
+            // umu refuses to run a verb that winetricks.log lists, before
+            // winetricks and its `--force` see it, so a reinstall or a verb that
+            // came in with another one would fail.
+            {
+                let prefix = prefix_path.to_string();
+                let verb = verb.clone();
+                tokio::task::spawn_blocking(move || forget_winetricks_verb(&prefix, &verb))
+                    .await
+                    .map_err(join_err)
+                    .and_then(|r| r)?;
+            }
             let output = {
                 let mut cmd = AsyncCommand::new(get_umu_run_path());
                 configure_umu_command_async(&mut cmd, prefix_path, proton_path);
-                // `--force`: winetricks skips verbs listed in winetricks.log;
-                // after an uninstall removed the files that log is stale.
+                // `--force`: winetricks skips a verb whose files it finds.
                 cmd.args([
                     get_winetricks_path().as_str(),
                     "-q",
@@ -620,8 +631,11 @@ pub async fn execute_dep_step(
                 run_umu_command(cmd, format!("winetricks {}", verb), cancel.clone()).await?
             };
             if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("winetricks '{}' failed: {}", verb, stderr.trim()));
+                return Err(format!(
+                    "winetricks '{}' failed: {}",
+                    verb,
+                    stderr_tail(&output.stderr)
+                ));
             }
             info!("[dep] winetricks {} completed", verb);
 
@@ -685,9 +699,16 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<bool, String> {
     Ok(hex::encode(hasher.finalize()).eq_ignore_ascii_case(expected))
 }
 
-/// Drops `verb` from `$WINEPREFIX/winetricks.log`. winetricks consults that
-/// file before installing and skips a verb it has already logged, so a verb
-/// whose files Leyen removed must be unlogged or a reinstall becomes a no-op.
+/// The last lines of a command's error output, enough to say why it failed
+/// without carrying an installer's whole log into the message.
+fn stderr_tail(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let lines: Vec<&str> = text.trim().lines().collect();
+    lines[lines.len().saturating_sub(STDERR_TAIL_LINES)..].join("\n")
+}
+
+/// Drops `verb` from `$WINEPREFIX/winetricks.log`. umu consults that file
+/// before running winetricks and refuses a verb it lists.
 fn forget_winetricks_verb(prefix_path: &str, verb: &str) -> Result<(), String> {
     let path = Path::new(prefix_path).join("winetricks.log");
     let text = match fs::read_to_string(&path) {
@@ -806,6 +827,26 @@ pub async fn install_dep(
         install_plan.len(),
         total_steps
     );
+
+    // Proton creates a missing prefix, and upgrades one another Proton made, on
+    // the first command it runs. Done inside a component's snapshot, its whole
+    // Wine install would be recorded as that component's files, and removed
+    // with it.
+    on_progress(0, total_steps, "Preparing the prefix…".to_string());
+    {
+        let mut cmd = AsyncCommand::new(get_umu_run_path());
+        configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
+        cmd.arg("createprefix");
+        let output = run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
+        if !output.status.success() {
+            warn!(
+                "[dep:{}] preparing the prefix exited with {}: {}",
+                dep_id,
+                output.status,
+                stderr_tail(&output.stderr)
+            );
+        }
+    }
 
     let mut completed_steps = 0usize;
     for profile in &install_plan {
@@ -1094,17 +1135,10 @@ pub async fn uninstall_dep(
             .replacen("{}", &dependents.join(", "), 1));
     }
 
-    let actions = build_cleanup_actions(&installed);
-
-    // Detect winetricks-based deps and uninstall their registry markers first
-    // so reinstall doesn't fail with "already installed"
-    let winetricks_verbs: Vec<String> = get_dep_steps(&dep_id)
-        .iter()
-        .filter_map(|step| match &step.action {
-            DepStepAction::RunWinetricks { verb } => Some(verb.clone()),
-            _ => None,
-        })
-        .collect();
+    let actions = build_cleanup_actions(&InstalledDependency {
+        dll_overrides: overrides_to_remove(&state, &dep_id),
+        ..installed.clone()
+    });
 
     let requires_umu = actions.iter().any(|(_, action)| {
         matches!(
@@ -1114,22 +1148,6 @@ pub async fn uninstall_dep(
     });
     if requires_umu {
         ensure_umu_ready(false, &on_progress, &cancel).await?;
-    }
-
-    // winetricks has no uninstall command; forgetting the verb in its log is
-    // what lets a later install run again instead of "already installed".
-    for verb in &winetricks_verbs {
-        on_progress(0, 0, format!("Uninstalling winetricks '{}'…", verb));
-        let prefix_path = prefix_path.clone();
-        let verb = verb.clone();
-        let result =
-            tokio::task::spawn_blocking(move || forget_winetricks_verb(&prefix_path, &verb))
-                .await
-                .map_err(join_err)
-                .and_then(|r| r);
-        if let Err(e) = result {
-            warn!("[dep:{}] winetricks uninstall warning: {}", dep_id, e);
-        }
     }
 
     info!(
@@ -1173,6 +1191,15 @@ pub async fn uninstall_dep(
         result.inspect_err(|error| error!("[dep:{}] removal failed: {}", dep_id, error))?;
     }
 
+    {
+        let remove_prefix = prefix_path.clone();
+        let remove_id = dep_id.clone();
+        tokio::task::spawn_blocking(move || remove_installed_dep(&remove_prefix, &remove_id))
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)?;
+    }
+
     if let Some(profile) = get_dep_profile(&dep_id) {
         for provided_id in profile.provides {
             if let Some(entry) = state.installed.get(*provided_id)
@@ -1195,15 +1222,6 @@ pub async fn uninstall_dep(
                 }
             }
         }
-    }
-
-    {
-        let remove_prefix = prefix_path.clone();
-        let remove_id = dep_id.clone();
-        tokio::task::spawn_blocking(move || remove_installed_dep(&remove_prefix, &remove_id))
-            .await
-            .map_err(join_err)
-            .and_then(|r| r)?;
     }
 
     let note = match (
@@ -1422,10 +1440,7 @@ fn collect_snapshot(
         // Skip temp/cache directories irrelevant to dependency state
         if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
             let lower = n.to_ascii_lowercase();
-            matches!(
-                lower.as_str(),
-                "temp" | "tmp" | "cache" | "installer" | "prefetch"
-            ) || lower.starts_with("gac")
+            matches!(lower.as_str(), "temp" | "tmp" | "cache" | "prefetch")
         }) {
             continue;
         }
@@ -1547,6 +1562,29 @@ fn path_to_prefix_relative(prefix_root: &Path, path: &Path) -> Option<String> {
                 .join("/")
         })
         .filter(|relative| !relative.is_empty())
+}
+
+/// The DLL overrides of `dep_id` that no other installed component set too:
+/// removing one another needs would break that one (dotnet40 and dotnet48 both
+/// set mscoree).
+fn overrides_to_remove(
+    state: &leyen_model::deps::PrefixDependencyState,
+    dep_id: &str,
+) -> Vec<String> {
+    let Some(installed) = state.installed.get(dep_id) else {
+        return Vec::new();
+    };
+    installed
+        .dll_overrides
+        .iter()
+        .filter(|dll| {
+            !state
+                .installed
+                .iter()
+                .any(|(id, other)| id != dep_id && other.dll_overrides.contains(dll))
+        })
+        .cloned()
+        .collect()
 }
 
 fn build_cleanup_actions(installed: &InstalledDependency) -> Vec<(String, CleanupAction)> {
@@ -1740,7 +1778,46 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::remove_created_files;
+    use super::{forget_winetricks_verb, overrides_to_remove, remove_created_files, stderr_tail};
+    use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn an_override_another_component_set_too_is_kept() {
+        let with = |dlls: &[&str]| InstalledDependency {
+            dll_overrides: dlls.iter().map(|dll| dll.to_string()).collect(),
+            ..InstalledDependency::default()
+        };
+        let state = PrefixDependencyState {
+            installed: BTreeMap::from([
+                ("dotnet40".to_string(), with(&["mscoree"])),
+                ("dotnet48".to_string(), with(&["mscoree", "fusion"])),
+            ]),
+            ..PrefixDependencyState::default()
+        };
+
+        assert_eq!(overrides_to_remove(&state, "dotnet48"), vec!["fusion"]);
+        assert!(overrides_to_remove(&state, "dotnet40").is_empty());
+    }
+
+    #[test]
+    fn a_failure_message_keeps_the_last_lines() {
+        let output: String = (1..=30).map(|n| format!("line {n}\n")).collect();
+        let tail = stderr_tail(output.as_bytes());
+        assert!(tail.starts_with("line 21\n"), "{tail}");
+        assert!(tail.ends_with("line 30"), "{tail}");
+        assert_eq!(stderr_tail(b"  only\n"), "only");
+    }
+
+    #[test]
+    fn a_forgotten_verb_leaves_the_others_in_the_log() {
+        let prefix = tempfile::tempdir().unwrap();
+        let log = prefix.path().join("winetricks.log");
+        std::fs::write(&log, "vcrun2019\nd3dx9\nvcrun2019\ncorefonts\n").unwrap();
+
+        forget_winetricks_verb(prefix.path().to_str().unwrap(), "vcrun2019").unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "d3dx9\ncorefonts\n");
+    }
 
     #[test]
     fn a_tracked_file_behind_a_linked_folder_is_not_removed() {

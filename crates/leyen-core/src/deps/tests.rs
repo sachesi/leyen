@@ -34,7 +34,9 @@ async fn test_sha256_verification() {
     // (the download itself fails here — nothing serves that URL).
     fs::write(&test_file, "corrupted").unwrap();
     let result = execute_dep_step(&step, "/tmp", "/tmp", &cache_path, &cancel).await;
-    assert!(result.is_err());
+    // curl's own reason reaches the message.
+    let error = result.unwrap_err();
+    assert!(!error.trim_end().ends_with(':'), "no reason given: {error}");
     assert!(!test_file.exists()); // Stale copy deleted before the retry
     // No temp file left behind by the failed download.
     let leftovers = fs::read_dir(cache_dir.path())

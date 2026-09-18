@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-15 14:01+0300\n"
+"POT-Creation-Date: 2026-09-18 00:13+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -999,7 +999,27 @@ msgstr ""
 "Пункти меню для запуску гри зі стільниці та командний рядок, щоб "
 "переглядати, запускати й зупиняти ігри"
 
+#: data/io.github.sachesi.leyen.metainfo.xml:22
+msgid "Keep every game in one library, on its own or in a group"
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:26
+msgid "Open a group to reach the games that share its prefix and Proton"
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:30
+msgid "Give a game its own Proton, prefix and launch arguments"
+msgstr ""
+
 #: data/io.github.sachesi.leyen.metainfo.xml:34
+msgid "Install winetricks components into the prefix of a game"
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:38
+msgid "Set the prefix, the Proton and the switches every new game inherits"
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:56
 msgid ""
 "A launch whose first command cannot start, such as a wrapper in the launch "
 "arguments that is not installed, no longer shows as running for good. "
@@ -1008,7 +1028,7 @@ msgid ""
 "reaching the log when it prints text that is not UTF-8."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:35
+#: data/io.github.sachesi.leyen.metainfo.xml:57
 msgid ""
 "Wine Configuration, the Registry Editor and programs run in a prefix are "
 "tracked by the daemon: while they, or anything they started, run, no game "
@@ -1018,7 +1038,7 @@ msgid ""
 "the systemd user session, as launching games does."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:36
+#: data/io.github.sachesi.leyen.metainfo.xml:58
 msgid ""
 "The umu-launcher and winetricks that Leyen downloads are releases pinned in "
 "it, refused unless their SHA-256 matches. The log file is readable by you "
@@ -1026,7 +1046,7 @@ msgid ""
 "editing a group updates its menu entries in one pass."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:41
+#: data/io.github.sachesi.leyen.metainfo.xml:63
 msgid ""
 "The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a "
 "page of its own that the back button, Escape or a swipe leave, and the "
@@ -1039,7 +1059,7 @@ msgid ""
 "scrolled to."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:42
+#: data/io.github.sachesi.leyen.metainfo.xml:64
 msgid ""
 "Adding and editing share one dialog for games and one for groups, which "
 "cannot add the same game twice. The prefix tools are rows, the menu entry of "
@@ -1049,7 +1069,7 @@ msgid ""
 "and a game that is running cannot be deleted, nor a group with one running."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:43
+#: data/io.github.sachesi.leyen.metainfo.xml:65
 msgid ""
 "The application id is io.github.sachesi.leyen; icons and menu entries "
 "written under the old id are moved over on the first start. Ctrl+Q quits, "
@@ -1059,7 +1079,7 @@ msgid ""
 "interface."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:48
+#: data/io.github.sachesi.leyen.metainfo.xml:70
 msgid ""
 "Winetricks components install again over an earlier attempt, removing one "
 "takes it out of the prefix's record, catalogue entries run the verbs "
@@ -1069,14 +1089,14 @@ msgid ""
 "runtimes are unpacked beside their destination before they replace it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:49
+#: data/io.github.sachesi.leyen.metainfo.xml:71
 msgid ""
 "The window survives a restart of the daemon and no longer rebuilds the "
 "library every few seconds while a game runs. The add and edit dialogs have a "
 "title, and a group can be edited from the header while it is open."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:54
+#: data/io.github.sachesi.leyen.metainfo.xml:76
 msgid ""
 "Downloaded runtimes are checked against their digests and winetricks is "
 "pinned to a known release. The files Leyen keeps carry a version of their "
@@ -1086,7 +1106,7 @@ msgid ""
 "task that crashes no longer leaves the window waiting on it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:59
+#: data/io.github.sachesi.leyen.metainfo.xml:81
 msgid ""
 "Files are read and written away from the thread drawing the window. A "
 "dependency job and a launch no longer run against the same prefix at once, a "
@@ -1094,11 +1114,11 @@ msgid ""
 "a running game that is no longer in the library."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:64
+#: data/io.github.sachesi.leyen.metainfo.xml:86
 msgid "The library keeps its scroll position when it is refreshed."
 msgstr "Бібліотека зберігає позицію прокручування під час оновлення."
 
-#: data/io.github.sachesi.leyen.metainfo.xml:69
+#: data/io.github.sachesi.leyen.metainfo.xml:91
 msgid ""
 "Games are started and tracked by a daemon on the session bus, which the "
 "window and the command line talk to. It exits when it has nothing to do, "

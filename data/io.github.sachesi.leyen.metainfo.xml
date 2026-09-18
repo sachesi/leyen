@@ -16,6 +16,28 @@
     </ul>
   </description>
   <launchable type="desktop-id">io.github.sachesi.leyen.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/library.png</image>
+      <caption>Keep every game in one library, on its own or in a group</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/group.png</image>
+      <caption>Open a group to reach the games that share its prefix and Proton</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/game-settings.png</image>
+      <caption>Give a game its own Proton, prefix and launch arguments</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/dependencies.png</image>
+      <caption>Install winetricks components into the prefix of a game</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/preferences.png</image>
+      <caption>Set the prefix, the Proton and the switches every new game inherits</caption>
+    </screenshot>
+  </screenshots>
   <url type="homepage">https://github.com/sachesi/leyen</url>
   <url type="bugtracker">https://github.com/sachesi/leyen/issues</url>
   <url type="vcs-browser">https://github.com/sachesi/leyen</url>

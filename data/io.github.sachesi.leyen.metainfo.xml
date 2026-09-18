@@ -18,23 +18,23 @@
   <launchable type="desktop-id">io.github.sachesi.leyen.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/library.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/library.png</image>
       <caption>Keep every game in one library, on its own or in a group</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/group.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/group.png</image>
       <caption>Open a group to reach the games that share its prefix and Proton</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/game-settings.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/game-settings.png</image>
       <caption>Give a game its own Proton, prefix and launch arguments</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/dependencies.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/dependencies.png</image>
       <caption>Install winetricks components into the prefix of a game</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/preferences.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/preferences.png</image>
       <caption>Set the prefix, the Proton and the switches every new game inherits</caption>
     </screenshot>
   </screenshots>
@@ -51,6 +51,12 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.9.1" date="2026-09-18">
+      <description>
+        <p>A dependency installed into a prefix that does not exist yet no longer counts the whole Wine installation as its own files, so removing it, or a failed install, leaves the prefix alone. Removing a component keeps the DLL overrides another installed component set too, and removes the overrides winetricks set, which were left behind. Reinstalling a winetricks component works again, the first install waits for winetricks to finish downloading, and the dependency manager waits for installs that take longer than five minutes, such as .NET.</p>
+        <p>A failed download says why, and a failed installer ends its message with the last lines of its output instead of all of it. A font installed again after All Fonts keeps All Fonts from being removed before it. A group title with an ampersand shows in the game dialog, and a menu entry is written only for a game ID Leyen gave.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-09-15">
       <description>
         <p>A launch whose first command cannot start, such as a wrapper in the launch arguments that is not installed, no longer shows as running for good. Stopping a game signals only that game's processes, even beside one with a similar executable name on the same prefix, and a game's output keeps reaching the log when it prints text that is not UTF-8.</p>

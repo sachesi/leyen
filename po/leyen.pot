@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: leyen 0.9.0\n"
+"Project-Id-Version: leyen 0.9.1\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-18 00:13+0300\n"
+"POT-Creation-Date: 2026-09-18 09:26+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,88 +18,88 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
-#: crates/leyen-core/src/deps/engine.rs:114
-#: crates/leyen-core/src/deps/engine.rs:187
-#: crates/leyen-core/src/deps/engine.rs:381
-#: crates/leyen-core/src/deps/engine.rs:448
-#: crates/leyen-core/src/deps/engine.rs:886
-#: crates/leyen-core/src/deps/engine.rs:887
-#: crates/leyen-core/src/deps/engine.rs:896
-#: crates/leyen-core/src/deps/engine.rs:917
-#: crates/leyen-core/src/deps/engine.rs:1144
-#: crates/leyen-core/src/deps/engine.rs:1291
+#: crates/leyen-core/src/deps/engine.rs:116
+#: crates/leyen-core/src/deps/engine.rs:189
+#: crates/leyen-core/src/deps/engine.rs:383
+#: crates/leyen-core/src/deps/engine.rs:451
+#: crates/leyen-core/src/deps/engine.rs:920
+#: crates/leyen-core/src/deps/engine.rs:921
+#: crates/leyen-core/src/deps/engine.rs:930
+#: crates/leyen-core/src/deps/engine.rs:951
+#: crates/leyen-core/src/deps/engine.rs:1155
+#: crates/leyen-core/src/deps/engine.rs:1302
 #, no-c-format
 msgid "Cancelled."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:142
+#: crates/leyen-core/src/deps/engine.rs:144
 #, no-c-format
 msgid "A systemd user session is required to install or remove dependencies."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:754
-#: crates/leyen-core/src/deps/engine.rs:1069
+#: crates/leyen-core/src/deps/engine.rs:775
+#: crates/leyen-core/src/deps/engine.rs:1103
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:765
+#: crates/leyen-core/src/deps/engine.rs:786
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:785
-#: crates/leyen-core/src/deps/engine.rs:1082
+#: crates/leyen-core/src/deps/engine.rs:806
+#: crates/leyen-core/src/deps/engine.rs:1116
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:791
+#: crates/leyen-core/src/deps/engine.rs:812
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1039
+#: crates/leyen-core/src/deps/engine.rs:1073
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1088
+#: crates/leyen-core/src/deps/engine.rs:1122
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1092
+#: crates/leyen-core/src/deps/engine.rs:1126
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1214
+#: crates/leyen-core/src/deps/engine.rs:1225
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
 "reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1217
+#: crates/leyen-core/src/deps/engine.rs:1228
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
 "were not reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1219
+#: crates/leyen-core/src/deps/engine.rs:1230
 #, no-c-format
 msgid "Removed from tracking."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1234
+#: crates/leyen-core/src/deps/engine.rs:1245
 #: crates/leyen-core/src/launch.rs:1824
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1246
+#: crates/leyen-core/src/deps/engine.rs:1257
 #: crates/leyen-core/src/launch.rs:1837 crates/leyen-core/src/prefix_tool.rs:77
 #: crates/leyen-gtk/src/prefix_tools.rs:22
 #, no-c-format
@@ -108,17 +108,17 @@ msgid ""
 "restart."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1254
+#: crates/leyen-core/src/deps/engine.rs:1265
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1265 crates/leyen-gtk/src/window.rs:473
+#: crates/leyen-core/src/deps/engine.rs:1276 crates/leyen-gtk/src/window.rs:473
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1281
+#: crates/leyen-core/src/deps/engine.rs:1292
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr ""
@@ -223,99 +223,99 @@ msgstr ""
 
 #: crates/leyen-gtk/src/daemon.rs:613 crates/leyen-gtk/src/desktop.rs:25
 #: crates/leyen-gtk/src/desktop.rs:40 crates/leyen-gtk/src/desktop.rs:58
-#: crates/leyen-gtk/src/desktop.rs:95 crates/leyen-gtk/src/desktop.rs:116
+#: crates/leyen-gtk/src/desktop.rs:100 crates/leyen-gtk/src/desktop.rs:121
 #: crates/leyen-gtk/src/dialogs/mod.rs:159
 #: crates/leyen-gtk/src/dialogs/mod.rs:175
 #, no-c-format
 msgid "Internal error: background task failed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:143
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:146
 #, no-c-format
 msgid ""
 "Dependency manager is blocked while games are running. Close all games first."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:187
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:190
 #, no-c-format
 msgid "No components installed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:190
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:193
 #, no-c-format
 msgid "{} component installed"
 msgid_plural "{} components installed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:231
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:234
 #, no-c-format
 msgid "Installed"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:302
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:305
 #: crates/leyen-gtk/src/dialogs/dependency_row.rs:121
 #, no-c-format
 msgid "Required by: {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:319
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:322
 #, no-c-format
 msgid "'{}' installed successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:323
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:326
 #, no-c-format
 msgid "'{}' installed successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:326
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:329
 #, no-c-format
 msgid "'{}' reinstalled successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:331
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:334
 #, no-c-format
 msgid "'{}' reinstalled successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:333
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:336
 #, no-c-format
 msgid "'{}' removed successfully. {}"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:337
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:340
 #, no-c-format
 msgid "'{}' removed successfully."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:340
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:343
 #, no-c-format
 msgid "Installation failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:341
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:344
 #, no-c-format
 msgid "Reinstall failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:342
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:345
 #, no-c-format
 msgid "Remove failed."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:354
-#: crates/leyen-model/src/deps/state.rs:71
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:357
+#: crates/leyen-model/src/deps/state.rs:72
 #, no-c-format
 msgid "This removes the dependency from Leyen's tracking."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:357
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:360
 #, no-c-format
 msgid "Remove '{}'?"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:361
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:364
 #: crates/leyen-gtk/src/dialogs/preferences.rs:208
 #: crates/leyen-gtk/src/window.rs:728 ui/dependency_row.ui:41
 #: ui/game_dialog.ui:28 ui/group_dialog.ui:28
@@ -323,18 +323,18 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:362 ui/dependency_row.ui:75
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:365 ui/dependency_row.ui:75
 #, no-c-format
 msgid "Remove"
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:398
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:408
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:401
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:411
 #, no-c-format
 msgid "Timed out waiting for the daemon."
 msgstr ""
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:429
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:433
 #, no-c-format
 msgid "The daemon restarted; the operation's outcome is unknown."
 msgstr ""
@@ -890,19 +890,19 @@ msgstr ""
 msgid "'{}' deleted successfully"
 msgstr ""
 
-#: crates/leyen-model/src/deps/state.rs:63
+#: crates/leyen-model/src/deps/state.rs:64
 #, no-c-format
 msgid ""
 "This will remove Leyen-tracked files and overrides from the prefix. Some "
 "existing prefix files were changed during installation and may remain."
 msgstr ""
 
-#: crates/leyen-model/src/deps/state.rs:66
+#: crates/leyen-model/src/deps/state.rs:67
 #, no-c-format
 msgid "This will remove Leyen-tracked files and overrides from the prefix."
 msgstr ""
 
-#: crates/leyen-model/src/deps/state.rs:69
+#: crates/leyen-model/src/deps/state.rs:70
 #, no-c-format
 msgid ""
 "Leyen can remove this dependency from tracking, but it cannot undo registry "
@@ -976,6 +976,27 @@ msgstr ""
 
 #: data/io.github.sachesi.leyen.metainfo.xml:56
 msgid ""
+"A dependency installed into a prefix that does not exist yet no longer "
+"counts the whole Wine installation as its own files, so removing it, or a "
+"failed install, leaves the prefix alone. Removing a component keeps the DLL "
+"overrides another installed component set too, and removes the overrides "
+"winetricks set, which were left behind. Reinstalling a winetricks component "
+"works again, the first install waits for winetricks to finish downloading, "
+"and the dependency manager waits for installs that take longer than five "
+"minutes, such as .NET."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:57
+msgid ""
+"A failed download says why, and a failed installer ends its message with the "
+"last lines of its output instead of all of it. A font installed again after "
+"All Fonts keeps All Fonts from being removed before it. A group title with "
+"an ampersand shows in the game dialog, and a menu entry is written only for "
+"a game ID Leyen gave."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:62
+msgid ""
 "A launch whose first command cannot start, such as a wrapper in the launch "
 "arguments that is not installed, no longer shows as running for good. "
 "Stopping a game signals only that game's processes, even beside one with a "
@@ -983,7 +1004,7 @@ msgid ""
 "reaching the log when it prints text that is not UTF-8."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:57
+#: data/io.github.sachesi.leyen.metainfo.xml:63
 msgid ""
 "Wine Configuration, the Registry Editor and programs run in a prefix are "
 "tracked by the daemon: while they, or anything they started, run, no game "
@@ -993,7 +1014,7 @@ msgid ""
 "the systemd user session, as launching games does."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:58
+#: data/io.github.sachesi.leyen.metainfo.xml:64
 msgid ""
 "The umu-launcher and winetricks that Leyen downloads are releases pinned in "
 "it, refused unless their SHA-256 matches. The log file is readable by you "
@@ -1001,7 +1022,7 @@ msgid ""
 "editing a group updates its menu entries in one pass."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:63
+#: data/io.github.sachesi.leyen.metainfo.xml:69
 msgid ""
 "The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a "
 "page of its own that the back button, Escape or a swipe leave, and the "
@@ -1014,7 +1035,7 @@ msgid ""
 "scrolled to."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:64
+#: data/io.github.sachesi.leyen.metainfo.xml:70
 msgid ""
 "Adding and editing share one dialog for games and one for groups, which "
 "cannot add the same game twice. The prefix tools are rows, the menu entry of "
@@ -1024,7 +1045,7 @@ msgid ""
 "and a game that is running cannot be deleted, nor a group with one running."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:65
+#: data/io.github.sachesi.leyen.metainfo.xml:71
 msgid ""
 "The application id is io.github.sachesi.leyen; icons and menu entries "
 "written under the old id are moved over on the first start. Ctrl+Q quits, "
@@ -1034,7 +1055,7 @@ msgid ""
 "interface."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:70
+#: data/io.github.sachesi.leyen.metainfo.xml:76
 msgid ""
 "Winetricks components install again over an earlier attempt, removing one "
 "takes it out of the prefix's record, catalogue entries run the verbs "
@@ -1044,14 +1065,14 @@ msgid ""
 "runtimes are unpacked beside their destination before they replace it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:71
+#: data/io.github.sachesi.leyen.metainfo.xml:77
 msgid ""
 "The window survives a restart of the daemon and no longer rebuilds the "
 "library every few seconds while a game runs. The add and edit dialogs have a "
 "title, and a group can be edited from the header while it is open."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:76
+#: data/io.github.sachesi.leyen.metainfo.xml:82
 msgid ""
 "Downloaded runtimes are checked against their digests and winetricks is "
 "pinned to a known release. The files Leyen keeps carry a version of their "
@@ -1061,7 +1082,7 @@ msgid ""
 "task that crashes no longer leaves the window waiting on it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:81
+#: data/io.github.sachesi.leyen.metainfo.xml:87
 msgid ""
 "Files are read and written away from the thread drawing the window. A "
 "dependency job and a launch no longer run against the same prefix at once, a "
@@ -1069,11 +1090,11 @@ msgid ""
 "a running game that is no longer in the library."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:86
+#: data/io.github.sachesi.leyen.metainfo.xml:92
 msgid "The library keeps its scroll position when it is refreshed."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:91
+#: data/io.github.sachesi.leyen.metainfo.xml:97
 msgid ""
 "Games are started and tracked by a daemon on the session bus, which the "
 "window and the command line talk to. It exits when it has nothing to do, "
@@ -1083,7 +1104,7 @@ msgid ""
 msgstr ""
 
 #: ui/dependencies_page.ui:10 ui/dependencies_page.ui:21
-#: ui/prefix_tools_group.ui:35
+#: ui/prefix_tools_group.ui:36
 msgid "Manage Dependencies"
 msgstr ""
 
@@ -1119,104 +1140,104 @@ msgstr ""
 msgid "Group"
 msgstr ""
 
-#: ui/game_dialog.ui:82
+#: ui/game_dialog.ui:83
 msgid "Settings"
 msgstr ""
 
-#: ui/game_dialog.ui:85
+#: ui/game_dialog.ui:86
 msgid "Leyen ID"
 msgstr ""
 
-#: ui/game_dialog.ui:94
+#: ui/game_dialog.ui:95
 msgid "Game ID"
 msgstr ""
 
-#: ui/game_dialog.ui:103 ui/group_dialog.ui:61
+#: ui/game_dialog.ui:104 ui/group_dialog.ui:61
 msgid "Custom Icon"
 msgstr ""
 
-#: ui/game_dialog.ui:104
+#: ui/game_dialog.ui:105
 msgid "Use a custom icon instead of extracting one from the executable."
 msgstr ""
 
-#: ui/game_dialog.ui:109 ui/group_dialog.ui:67
+#: ui/game_dialog.ui:110 ui/group_dialog.ui:67
 msgid "Icon File"
 msgstr ""
 
-#: ui/game_dialog.ui:113
+#: ui/game_dialog.ui:114
 msgid "Browse for custom icon"
 msgstr ""
 
-#: ui/game_dialog.ui:127 ui/group_dialog.ui:85
+#: ui/game_dialog.ui:128 ui/group_dialog.ui:85
 msgid "Custom Prefix"
 msgstr ""
 
-#: ui/game_dialog.ui:128
+#: ui/game_dialog.ui:129
 msgid ""
 "Use a per-game prefix instead of the inherited group and global defaults."
 msgstr ""
 
-#: ui/game_dialog.ui:134 ui/group_dialog.ui:92
+#: ui/game_dialog.ui:135 ui/group_dialog.ui:92
 msgid "Prefix"
 msgstr ""
 
-#: ui/game_dialog.ui:138 ui/group_dialog.ui:96 ui/preferences_dialog.ui:24
+#: ui/game_dialog.ui:139 ui/group_dialog.ui:96 ui/preferences_dialog.ui:24
 msgid "Browse for prefix folder"
 msgstr ""
 
-#: ui/game_dialog.ui:152 ui/game_dialog.ui:165 ui/group_dialog.ui:110
+#: ui/game_dialog.ui:153 ui/game_dialog.ui:166 ui/group_dialog.ui:110
 msgid "Proton"
 msgstr ""
 
-#: ui/game_dialog.ui:157
+#: ui/game_dialog.ui:158
 msgid "Custom Proton"
 msgstr ""
 
-#: ui/game_dialog.ui:158
+#: ui/game_dialog.ui:159
 msgid "Use a per-game Proton version instead of the inherited default."
 msgstr ""
 
-#: ui/game_dialog.ui:172
+#: ui/game_dialog.ui:173
 msgid "Launch Arguments"
 msgstr ""
 
-#: ui/game_dialog.ui:187
+#: ui/game_dialog.ui:188
 msgid "Environment"
 msgstr ""
 
-#: ui/game_dialog.ui:190 ui/preferences_dialog.ui:52
+#: ui/game_dialog.ui:191 ui/preferences_dialog.ui:52
 msgid "MangoHud"
 msgstr ""
 
-#: ui/game_dialog.ui:195 ui/preferences_dialog.ui:57
+#: ui/game_dialog.ui:196 ui/preferences_dialog.ui:57
 msgid "GameMode"
 msgstr ""
 
-#: ui/game_dialog.ui:200 ui/preferences_dialog.ui:62
+#: ui/game_dialog.ui:201 ui/preferences_dialog.ui:62
 msgid "Wayland"
 msgstr ""
 
-#: ui/game_dialog.ui:205 ui/preferences_dialog.ui:67
+#: ui/game_dialog.ui:206 ui/preferences_dialog.ui:67
 msgid "WoW64"
 msgstr ""
 
-#: ui/game_dialog.ui:210 ui/preferences_dialog.ui:72
+#: ui/game_dialog.ui:211 ui/preferences_dialog.ui:72
 msgid "NTSync"
 msgstr ""
 
-#: ui/game_dialog.ui:215 ui/preferences_dialog.ui:77
+#: ui/game_dialog.ui:216 ui/preferences_dialog.ui:77
 msgid "HDR"
 msgstr ""
 
-#: ui/game_dialog.ui:220 ui/preferences_dialog.ui:82
+#: ui/game_dialog.ui:221 ui/preferences_dialog.ui:82
 msgid "Proton Log"
 msgstr ""
 
-#: ui/game_dialog.ui:235
+#: ui/game_dialog.ui:236
 msgid "Menu Entry"
 msgstr ""
 
-#: ui/game_dialog.ui:236
+#: ui/game_dialog.ui:237
 msgid "Start the game from the applications menu"
 msgstr ""
 
@@ -1369,15 +1390,15 @@ msgstr ""
 msgid "Tools"
 msgstr ""
 
-#: ui/prefix_tools_group.ui:21
+#: ui/prefix_tools_group.ui:22
 msgid "Wine Configuration"
 msgstr ""
 
-#: ui/prefix_tools_group.ui:28
+#: ui/prefix_tools_group.ui:29
 msgid "Registry Editor"
 msgstr ""
 
-#: ui/prefix_tools_group.ui:48
+#: ui/prefix_tools_group.ui:49
 msgid "Run a Program…"
 msgstr ""
 

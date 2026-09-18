@@ -6,8 +6,8 @@ with its group, and a daemon on the session bus launches, tracks and stops them,
 window, the applications menu and the command line see the same running games.
 
 <p align="center">
-  <img src="data/screenshots/library.png" width="45%" alt="The library, with two groups and three games">
-  <img src="data/screenshots/group.png" width="45%" alt="A group opened on its page, with its five games">
+  <img src="data/screenshots/library.png" width="49%" alt="The library, with two groups and three games">
+  <img src="data/screenshots/group.png" width="49%" alt="A group opened on its page, with its five games">
 </p>
 
 You need GTK 4.22, libadwaita 1.9, a session bus and a systemd user session.

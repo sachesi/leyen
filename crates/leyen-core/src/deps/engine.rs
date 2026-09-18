@@ -1128,8 +1128,22 @@ pub async fn uninstall_dep(
             .replacen("{}", &dependents.join(", "), 1));
     }
 
+    // Earlier records of a winetricks component name its overrides without the
+    // `*` winetricks writes them with, which removed nothing.
+    let by_winetricks = get_dep_steps(&dep_id)
+        .iter()
+        .any(|step| matches!(step.action, DepStepAction::RunWinetricks { .. }));
     let actions = build_cleanup_actions(&InstalledDependency {
-        dll_overrides: overrides_to_remove(&state, &dep_id),
+        dll_overrides: overrides_to_remove(&state, &dep_id)
+            .into_iter()
+            .map(|dll| {
+                if by_winetricks && !dll.starts_with('*') {
+                    format!("*{dll}")
+                } else {
+                    dll
+                }
+            })
+            .collect(),
         ..installed.clone()
     });
 
@@ -1524,24 +1538,18 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
     changes
 }
 
+/// The DLL overrides `verb` sets, as winetricks writes them: with a leading
+/// `*`, and removed only under that name.
 fn winetricks_known_dll_overrides(verb: &str) -> Vec<String> {
-    match verb {
-        "d3dcompiler_42" | "d3dcompiler_43" | "d3dcompiler_46" | "d3dcompiler_47" => {
-            vec![verb.to_string()]
-        }
+    let dlls = match verb {
         "d3dx9" => (24..=43).map(|n| format!("d3dx9_{n}")).collect(),
-        "d3dx11" | "d3dx11_42" | "d3dx11_43" => (42..=43).map(|n| format!("d3dx11_{n}")).collect(),
-        "dx8vb" => vec!["dx8vb".to_string()],
-        "amstream" => vec!["amstream".to_string()],
-        "devenum" => vec!["devenum".to_string()],
-        "dmband" | "dmcompos" | "dmime" | "dmloader" | "dmscript" | "dmstyle" | "dmsynth"
-        | "dmusic" | "dmusic32" | "dsound" | "dswave" | "dsdmo" => vec![verb.to_string()],
-        "qasf" | "qcap" | "qdvd" | "qedit" => {
-            vec!["qasf".into(), "qcap".into(), "qdvd".into(), "qedit".into()]
-        }
-        "quartz" => vec!["quartz".to_string()],
-        _ => vec![],
-    }
+        "d3dcompiler_42" | "d3dcompiler_43" | "d3dcompiler_46" | "d3dcompiler_47" | "d3dx11_42"
+        | "d3dx11_43" | "dx8vb" | "amstream" | "devenum" | "dmband" | "dmcompos" | "dmime"
+        | "dmloader" | "dmscript" | "dmstyle" | "dmsynth" | "dmusic" | "dmusic32" | "dsound"
+        | "dswave" | "qasf" | "qcap" | "qdvd" | "qedit" | "quartz" => vec![verb.to_string()],
+        _ => Vec::new(),
+    };
+    dlls.into_iter().map(|dll| format!("*{dll}")).collect()
 }
 
 fn path_to_prefix_relative(prefix_root: &Path, path: &Path) -> Option<String> {
@@ -1771,7 +1779,10 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::{forget_winetricks_verb, overrides_to_remove, remove_created_files, stderr_tail};
+    use super::{
+        forget_winetricks_verb, overrides_to_remove, remove_created_files, stderr_tail,
+        winetricks_known_dll_overrides,
+    };
     use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
     use std::collections::BTreeMap;
 
@@ -1791,6 +1802,17 @@ mod tests {
 
         assert_eq!(overrides_to_remove(&state, "dotnet48"), vec!["fusion"]);
         assert!(overrides_to_remove(&state, "dotnet40").is_empty());
+    }
+
+    #[test]
+    fn winetricks_overrides_are_named_as_winetricks_writes_them() {
+        assert_eq!(winetricks_known_dll_overrides("qcap"), vec!["*qcap"]);
+        assert_eq!(
+            winetricks_known_dll_overrides("d3dx11_43"),
+            vec!["*d3dx11_43"]
+        );
+        assert_eq!(winetricks_known_dll_overrides("d3dx9").len(), 20);
+        assert!(winetricks_known_dll_overrides("dsdmo").is_empty());
     }
 
     #[test]

@@ -16,6 +16,15 @@ and winetricks the first time they are needed, unless `umu-run` and `winetricks`
 already in `PATH`. MangoHud and GameMode are optional: their switches appear once
 `mangohud` and `gamemoderun` are installed.
 
+## Packages
+
+Arch Linux: [packaging/aur/PKGBUILD](../packaging/aur/PKGBUILD) builds the latest release
+with `makepkg -si`. Nix: the flake's package goes in `environment.systemPackages` or `nix
+profile install github:sachesi/leyen`; `nix run` does not work, because the session bus only
+starts the daemon from a D-Bus service file in an installed `share` directory. `nix develop`
+gives a shell with the build tools. There is no Flatpak: games run in systemd scopes of the
+user session, which a sandbox cannot create.
+
 ## Build
 
     just build          # release

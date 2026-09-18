@@ -129,7 +129,7 @@ pub fn get_umu_run_path() -> String {
 }
 
 /// `true` when `umu-run` is actually available (system PATH or local install).
-/// Cached with 1s TTL — avoids a `which`-style probe on hot paths.
+/// A hit is cached for 1s — avoids a `which`-style probe on hot paths.
 pub fn is_umu_run_available() -> bool {
     static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| {
@@ -140,10 +140,12 @@ pub fn is_umu_run_available() -> bool {
                 .unwrap_or_else(Instant::now),
         ))
     });
+    // Only a hit is reused: a miss cached across a download would outlive it.
     if let Ok(guard) = cache.read()
+        && guard.0
         && guard.1.elapsed() < Duration::from_secs(1)
     {
-        return guard.0;
+        return true;
     }
     let result = is_umu_run_available_impl();
     if let Ok(mut guard) = cache.write() {
@@ -197,7 +199,7 @@ pub fn get_winetricks_path() -> String {
 }
 
 /// `true` when `winetricks` is available (system PATH or local download).
-/// Cached with 1s TTL.
+/// A hit is cached for 1s.
 pub fn is_winetricks_available() -> bool {
     static CACHE: OnceLock<RwLock<(bool, Instant)>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| {
@@ -208,10 +210,12 @@ pub fn is_winetricks_available() -> bool {
                 .unwrap_or_else(Instant::now),
         ))
     });
+    // Only a hit is reused: a miss cached across a download would outlive it.
     if let Ok(guard) = cache.read()
+        && guard.0
         && guard.1.elapsed() < Duration::from_secs(1)
     {
-        return guard.0;
+        return true;
     }
     let result = is_winetricks_available_impl();
     if let Ok(mut guard) = cache.write() {

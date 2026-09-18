@@ -1128,22 +1128,8 @@ pub async fn uninstall_dep(
             .replacen("{}", &dependents.join(", "), 1));
     }
 
-    // Earlier records of a winetricks component name its overrides without the
-    // `*` winetricks writes them with, which removed nothing.
-    let by_winetricks = get_dep_steps(&dep_id)
-        .iter()
-        .any(|step| matches!(step.action, DepStepAction::RunWinetricks { .. }));
     let actions = build_cleanup_actions(&InstalledDependency {
-        dll_overrides: overrides_to_remove(&state, &dep_id)
-            .into_iter()
-            .map(|dll| {
-                if by_winetricks && !dll.starts_with('*') {
-                    format!("*{dll}")
-                } else {
-                    dll
-                }
-            })
-            .collect(),
+        dll_overrides: overrides_to_remove(&state, &dep_id),
         ..installed.clone()
     });
 
@@ -1575,16 +1561,34 @@ fn overrides_to_remove(
     let Some(installed) = state.installed.get(dep_id) else {
         return Vec::new();
     };
-    installed
-        .dll_overrides
-        .iter()
+    set_overrides(dep_id, installed)
+        .into_iter()
         .filter(|dll| {
             !state
                 .installed
                 .iter()
-                .any(|(id, other)| id != dep_id && other.dll_overrides.contains(dll))
+                .any(|(id, other)| id != dep_id && set_overrides(id, other).contains(dll))
         })
-        .cloned()
+        .collect()
+}
+
+/// The overrides `dep_id` set. Those of a winetricks component come from what
+/// its verbs set: earlier records name them without winetricks' `*`, and with
+/// verbs that set others' too.
+fn set_overrides(dep_id: &str, installed: &InstalledDependency) -> Vec<String> {
+    let verbs: Vec<String> = get_dep_steps(dep_id)
+        .into_iter()
+        .filter_map(|step| match step.action {
+            DepStepAction::RunWinetricks { verb } => Some(verb),
+            _ => None,
+        })
+        .collect();
+    if verbs.is_empty() {
+        return installed.dll_overrides.clone();
+    }
+    verbs
+        .iter()
+        .flat_map(|verb| winetricks_known_dll_overrides(verb))
         .collect()
 }
 
@@ -1802,6 +1806,27 @@ mod tests {
 
         assert_eq!(overrides_to_remove(&state, "dotnet48"), vec!["fusion"]);
         assert!(overrides_to_remove(&state, "dotnet40").is_empty());
+    }
+
+    #[test]
+    fn an_earlier_record_removes_only_what_its_verb_set() {
+        let with = |dlls: &[&str]| InstalledDependency {
+            dll_overrides: dlls.iter().map(|dll| dll.to_string()).collect(),
+            ..InstalledDependency::default()
+        };
+        let state = PrefixDependencyState {
+            installed: BTreeMap::from([
+                (
+                    "qedit".to_string(),
+                    with(&["qasf", "qcap", "qdvd", "qedit"]),
+                ),
+                ("qcap".to_string(), with(&["*qcap"])),
+            ]),
+            ..PrefixDependencyState::default()
+        };
+
+        assert_eq!(overrides_to_remove(&state, "qedit"), vec!["*qedit"]);
+        assert_eq!(overrides_to_remove(&state, "qcap"), vec!["*qcap"]);
     }
 
     #[test]

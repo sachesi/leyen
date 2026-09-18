@@ -837,15 +837,8 @@ pub async fn install_dep(
         let mut cmd = AsyncCommand::new(get_umu_run_path());
         configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
         cmd.arg("createprefix");
-        let output = run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
-        if !output.status.success() {
-            warn!(
-                "[dep:{}] preparing the prefix exited with {}: {}",
-                dep_id,
-                output.status,
-                stderr_tail(&output.stderr)
-            );
-        }
+        // Proton then runs no program and exits 1 even though the prefix is ready.
+        run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
     }
 
     let mut completed_steps = 0usize;

@@ -21,7 +21,10 @@ use crate::daemon::{self, DaemonEvent, gio_blocking};
 
 /// Backstop for a job whose daemon dies without ever sending `DepFinished`,
 /// `DaemonRestarted`, or `Error`: without this the row would spin forever.
-const DEP_JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// Counted from the job's last progress, and longer than the daemon can go
+/// without one: a download may retry for about 20 minutes, a command runs for
+/// up to 10. A .NET install as a whole takes longer than any fixed limit.
+const DEP_JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25 * 60);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Operation {
@@ -391,7 +394,7 @@ impl DependenciesPage {
         };
         imp.job.replace(Some(job_id.clone()));
 
-        let deadline = std::time::Instant::now() + DEP_JOB_TIMEOUT;
+        let mut deadline = std::time::Instant::now() + DEP_JOB_TIMEOUT;
         loop {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
@@ -413,6 +416,7 @@ impl DependenciesPage {
                 DaemonEvent::DepProgress {
                     job_id: job, msg, ..
                 } if job == job_id => {
+                    deadline = std::time::Instant::now() + DEP_JOB_TIMEOUT;
                     row.set_progress(&msg);
                 }
                 DaemonEvent::DepFinished {

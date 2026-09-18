@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::daemon::gio_blocking;
 use leyen_model::i18n::gettext;
 use leyen_model::icons::game_icon_file;
-use leyen_model::library::effective_game_id;
+use leyen_model::library::{effective_game_id, is_leyen_id};
 use leyen_model::models::{Game, GameGroup};
 
 pub fn desktop_entry_exists(leyen_id: &str) -> bool {
@@ -64,6 +64,11 @@ fn write_game_desktop_entry(
     group: Option<&GameGroup>,
     existing: &[PathBuf],
 ) -> Result<PathBuf, String> {
+    // The id goes into the Exec line as it is; one edited by hand in the library
+    // could otherwise add lines of its own to the entry.
+    if !is_leyen_id(&game.leyen_id) {
+        return Err(format!("unexpected game ID {:?}", game.leyen_id));
+    }
     let path = desired_desktop_entry_path(game, group);
     ensure_applications_dir()?;
     // `existing` may come from one read for a whole group, before earlier games
@@ -264,7 +269,7 @@ fn sanitize_desktop_file_name(value: &str) -> String {
 mod tests {
     use super::{
         desktop_entry_file_name, desktop_icon, disambiguate_file_name, owned_desktop_entries_in,
-        render_game_desktop_entry, startup_wm_class,
+        render_game_desktop_entry, startup_wm_class, write_game_desktop_entry,
     };
     use leyen_model::models::{Game, GameGroup, GroupLaunchDefaults};
 
@@ -304,6 +309,13 @@ mod tests {
         assert!(rendered.contains("Exec=leyen run ly-1234"));
         assert!(rendered.contains("Name=Nier Replicant"));
         assert!(rendered.contains("StartupWMClass=steam_app_ly1234"));
+    }
+
+    #[test]
+    fn no_entry_is_written_for_a_game_id_leyen_did_not_give() {
+        let mut game = sample_game();
+        game.leyen_id = "ly-1234\nExec=true".to_string();
+        assert!(write_game_desktop_entry(&game, None, &[]).is_err());
     }
 
     #[test]

@@ -271,6 +271,13 @@ pub fn generate_unique_leyen_id(items: &[LibraryItem]) -> String {
     }
 }
 
+/// Whether `id` has the shape Leyen gives a game: `ly-` and digits, more than four
+/// once those run out. Menu entries carry it, so they are written for no other.
+pub fn is_leyen_id(id: &str) -> bool {
+    id.strip_prefix(LEYEN_ID_PREFIX)
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
 #[cfg(test)]
 pub(crate) fn is_valid_leyen_id(id: &str) -> bool {
     id.starts_with(LEYEN_ID_PREFIX)
@@ -312,6 +319,16 @@ mod tests {
         assert!(!is_valid_leyen_id("ly-253"));
         assert!(!is_valid_leyen_id("ly-25a4"));
         assert!(!is_valid_leyen_id("game-2534"));
+    }
+
+    #[test]
+    fn leyen_ids_are_ly_and_digits() {
+        assert!(is_leyen_id("ly-2534"));
+        assert!(is_leyen_id("ly-10000"));
+        assert!(!is_leyen_id("ly-"));
+        assert!(!is_leyen_id("ly-1 --help"));
+        assert!(!is_leyen_id("ly-1\nExec=true"));
+        assert!(!is_leyen_id("game-2534"));
     }
 
     #[test]

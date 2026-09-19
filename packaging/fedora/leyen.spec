@@ -4,6 +4,7 @@
 %global app_id io.github.sachesi.leyen
 
 Name:           leyen
+# The release workflow and Copr set Version to the tag they build.
 Version:        0.9.1
 Release:        1%{?dist}
 Summary:        Run Windows games with Proton
@@ -11,6 +12,8 @@ Summary:        Run Windows games with Proton
 License:        GPL-3.0-or-later
 URL:            https://github.com/sachesi/leyen
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+# The crates the build needs, from the release, so that it runs without a network.
+Source1:        %{url}/releases/download/v%{version}/%{name}-%{version}-vendor.tar.xz
 
 BuildRequires:  cargo
 BuildRequires:  rust >= 1.92
@@ -52,7 +55,7 @@ entries that start a game from the desktop, and leyen list, run, kill and logs
 for the terminal.
 
 %prep
-%autosetup -n %{name}-%{version}
+%autosetup -n %{name}-%{version} -b 1
 
 %build
 export CARGO_HOME="$PWD/.cargo-home"
@@ -60,7 +63,7 @@ export RUSTFLAGS="%{?build_rustflags}"
 %if 0%{?_cargo_target_dir:1}
 export CARGO_TARGET_DIR="%{_cargo_target_dir}"
 %endif
-cargo build --release --workspace
+cargo build --release --workspace --offline --locked
 
 %install
 %if 0%{?_cargo_target_dir:1}

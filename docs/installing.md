@@ -18,8 +18,8 @@ already in `PATH`. MangoHud and GameMode are optional: their switches appear onc
 
 ## Packages
 
-Arch Linux: the AUR package `leyen`, built from
-[packaging/aur/PKGBUILD](../packaging/aur/PKGBUILD), which each release tag updates. Nix: the flake's package goes in `environment.systemPackages` or `nix
+Packages for Fedora, openSUSE, Debian, Ubuntu and Arch Linux, and how to install them, are in
+the [README](../README.md#packages). Nix: the flake's package goes in `environment.systemPackages` or `nix
 profile install github:sachesi/leyen`; `nix run` does not work, because the session bus only
 starts the daemon from a D-Bus service file in an installed `share` directory. `nix develop`
 gives a shell with the build tools. There is no Flatpak: games run in systemd scopes of the

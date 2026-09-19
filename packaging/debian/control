@@ -1,0 +1,43 @@
+Source: leyen
+Section: games
+Priority: optional
+Maintainer: sachesi <xsachesi@pm.me>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.92),
+               pkg-config,
+               just,
+               blueprint-compiler,
+               gettext,
+               libglib2.0-dev,
+               libgtk-4-dev (>= 4.22),
+               libadwaita-1-dev (>= 1.9)
+Standards-Version: 4.7.2
+Homepage: https://github.com/sachesi/leyen
+Rules-Requires-Root: no
+
+Package: leyen
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libgtk-4-1 (>= 4.22),
+         libadwaita-1-0 (>= 1.9),
+         hicolor-icon-theme,
+         dbus,
+         systemd,
+         curl,
+         tar
+Recommends: mangohud,
+            gamemode
+Description: Run Windows games with Proton
+ Leyen keeps a library of Windows games and runs them with Proton through umu-
+ launcher, each in its own Wine prefix or in one shared with its group. A daemon
+ on the session bus launches, tracks and stops the games, so the window, the
+ applications menu and the command line see the same running games.
+ .
+ Groups with a prefix and a Proton their games inherit, playtime and the last
+ session of every game, per-game launch arguments, MangoHud, GameMode, Wayland,
+ WoW64, NTSync and HDR switches, winetricks components managed per prefix, the
+ Wine configuration and the registry editor for any prefix, a live log, menu
+ entries that start a game from the desktop, and leyen list, run, kill and logs
+ for the terminal.

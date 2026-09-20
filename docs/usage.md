@@ -44,11 +44,11 @@ the content beside it — the folder above. Everything else has a default:
   `DXVK_HUD=fps %command% -windowed`.
 - **Environment**: MangoHud, Wayland, WoW64, NTSync, HDR and a Proton log, each
   on or off for this game. A new game starts with the switches from the preferences.
-- **Sandbox** is what the game may reach besides its own folder. **Network Access** is Default, which takes the answer from the group and then the
-  preferences, Allowed, or Blocked. **Extra Folders** are folders to share on top: mods kept
-  elsewhere, assets on another drive, a save folder of your own, each read-only unless
-  switched writable. The group and the preferences share folders with every game the same
-  way.
+- **Sandbox** is what the game may reach besides its own folder. **Network Access** is
+  Default, which takes the answer from the group and then the preferences, Allowed, or
+  Blocked. **Extra Folders** are folders to share on top: mods kept elsewhere, assets on
+  another drive, a save folder of your own, each read-only unless switched writable. The
+  group and the preferences share folders with every game the same way.
 
 Adding a game also adds it to the applications menu. **Menu Entry** in its settings removes
 it or adds it again; the entry runs `leyen run <Leyen ID>` and is named after the game, or

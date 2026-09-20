@@ -35,6 +35,11 @@ The executable has to be inside the folder the game is given, or inside its pref
 sees nothing else of yours, so an executable elsewhere could not be started even if Leyen
 tried. Point **Game Folder** at the folder that holds the executable, or higher.
 
+The two paths have to be written the same way, too. A folder shared with a game is there
+under the path it was given, so a game folder named through a symlink and an executable
+named through the folder it points at do not meet, and the refusal is the same. Write both
+through the link, or both through the real path.
+
 ## A game does not find its own files
 
 The sandbox gives a game one folder of yours: **Game Folder** in its settings. For a game

@@ -15,8 +15,8 @@ that cannot build the sandbox does not launch the game.
   <img src="data/screenshots/group.png" width="49%" alt="A group opened on its page, with its five games">
 </p>
 
-You need GTK 4.22, libadwaita 1.9, bubblewrap, a session bus and a systemd
-user session.
+You need GTK 4.22, libadwaita 1.9, bubblewrap, `nsenter` from util-linux, a session bus and a
+systemd user session.
 
 Groups with a prefix and a Proton their games inherit, playtime and the last session of
 every game, per-game launch arguments with `%command%`, MangoHud, Wayland, WoW64,

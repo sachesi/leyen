@@ -29,6 +29,12 @@ Windows code without the sandbox, so this refuses every launch until it is fixed
 The sandbox gives a game one folder of yours, and Leyen does not guess which: open the game's
 settings and fill in **Game Folder**. A game added before the sandbox existed has none.
 
+## A launch is refused with "The executable is outside the game folder"
+
+The executable has to be inside the folder the game is given, or inside its prefix — a game
+sees nothing else of yours, so an executable elsewhere could not be started even if Leyen
+tried. Point **Game Folder** at the folder that holds the executable, or higher.
+
 ## A game does not find its own files
 
 The sandbox gives a game one folder of yours: **Game Folder** in its settings. For a game
@@ -36,6 +42,16 @@ whose executable lives below its install root — `Binaries/Win64/game.exe` with
 beside it — that has to be the root, not the folder the executable sits in. Anything else it
 needs goes under **Extra Folders**. The log says what it was given: "Sandbox: network … |
 folders …".
+
+## An overlay, a chat client or a helper no longer reaches the game
+
+The sandbox passes the display, sound and device sockets and nothing else, so anything else
+that used to talk to a game through a socket of the session does not: Discord's rich presence,
+OBS's game capture, a helper that attaches to a running game from outside. MangoHud works, and
+reads your configuration in `~/.config/MangoHud`; a layer configured elsewhere in the home
+directory, such as vkBasalt's, runs with its defaults. A wrapper in **Launch Arguments** has to
+be a program the sandbox has — one from the system, not a script in your home directory — and
+the folders under **Extra Folders** are how anything else of yours gets in.
 
 ## A game cannot reach the internet
 

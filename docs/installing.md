@@ -9,9 +9,12 @@ blueprint-compiler just gettext`; on Debian and Ubuntu `cargo libgtk-4-dev libad
 blueprint-compiler just gettext`, on a release that ships GTK 4.22 and libadwaita 1.9.
 `just check` also wants `desktop-file-validate` and `appstreamcli`.
 
-To run: GTK 4.22, libadwaita 1.9, a session bus and a systemd user session. Every game
-runs in a transient systemd scope, which is how Leyen knows what belongs to it and what to
-stop; without `systemctl --user` a launch or a dependency install is refused. `curl` and `tar` fetch umu-launcher
+To run: GTK 4.22, libadwaita 1.9, bubblewrap, `nsenter` from util-linux, a session bus and a
+systemd user session. Every game runs in a transient systemd scope, which is how Leyen knows
+what belongs to it and what to stop; without `systemctl --user` a launch or a dependency
+install is refused. Every game also runs in a sandbox, which needs `bwrap` and unprivileged
+user namespaces; where one cannot be built, the launch is refused instead of running
+unconfined. `curl` and `tar` fetch umu-launcher
 and winetricks the first time they are needed, unless `umu-run` and `winetricks` are
 already in `PATH`. MangoHud is optional: its switch appears once `mangohud` is installed.
 

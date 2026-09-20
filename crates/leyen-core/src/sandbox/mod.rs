@@ -533,7 +533,7 @@ pub fn bwrap_args(
         bind(&mut args, "--ro-bind-try", &path, &path);
     }
 
-    // Display, sound, and the filtered bus in place of the session bus.
+    // Display, sound, and the dead socket in place of the session bus.
     if let Some(socket) = &host.wayland_socket {
         bind(&mut args, "--bind-try", socket, socket);
     }
@@ -610,7 +610,8 @@ const SESSION_ENV: &[&str] = &[
 ];
 
 /// The environment a sandboxed program gets: the session variables above, the
-/// ones the caller set on the command, and a bus address pointing at the proxy.
+/// ones the caller set on the command, and a bus address pointing at the socket
+/// nothing listens on.
 pub fn sandbox_env(command: &AsyncCommand, host: &HostLayout) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     for key in SESSION_ENV {

@@ -10,6 +10,7 @@
 //! window and starts a bus of its own.
 
 use std::fs;
+use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
@@ -32,9 +33,15 @@ pub(super) fn place_dead_socket(path: PathBuf) -> Result<PathBuf, String> {
     }
     let pending = path.with_extension("pending");
     let _ = fs::remove_file(&pending);
-    // Dropping the listener closes it without unlinking the socket; what stays
-    // behind is an address nothing is bound to.
-    drop(UnixListener::bind(&pending).map_err(prepare_error)?);
+    // Binding is the only way to put a socket in the filesystem, and it listens.
+    // Shut it down before anything can be accepted on it: a program that forks
+    // while this is open — the daemon launching a game — passes the listening
+    // descriptor to its child until the exec closes it, and a connection made in
+    // that moment would be accepted rather than refused.
+    let listener = UnixListener::bind(&pending).map_err(prepare_error)?;
+    // SAFETY: the descriptor is this listener's and outlives the call.
+    unsafe { libc::shutdown(listener.as_raw_fd(), libc::SHUT_RDWR) };
+    drop(listener);
     fs::rename(&pending, &path).map_err(prepare_error)?;
     Ok(path)
 }

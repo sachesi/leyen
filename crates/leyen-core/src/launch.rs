@@ -1850,6 +1850,9 @@ async fn launch_game_managed(
     let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
         .await
         .unwrap_or_default();
+    // Compared as both are written, not resolved: the folder is bound at the path
+    // it was given, so an executable named through another spelling of it — the
+    // other side of a symlink — is not there once the sandbox is up.
     let exe = Path::new(&game.exe_path);
     if !exe.starts_with(game.game_dir.trim()) && !exe.starts_with(&prefix_path) {
         return Err(LaunchError::Other(gettext(
@@ -2289,6 +2292,7 @@ mod tests {
             "the claim must be released on drop"
         );
     }
+
     #[test]
     fn session_finalize_claim_is_exclusive_and_gates_removal() {
         let key = ("test-finalize-claim".to_string(), current_epoch_seconds());

@@ -20,7 +20,9 @@ already in `PATH`. MangoHud is optional: its switch appears once `mangohud` is i
 Packages for Fedora, openSUSE, Debian, Ubuntu and Arch Linux, and how to install them, are in
 the [README](../README.md#packages). Nix: the flake's package goes in `environment.systemPackages` or `nix
 profile install github:sachesi/leyen`; `nix run` does not work, because the session bus only
-starts the daemon from a D-Bus service file in an installed `share` directory. `nix develop`
+starts the daemon from a D-Bus service file in an installed `share` directory. On NixOS put
+`umu-launcher` and `winetricks` in `environment.systemPackages` as well: there they come from
+the system, and Leyen downloads neither. `nix develop`
 gives a shell with the build tools. There is no Flatpak: games run in systemd scopes of the
 user session, which a sandbox cannot create.
 

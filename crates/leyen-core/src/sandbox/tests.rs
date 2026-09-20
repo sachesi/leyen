@@ -273,7 +273,7 @@ fn a_folder_that_would_undo_the_sandbox_is_refused() {
 
     // The home directory itself, and anything holding it: the tmpfs over $HOME
     // is the whole point, and a bind of an ancestor brings it back.
-    for path in [home.as_str(), "/", "/home", "/etc", "/usr"] {
+    for path in [home.as_str(), "/", "/home", "/etc", "/usr", "/nix"] {
         if !Path::new(path).is_dir() {
             continue;
         }
@@ -391,6 +391,37 @@ fn a_sandbox_starts_with_a_proton_that_is_a_symlink() {
         output.status.success(),
         "the game must find Proton at the path it was given: {}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// On NixOS `/usr` holds only `env`: the loader, the libraries, the programs and
+/// the graphics drivers are all reached through paths other systems do not have.
+#[test]
+fn the_store_the_drivers_and_the_system_profile_are_bound_for_nixos() {
+    let prefix = Path::new("/home/player/.local/share/leyen/prefixes/game");
+    let args = bwrap_args(&request(prefix), &host(prefix), &BTreeMap::new());
+
+    for path in [
+        "/nix",
+        "/run/opengl-driver",
+        "/run/opengl-driver-32",
+        "/run/current-system",
+    ] {
+        assert!(
+            binds(&args)
+                .iter()
+                .any(|(mode, _, target)| mode == "--ro-bind-try" && target == path),
+            "{path} is not bound read-only"
+        );
+    }
+
+    let env = super::sandbox_env(&tokio::process::Command::new("true"), &host(prefix));
+    assert!(
+        env["PATH"]
+            .split(':')
+            .any(|dir| dir == "/run/current-system/sw/bin"),
+        "PATH misses the system profile: {}",
+        env["PATH"]
     );
 }
 

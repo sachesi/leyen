@@ -10,8 +10,9 @@
 //! - its prefix read-write, with `$HOME/.cache` a directory inside it
 //! - its own folder read-write, and the folders shared with it, read-only
 //!   unless marked writable
-//! - `/usr`, `/etc` and `/sys` read-only, and the devices for graphics, sound and
-//!   controllers
+//! - `/usr`, `/etc` and `/sys` read-only — on NixOS `/nix/store`, the system's
+//!   own programs and the graphics drivers under `/run` as well — and the devices
+//!   for graphics, sound and controllers
 //! - the display and audio sockets, and a bus socket with nothing behind it. The
 //!   session bus is not exposed: a game on it could ask Leyen to launch anything,
 //!   or systemd to start a unit outside the sandbox.
@@ -123,7 +124,11 @@ fn probe_tools() -> Result<Tools, String> {
         "--seccomp",
     ]);
     probe.arg(SECCOMP_FD.to_string());
-    probe.args(["--", "/usr/bin/true"]);
+    // bwrap itself is the one program known to be there: NixOS has nothing in
+    // /usr/bin but `env`.
+    probe.arg("--");
+    probe.arg(&bwrap);
+    probe.arg("--version");
     filter.place_on_std_fd(&mut probe).map_err(prepare_error)?;
     let output = probe
         .output()
@@ -148,20 +153,29 @@ fn prepare_error(error: impl std::fmt::Display) -> String {
 
 /// Looks for `name` in `PATH` and in the usual system directories. Fedora and
 /// openSUSE ship `bwrap` in `/usr/sbin`, which a user session's `PATH` does not
-/// always include.
+/// always include; NixOS has it in `/run/current-system/sw/bin`.
+///
+/// The path comes back resolved, because that is the one a sandbox can run: on
+/// NixOS the directories above are symlinks into `/nix/store`, and the store is
+/// what a sandbox has.
 fn find_program(name: &str) -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in path.split(':').filter(|dir| !dir.is_empty()) {
-            let candidate = Path::new(dir).join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    ["/usr/bin", "/usr/sbin", "/bin", "/sbin"]
-        .iter()
-        .map(|dir| Path::new(dir).join(name))
-        .find(|candidate| candidate.is_file())
+    let path = std::env::var("PATH").unwrap_or_default();
+    std::env::split_paths(&path)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .chain(
+            [
+                "/usr/bin",
+                "/usr/sbin",
+                "/bin",
+                "/sbin",
+                "/run/current-system/sw/bin",
+            ]
+            .iter()
+            .map(PathBuf::from),
+        )
+        .map(|dir| dir.join(name))
+        .filter(|candidate| candidate.is_file())
+        .find_map(|candidate| fs::canonicalize(candidate).ok())
 }
 
 /// Whether a sandbox can be built. Cheap after the first call.
@@ -173,7 +187,7 @@ pub fn is_available() -> Result<(), String> {
 /// folder they are compared with: `/home` is a symlink on some systems.
 fn forbidden_folders() -> Vec<PathBuf> {
     let mut forbidden: Vec<PathBuf> = [
-        "/", "/boot", "/dev", "/etc", "/proc", "/root", "/run", "/sys", "/usr", "/var",
+        "/", "/boot", "/dev", "/etc", "/nix", "/proc", "/root", "/run", "/sys", "/usr", "/var",
     ]
     .iter()
     .map(PathBuf::from)
@@ -352,12 +366,16 @@ fn runtime_dir() -> String {
 
 /// `/usr` read-only, plus `/bin`, `/lib` and friends as this host has them:
 /// symlinks into `/usr` on a merged system, real directories on an older one.
-/// Without them a dynamically linked program cannot find its loader.
+/// Without them a dynamically linked program cannot find its loader. On NixOS the
+/// loader, and everything else, is in `/nix/store`, and `/usr` holds only `env`.
 fn system_args() -> Vec<String> {
     let mut args = vec![
         "--ro-bind".to_string(),
         "/usr".to_string(),
         "/usr".to_string(),
+        "--ro-bind-try".to_string(),
+        "/nix".to_string(),
+        "/nix".to_string(),
     ];
     for link in ["/bin", "/sbin", "/lib", "/lib32", "/lib64"] {
         match fs::read_link(link) {
@@ -418,8 +436,6 @@ pub fn bwrap_args(
     args.extend(system_args());
     flag(&mut args, &["--ro-bind", "/etc", "/etc"]);
     flag(&mut args, &["--ro-bind", "/sys", "/sys"]);
-    // On NixOS every program and library lives under /nix/store.
-    flag(&mut args, &["--ro-bind-try", "/nix", "/nix"]);
     flag(&mut args, &["--proc", "/proc"]);
     flag(&mut args, &["--dev", "/dev"]);
     for device in &host.devices {
@@ -427,6 +443,15 @@ pub fn bwrap_args(
     }
     // Controller hotplug reads from here.
     flag(&mut args, &["--ro-bind-try", "/run/udev", "/run/udev"]);
+    // NixOS keeps the graphics drivers and the system's own programs outside
+    // /usr, and the loaders look for them here by these names.
+    for path in [
+        "/run/opengl-driver",
+        "/run/opengl-driver-32",
+        "/run/current-system",
+    ] {
+        bind(&mut args, "--ro-bind-try", Path::new(path), Path::new(path));
+    }
     if let Some(resolv) = &host.resolv_conf {
         bind(&mut args, "--ro-bind-try", resolv, resolv);
     }
@@ -570,6 +595,9 @@ const SESSION_ENV: &[&str] = &[
     "DISPLAY",
     "XAUTHORITY",
     "PULSE_SERVER",
+    // How NixOS points at the graphics drivers on a system whose loaders are not
+    // patched to find them by themselves.
+    "LD_LIBRARY_PATH",
     // Which GPU and which driver, on a machine that has more than one.
     "DRI_PRIME",
     "__NV_PRIME_RENDER_OFFLOAD",
@@ -590,7 +618,12 @@ pub fn sandbox_env(command: &AsyncCommand, host: &HostLayout) -> BTreeMap<String
             env.insert((*key).to_string(), value);
         }
     }
-    env.insert("PATH".to_string(), "/usr/bin:/bin".to_string());
+    // /run/current-system/sw/bin is where NixOS has the programs other systems
+    // keep in /usr/bin, winetricks' helpers among them.
+    env.insert(
+        "PATH".to_string(),
+        "/usr/bin:/bin:/run/current-system/sw/bin".to_string(),
+    );
     for (key, value) in command.as_std().get_envs() {
         let key = key.to_string_lossy().into_owned();
         match value {

@@ -184,10 +184,13 @@ pub fn is_available() -> Result<(), String> {
 }
 
 /// Folders that are never shared, whatever the settings say, resolved like the
-/// folder they are compared with: `/home` is a symlink on some systems.
+/// folder they are compared with: `/home` is a symlink on some systems. It is on
+/// the list in its own right, not only as the parent of `$HOME`: a daemon whose
+/// home is elsewhere would otherwise hand a game everyone's home directory.
 fn forbidden_folders() -> Vec<PathBuf> {
     let mut forbidden: Vec<PathBuf> = [
-        "/", "/boot", "/dev", "/etc", "/nix", "/proc", "/root", "/run", "/sys", "/usr", "/var",
+        "/", "/boot", "/dev", "/etc", "/home", "/nix", "/proc", "/root", "/run", "/sys", "/usr",
+        "/var",
     ]
     .iter()
     .map(PathBuf::from)

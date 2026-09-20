@@ -6,9 +6,9 @@ with its group, and a daemon on the session bus launches, tracks and stops them,
 window, the applications menu and the command line see the same running games.
 
 Every game runs sandboxed. It sees its prefix, its own folder and the devices it needs to
-draw, play sound and read a controller; the rest of the home directory is not there, and
-the session bus is replaced by a socket that reaches nothing. A machine
-that cannot build the sandbox does not launch the game.
+draw, play sound and read a controller; the rest of the home directory is not there, and the
+session bus is replaced by a socket that reaches nothing. A machine that cannot build the
+sandbox does not launch the game.
 
 <p align="center">
   <img src="data/screenshots/library.png" width="49%" alt="The library, with two groups and three games">
@@ -19,12 +19,12 @@ You need GTK 4.22, libadwaita 1.9, bubblewrap, `nsenter` from util-linux, a sess
 systemd user session.
 
 Groups with a prefix and a Proton their games inherit, playtime and the last session of
-every game, per-game launch arguments with `%command%`, MangoHud, Wayland, WoW64,
-NTSync and HDR switches, the folders and the network access of each sandbox, winetricks components managed per prefix with dependencies between
-them, the Wine configuration and the registry editor for any prefix, a live log for every
-game, menu entries that start a game from the desktop, and `leyen list`, `run`, `kill` and
-`logs` for the terminal. umu-launcher and winetricks are fetched when they are not
-installed.
+every game, per-game launch arguments with `%command%`, MangoHud, Wayland, WoW64, NTSync
+and HDR switches, the folders and the network access of each sandbox, winetricks components
+managed per prefix with dependencies between them, the Wine configuration and the registry
+editor for any prefix, a live log for every game, menu entries that start a game from the
+desktop, and `leyen list`, `run`, `kill` and `logs` for the terminal. umu-launcher and
+winetricks are fetched when they are not installed.
 
 ## Packages
 

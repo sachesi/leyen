@@ -15,8 +15,8 @@ games do inside that sandbox is not a vulnerability; a way out of it is.
 
 What the sandbox holds a game to: its Wine prefix and its game folder, read-write; `/usr`,
 `/etc` and `/sys`, read-only, and on NixOS `/nix/store`, the system profile and the graphics
-drivers with them; the device nodes for graphics, sound and controllers; the
-display and audio sockets; a bus socket with nothing listening on it. `$HOME`, `/tmp` and
+drivers with them; the device nodes for graphics, sound and controllers; the display and
+audio sockets; a bus socket with nothing listening on it. `$HOME`, `/tmp` and
 `$XDG_RUNTIME_DIR` are empty filesystems with only those paths bound back in, so Leyen's own
 configuration — which decides what Leyen launches next — is not there at all. Games only
 run sandboxed: where one cannot be built, the launch is refused rather than run unconfined.
@@ -26,12 +26,13 @@ What it deliberately still exposes, and what is therefore not a vulnerability: t
 game can read input devices; the PipeWire and PulseAudio sockets, which carry the microphone
 as well as the speakers, and on PipeWire any camera it offers; the X11 socket on an X11
 session, where any client can watch the others; `/etc` and `/sys` as any program on the
-system can read them; the other programs on the same prefix, which share a process namespace, a wineserver and
-`/dev/shm` with it, as Wine requires; the network, unless it is switched off for that game, its group or all games; and the folders
-you share under Extra Folders, which are yours to choose. A folder that would undo the
-sandbox — your home directory, Leyen's own directories, a system directory, or any folder
-holding one of them — is refused when the game launches, after the path is resolved, so a
-symlink cannot stand in for one. A way past that check is a vulnerability.
+system can read them; the other programs on the same prefix, which share a process
+namespace, a wineserver and `/dev/shm` with it, as Wine requires; the network, unless it is
+switched off for that game, its group or all games; and the folders you share under Extra
+Folders, which are yours to choose. A folder that would undo the sandbox — your home
+directory, Leyen's own directories, a system directory, or any folder holding one of them —
+is refused when the game launches, after the path is resolved, so a symlink cannot stand in
+for one. A way past that check is a vulnerability.
 
 The parts where a mistake matters:
 

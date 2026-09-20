@@ -17,8 +17,8 @@ the daemon reads it again at once.
 - **Sandbox → Extra Folders**: folders every game may reach besides its own, read-only
   unless switched writable. A group and a game add their own in their settings; the folders
   of all three levels are shared together, and a folder named twice keeps what the narrowest
-  level says. The same folders are shared with the prefix tools and with
-  dependency installs.
+  level says. The same folders are shared with the prefix tools and with dependency
+  installs.
 - **Sandbox → Network Access**: whether games reach the network from inside their sandbox.
   On, which is how it starts, online games work; off, a game is on a loopback of its own. A
   group and a game can answer for themselves in their own settings, and the narrowest answer

@@ -29,10 +29,6 @@ pub fn mangohud_available() -> bool {
     command_available("mangohud")
 }
 
-pub fn gamemode_available() -> bool {
-    command_available("gamemoderun")
-}
-
 #[cfg(test)]
 mod tests {
     #[test]

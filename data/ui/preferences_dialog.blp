@@ -43,10 +43,6 @@ template $LeyenPreferencesDialog: Adw.PreferencesDialog {
         title: _("MangoHud");
       }
 
-      Adw.SwitchRow gamemode_row {
-        title: _("GameMode");
-      }
-
       Adw.SwitchRow wayland_row {
         title: _("Wayland");
       }
@@ -66,6 +62,18 @@ template $LeyenPreferencesDialog: Adw.PreferencesDialog {
       Adw.SwitchRow proton_log_row {
         title: _("Proton Log");
       }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Sandbox");
+      description: _("Games always run confined to their prefix and their own folder. What they may reach besides is set here, and each group and game can answer for itself.");
+
+      Adw.SwitchRow sandbox_network_row {
+        title: _("Network Access");
+        subtitle: _("Let games reach the network. Online games need it; a game that has no business on the network can be cut off in its own settings.");
+      }
+
+      $LeyenSandboxFoldersRow folders_row {}
     }
 
     Adw.PreferencesGroup {
@@ -90,11 +98,6 @@ template $LeyenPreferencesDialog: Adw.PreferencesDialog {
 
     Adw.PreferencesGroup {
       title: _("Maintenance");
-
-      Adw.SwitchRow shared_container_row {
-        title: _("Use Shared Container");
-        subtitle: _("When a game launches while another sharing its Wine prefix is already running, run it inside the running container. Disable to launch it in its own container on the same prefix instead.");
-      }
 
       Adw.ExpanderRow {
         title: _("Repair Runtime");

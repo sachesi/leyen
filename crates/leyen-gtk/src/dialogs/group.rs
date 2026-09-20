@@ -8,14 +8,17 @@ use adw::subclass::prelude::*;
 use gtk4::glib;
 use leyen_model::i18n::gettext;
 use leyen_model::library::{find_group, replace_group};
-use leyen_model::models::{GameGroup, GlobalSettings, GroupLaunchDefaults, LibraryItem};
+use leyen_model::models::{
+    GameGroup, GlobalSettings, GroupLaunchDefaults, LibraryItem, NetworkAccess,
+};
 use leyen_model::runtime::resolve_proton_path;
 use libadwaita as adw;
 
 use super::prefix_tools_group::managed_by_preferences;
 use super::{
-    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_group_icon,
-    choose_file_into, choose_folder_into, image_filter, proton_exists,
+    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, SandboxFoldersRow, ToolTarget,
+    apply_group_icon, choose_file_into, choose_folder_into, image_filter, network_row_value,
+    proton_exists, setup_network_row,
 };
 use crate::daemon::{self, gio_blocking};
 use crate::desktop::update_group_desktop_entries_if_present;
@@ -47,6 +50,10 @@ mod imp {
         #[template_child]
         pub proton_row: TemplateChild<adw::ComboRow>,
         #[template_child]
+        pub network_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub folders_row: TemplateChild<SandboxFoldersRow>,
+        #[template_child]
         pub tools_group: TemplateChild<PrefixToolsGroup>,
         pub window: glib::WeakRef<LeyenWindow>,
         /// The group as it was before editing; `None` while adding one.
@@ -64,6 +71,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             PrefixToolsGroup::ensure_type();
+            SandboxFoldersRow::ensure_type();
             klass.bind_template();
             klass.bind_template_callbacks();
         }
@@ -169,6 +177,8 @@ impl GroupDialog {
             .as_ref()
             .map_or(0, |protons| protons.position(&group.defaults.proton));
         imp.proton_row.set_selected(position);
+        setup_network_row(&imp.network_row, group.defaults.sandbox_network);
+        imp.folders_row.set_folders(&group.defaults.sandbox_folders);
 
         imp.tools_group.set_visible(true);
         dialog.update_tools();
@@ -183,6 +193,7 @@ impl GroupDialog {
         let protons = ProtonChoices::new(&settings);
         imp.proton_row.set_model(Some(&protons.model));
         imp.protons.replace(Some(protons));
+        setup_network_row(&imp.network_row, NetworkAccess::Inherit);
         imp.prefix
             .replace(PrefixSuggestion::new(&settings.default_prefix_path, ""));
         imp.settings.replace(settings);
@@ -321,6 +332,8 @@ impl GroupDialog {
                 String::new()
             },
             proton,
+            sandbox_network: network_row_value(&imp.network_row),
+            sandbox_folders: imp.folders_row.folders(),
         };
         if original.is_some() {
             if !replace_group(&mut items, &group_id, title, defaults) {

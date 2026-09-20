@@ -18,9 +18,12 @@ use crate::config::{
     add_game_playtime, load_library, record_game_launch_result, record_game_launch_start,
 };
 use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
-use crate::tools::{gamemode_available, join_err, mangohud_available};
+use crate::sandbox::SandboxRequest;
+use crate::tools::{join_err, mangohud_available};
 use leyen_model::library::{effective_game_id, find_game_and_group};
-use leyen_model::models::{Game, GameGroup};
+use leyen_model::models::{
+    Game, GameGroup, SandboxFolder, resolve_network_access, resolve_sandbox_folders,
+};
 use leyen_model::paths::get_config_dir;
 use leyen_model::runtime::resolve_proton_path;
 
@@ -71,10 +74,10 @@ struct RunningGameSession {
     /// container.
     #[serde(default)]
     match_args: Option<String>,
-    /// Cgroup directory of the shared pressure-vessel container this session
-    /// joined with `UMU_CONTAINER_NSENTER` (the leader's scope). The game's
-    /// real process lives there, so it must stay in the PID universe even
-    /// after the leader session itself is gone.
+    /// Cgroup directory of a shared pressure-vessel container this session
+    /// joined, where its real process lives, so that cgroup stays in the PID
+    /// universe after the leader session is gone. Only a session adopted from a
+    /// daemon older than the sandbox has one: a sandboxed launch never joins.
     #[serde(default)]
     container_cgroup_dir: Option<String>,
     /// The `GAMEID` this launch was started with. When a matched process's
@@ -116,7 +119,9 @@ pub enum LaunchError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("Launch failed: {0}")]
+    /// Shown to the user as it is: the daemon sends it over the bus and the
+    /// window puts it in a toast, so nothing prefixes it further.
+    #[error("{0}")]
     Other(String),
 }
 
@@ -553,10 +558,7 @@ async fn republish_running_sessions() {
     }
 }
 
-async fn try_register_running_session(
-    mut session: RunningGameSession,
-    joins_container: bool,
-) -> Result<bool, LaunchError> {
+async fn try_register_running_session(session: RunningGameSession) -> Result<bool, LaunchError> {
     let _ = synchronize_running_sessions().await;
     tokio::task::spawn_blocking(move || {
         with_running_registry(|registry| {
@@ -574,20 +576,6 @@ async fn try_register_running_session(
                 return (false, false);
             }
             drop(pending_finalize);
-
-            if joins_container {
-                // The real process will run in the leader's scope; remember
-                // that cgroup so it stays scanned after the leader exits.
-                session.container_cgroup_dir = registry
-                    .sessions
-                    .iter()
-                    .filter(|s| s.match_prefix_path == session.match_prefix_path)
-                    .find_map(|s| {
-                        s.container_cgroup_dir
-                            .clone()
-                            .or_else(|| s.cgroup_dir.clone())
-                    });
-            }
 
             registry.sessions.push(session);
             (true, true)
@@ -642,35 +630,6 @@ pub fn set_sessions_listener(listener: impl Fn(Vec<RunningGameSnapshot>) + Send 
     let _ = SESSIONS_LISTENER.set(Box::new(listener));
 }
 
-/// Async probe answering "does this well-known bus name have an owner on the
-/// session bus?". Installed by the daemon (which owns a zbus connection) so the
-/// engine can wait for a shared pressure-vessel container without an IPC dep.
-type BusNameProbe = Box<dyn Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync>;
-static BUS_NAME_PROBE: OnceLock<BusNameProbe> = OnceLock::new();
-
-/// Installs the session-bus name probe. No-op if called more than once.
-pub fn set_bus_name_probe(
-    probe: impl Fn(String) -> futures::future::BoxFuture<'static, bool> + Send + Sync + 'static,
-) {
-    let _ = BUS_NAME_PROBE.set(Box::new(probe));
-}
-
-/// Source of RAII work tokens, installed by the daemon. Detached engine tasks
-/// (the deferred shared-container launch) hold a token for their lifetime so the
-/// daemon's idle-exit cannot kill the process mid-task. Without an installed
-/// source this is a no-op (the CLI/tests don't idle-exit).
-type WorkGuardSource = Box<dyn Fn() -> Box<dyn Send> + Send + Sync>;
-static WORK_GUARD_SOURCE: OnceLock<WorkGuardSource> = OnceLock::new();
-
-/// Installs the work-token source. No-op if called more than once.
-pub fn set_work_guard_source(source: impl Fn() -> Box<dyn Send> + Send + Sync + 'static) {
-    let _ = WORK_GUARD_SOURCE.set(Box::new(source));
-}
-
-fn acquire_work_guard() -> Option<Box<dyn Send>> {
-    WORK_GUARD_SOURCE.get().map(|source| source())
-}
-
 /// Monotonic start instants for sessions launched by this process, keyed by
 /// `(game_id, started_at_epoch_seconds)`. Playtime finalization prefers these
 /// over wall-clock arithmetic, which an NTP step or manual clock change would
@@ -687,10 +646,9 @@ fn session_start_instants() -> &'static std::sync::Mutex<HashMap<(String, u64), 
 
 /// Game ids with a launch accepted but not yet registered in the running
 /// registry. `try_register_running_session` only dedupes already-registered
-/// sessions, and the deferred shared-container path can wait up to
-/// `SHARED_CONTAINER_WAIT_SECS` before registering — without a claim, a second
-/// launch of the same game in that window passes every guard and spawns a
-/// second process tree against the same prefix. In-process only by design:
+/// sessions, and setting up the sandbox takes long enough that without a claim a
+/// second launch of the same game in that window would pass every guard and
+/// spawn a second process tree against the same prefix. In-process only by design:
 /// every launch funnels through the daemon, and a claim must die with the
 /// process rather than persist past a crash and block the game forever.
 static PENDING_LAUNCHES: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
@@ -735,74 +693,6 @@ static OUTPUT_CAPTURE_TASKS: OnceLock<
 fn output_capture_tasks()
 -> &'static std::sync::Mutex<HashMap<String, Vec<tokio::task::JoinHandle<()>>>> {
     OUTPUT_CAPTURE_TASKS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
-}
-
-/// The command-launcher bus name umu's pressure-vessel container registers for
-/// a given wineprefix: `com.steampowered.App` + md5(WINEPREFIX).
-fn shared_container_bus_name(prefix_path: &str) -> String {
-    use md5::{Digest, Md5};
-    format!(
-        "com.steampowered.App{}",
-        hex::encode(Md5::digest(prefix_path.as_bytes()))
-    )
-}
-
-/// True when any registered session matches this wineprefix.
-async fn prefix_has_live_session(prefix_path: &str) -> bool {
-    let prefix = prefix_path.to_string();
-    tokio::task::spawn_blocking(move || {
-        with_running_registry(|registry| {
-            let live = registry
-                .sessions
-                .iter()
-                .any(|s| s.match_prefix_path.as_deref() == Some(prefix.as_str()));
-            (live, false)
-        })
-        .unwrap_or(false)
-    })
-    .await
-    .unwrap_or(false)
-}
-
-/// How long a same-prefix follower waits for the leader's container to come up.
-/// Cold starts include runtime updates and locale generation, so be generous.
-const SHARED_CONTAINER_WAIT_SECS: u64 = 90;
-
-/// Waits until the shared container for `prefix_path` is joinable. `true` →
-/// launch with `UMU_CONTAINER_NSENTER=1` (umu re-enters instantly, no retry
-/// race); `false` → the leader died or the wait timed out, launch in an own
-/// container instead. Without an installed probe this keeps the old immediate
-/// NSENTER behavior.
-async fn wait_for_shared_container(prefix_path: &str, game_id: &str) -> bool {
-    let Some(probe) = BUS_NAME_PROBE.get() else {
-        return true;
-    };
-    let name = shared_container_bus_name(prefix_path);
-    let deadline = std::time::Instant::now() + Duration::from_secs(SHARED_CONTAINER_WAIT_SECS);
-    let mut last_leader_check = std::time::Instant::now();
-    loop {
-        if probe(name.clone()).await {
-            return true;
-        }
-        if std::time::Instant::now() >= deadline {
-            warn!(
-                target: &format!("game:{game_id}"),
-                "Timed out waiting for the shared container on '{prefix_path}'; launching in an own container"
-            );
-            return false;
-        }
-        if last_leader_check.elapsed() >= Duration::from_secs(5) {
-            last_leader_check = std::time::Instant::now();
-            if !prefix_has_live_session(prefix_path).await {
-                info!(
-                    target: &format!("game:{game_id}"),
-                    "No game left on prefix '{prefix_path}'; launching in an own container"
-                );
-                return false;
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
 }
 
 /// [`publish_sessions`] for a set read at registry sequence `seq`: skipped if a
@@ -1849,6 +1739,15 @@ async fn launch_game_managed(
         )));
     }
 
+    // No sandbox, no launch.
+    if let Err(reason) = tokio::task::spawn_blocking(crate::sandbox::is_available)
+        .await
+        .unwrap_or_else(|e| Err(join_err(e)))
+    {
+        error!(target: &format!("game:{}", game.id), "{}", reason);
+        return Err(LaunchError::Other(reason));
+    }
+
     // Settings load re-scans the Proton install dir — keep it off the async
     // worker (crate::config::load_settings wraps it in spawn_blocking).
     let settings = crate::config::load_settings().await;
@@ -1856,6 +1755,13 @@ async fn launch_game_managed(
     let parent_group = find_game_and_group(&library, &game.id).and_then(|(_, group)| group);
     let prefix_path = resolve_launch_prefix(game, parent_group, &settings.default_prefix_path);
     let launch_game_id = effective_game_id(game);
+
+    // Never guessed; a game from before the setting has none.
+    if game.game_dir.trim().is_empty() {
+        return Err(LaunchError::Other(gettext(
+            "Set this game's folder in its settings",
+        )));
+    }
 
     if is_game_running(&game.id) {
         return Err(LaunchError::Other(gettext("This game is already running")));
@@ -1868,7 +1774,7 @@ async fn launch_game_managed(
 
     // Held until the session is registered (or the launch fails); covers the
     // whole pre-registration window the running check above can't see.
-    let Some(launch_claim) = LaunchClaim::try_claim(&game.id) else {
+    let Some(_launch_claim) = LaunchClaim::try_claim(&game.id) else {
         return Err(LaunchError::Other(gettext("This game is already running")));
     };
 
@@ -1973,17 +1879,11 @@ async fn launch_game_managed(
             cmd_wrappers.push(token.to_string());
         }
 
-        if gamemode_available() && game.gamemode {
-            cmd_args.push("gamemoderun".to_string());
-        }
         cmd_args.extend(cmd_wrappers);
         cmd_args.push(umu.clone());
         cmd_args.push(game.exe_path.clone());
         cmd_args.extend(postfix);
     } else {
-        if gamemode_available() && game.gamemode {
-            cmd_args.push("gamemoderun".to_string());
-        }
         cmd_args.push(umu.clone());
         cmd_args.push(game.exe_path.clone());
         if !game.launch_args.is_empty() {
@@ -1995,71 +1895,67 @@ async fn launch_game_managed(
     let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
         .await
         .unwrap_or_default();
-    let allow_shared_container = settings.use_shared_container;
-    let join_shared_container = match try_lock_prefix(&prefix_path).await {
-        PrefixLockState::Busy if allow_shared_container => {
-            notices.push(gettext(
-                "Prefix is already in use. Launching with shared-container fallback.",
-            ));
-            true
-        }
-        // Shared container disabled for this group: launch in its own container
-        // on the same prefix instead of joining the running one (no NSENTER).
-        PrefixLockState::Available | PrefixLockState::Busy | PrefixLockState::Unavailable => false,
-    };
-
-    if join_shared_container {
-        // The leader's pressure-vessel container can take tens of seconds to
-        // register its command-launcher bus name; entering before that makes
-        // umu exhaust its retries and fall back to a second container on the
-        // same prefix. Don't hold the caller (a D-Bus reply) hostage either:
-        // accept the launch now and finish it in the background once the
-        // container is joinable. Failures land in the game's log.
-        let game_bg = game.clone();
-        let prefix = prefix_path.clone();
-        let proton = proton_path.clone();
-        // Hold a daemon work token for the task's lifetime: nothing is
-        // registered as "running" during the container wait, so without it the
-        // idle-exit could kill the daemon mid-wait and lose the launch.
-        let work_guard = acquire_work_guard();
-        tokio::spawn(async move {
-            let _work_guard = work_guard;
-            let _launch_claim = launch_claim;
-            let game = game_bg;
-            let mut env_vars = env_vars;
-            if wait_for_shared_container(&prefix, &game.id).await {
-                env_vars.push(("UMU_CONTAINER_NSENTER".to_string(), "1".to_string()));
-            }
-            if let Err(e) = finish_launch(
-                game.clone(),
-                env_vars,
-                cmd_args,
-                working_dir,
-                prefix,
-                proton,
-                capture_output,
-                reap_child_locally,
-                Vec::new(),
-            )
-            .await
-            {
-                error!(
-                    target: &format!("game:{}", game.id),
-                    "Launch of '{}' failed: {e}", game.title
-                );
-            }
-        });
-        notices.push(gettext("Launching {}...").replacen("{}", &game.title, 1));
-        return Ok(LaunchReport { notices });
+    // A container of its own even on a busy prefix: joining the other game's
+    // container means running in its sandbox, which holds its folder, not this
+    // game's.
+    if let PrefixLockState::Busy = try_lock_prefix(&prefix_path).await {
+        notices.push(gettext(
+            "Another game is using this prefix. This one gets a container of its own on it.",
+        ));
     }
+
+    let exe = Path::new(&game.exe_path);
+    if !exe.starts_with(game.game_dir.trim()) && !exe.starts_with(&prefix_path) {
+        return Err(LaunchError::Other(gettext(
+            "The executable is outside the game folder",
+        )));
+    }
+
+    // The game's own folder first; without it there is nothing to run. A
+    // refused extra folder is named in the notices and the launch goes on.
+    let game_folder = SandboxFolder {
+        path: game.game_dir.trim().to_string(),
+        writable: true,
+    };
+    let folders: Vec<SandboxFolder> = resolve_sandbox_folders(
+        &game.sandbox_folders,
+        parent_group.map(|group| group.defaults.sandbox_folders.as_slice()),
+        &settings.global_sandbox_folders,
+    )
+    .into_iter()
+    .filter(|folder| folder.path != game_folder.path)
+    .collect();
+    let (shares, refused) = tokio::task::spawn_blocking(move || {
+        let own = crate::sandbox::check_folder(&game_folder)?;
+        let (mut shares, refused) = crate::sandbox::shares_from(&folders);
+        shares.insert(0, own);
+        Ok::<_, String>((shares, refused))
+    })
+    .await
+    .unwrap_or_else(|e| Err(join_err(e)))
+    .map_err(LaunchError::Other)?;
+    for reason in refused {
+        warn!(target: &format!("game:{}", game.id), "{}", reason);
+        notices.push(reason);
+    }
+
+    let sandbox = SandboxRequest {
+        prefix_path: prefix_path.clone(),
+        proton_path: proton_path.clone(),
+        work_dir: working_dir.clone(),
+        shares,
+        network: resolve_network_access(
+            game.sandbox_network,
+            parent_group.map(|group| group.defaults.sandbox_network),
+            settings.global_sandbox_network,
+        ),
+    };
 
     finish_launch(
         game.clone(),
         env_vars,
         cmd_args,
-        working_dir,
-        prefix_path,
-        proton_path,
+        sandbox,
         capture_output,
         reap_child_locally,
         notices,
@@ -2067,21 +1963,20 @@ async fn launch_game_managed(
     .await
 }
 
-/// The spawn tail of a launch: systemd-run scope spawn, session registration,
-/// output piping and child reaping. Shared by the direct path and the deferred
-/// shared-container path.
-#[allow(clippy::too_many_arguments)]
+/// The spawn tail of a launch: the sandbox and its systemd scope, session
+/// registration, output piping and child reaping.
 async fn finish_launch(
     game: Game,
     env_vars: Vec<(String, String)>,
     cmd_args: Vec<String>,
-    working_dir: Option<PathBuf>,
-    prefix_path: String,
-    proton_path: String,
+    sandbox: SandboxRequest,
     capture_output: bool,
     reap_child_locally: bool,
     mut notices: Vec<String>,
 ) -> Result<LaunchReport, LaunchError> {
+    let prefix_path = sandbox.prefix_path.clone();
+    let proton_path = sandbox.proton_path.clone();
+    let working_dir = sandbox.work_dir.clone();
     let launch_summary = format!(
         "Launching '{}' | exe: {} | cwd: {} | prefix: {} | proton: {}",
         game.title,
@@ -2102,6 +1997,22 @@ async fn finish_launch(
         },
     );
     info!(target: &format!("game:{}", game.id), "{}", launch_summary);
+    // What it can reach, to read the command above against.
+    info!(
+        target: &format!("game:{}", game.id),
+        "Sandbox: network {} | folders {}",
+        if sandbox.network { "allowed" } else { "blocked" },
+        sandbox
+            .shares
+            .iter()
+            .map(|share| format!(
+                "{} ({})",
+                share.path.display(),
+                if share.writable { "writable" } else { "read-only" }
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let full_cmd = format!(
         "{} {}",
         env_vars
@@ -2128,27 +2039,22 @@ async fn finish_launch(
     let started_at_epoch_seconds = current_epoch_seconds();
     let scope_unit = scope_unit_name(&game.id, started_at_epoch_seconds);
 
-    // Wrap the launch in a transient systemd user scope. Every process the game
-    // tree forks is inherited into this scope's cgroup — across setsid, PID
-    // namespaces and pressure-vessel reparenting — giving an authoritative,
-    // escape-proof handle for tracking liveness and tearing the game down. The
-    // command keeps running as a foreground child of systemd-run, so stdio
-    // piping and child reaping behave exactly as a bare spawn would.
-    let mut scoped_args: Vec<String> = vec![
-        "systemd-run".to_string(),
-        "--user".to_string(),
-        "--scope".to_string(),
-        "--quiet".to_string(),
-        "--collect".to_string(),
-        format!("--unit={scope_unit}"),
-        "--".to_string(),
-    ];
-    scoped_args.extend(cmd_args);
-    let cmd_args = scoped_args;
+    // A sandbox inside a transient systemd user scope. Every process the game
+    // forks is inherited into the scope's cgroup — across setsid, PID namespaces
+    // and pressure-vessel reparenting — which is the handle for tracking and
+    // tearing it down. The sandbox sits inside the scope, so the command is
+    // still a foreground child and stdio piping and reaping behave as before.
+    let mut unconfined = tokio::process::Command::new(&cmd_args[0]);
+    unconfined.args(&cmd_args[1..]);
+    unconfined.envs(env_vars.iter().map(|(k, v)| (k, v)));
+    if let Some(ref cwd) = working_dir {
+        unconfined.current_dir(cwd);
+    }
+    let confined = crate::sandbox::confine_in_scope(&unconfined, &scope_unit, &sandbox)
+        .await
+        .map_err(LaunchError::Other)?;
+    let crate::sandbox::Confined { command: scoped } = confined;
 
-    let env_vars_join_container = env_vars
-        .iter()
-        .any(|(key, value)| key == "UMU_CONTAINER_NSENTER" && value == "1");
     let env_vars_game_id = env_vars
         .iter()
         .find(|(key, _)| key == "GAMEID")
@@ -2156,8 +2062,7 @@ async fn finish_launch(
     // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
     let (mut child, child_pid, child_stdout, child_stderr) =
         tokio::task::spawn_blocking(move || {
-            let mut cmd = tokio::process::Command::new(&cmd_args[0]);
-            cmd.args(&cmd_args[1..]);
+            let mut cmd = scoped;
             cmd.stdin(Stdio::null());
             cmd.stdout(if capture_output {
                 Stdio::piped()
@@ -2169,10 +2074,6 @@ async fn finish_launch(
             } else {
                 Stdio::null()
             });
-            cmd.envs(env_vars.iter().map(|(k, v)| (k, v)));
-            if let Some(ref cwd) = working_dir {
-                cmd.current_dir(cwd);
-            }
             let mut child = cmd
                 .spawn()
                 .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
@@ -2205,11 +2106,10 @@ async fn finish_launch(
         termination_requested: false,
     };
 
-    let joins_container = env_vars_join_container;
     // The scope is already running: a registry failure here must tear it
     // down like a duplicate, or it lives on untracked (idle-exit, dependency
     // jobs and relaunch all believe nothing is running).
-    let registered = match try_register_running_session(session, joins_container).await {
+    let registered = match try_register_running_session(session).await {
         Ok(registered) => registered,
         Err(e) => {
             let unit = scope_unit.clone();
@@ -2285,8 +2185,7 @@ mod tests {
     use super::{
         LaunchClaim, MAX_OUTPUT_LINE, active_from_exit_code, cgroup_within, claim_session_finalize,
         current_epoch_seconds, for_each_output_line, in_scope, mark_session_finalized,
-        process_matches_cmdline, session_finalize_done, shared_container_bus_name,
-        signal_pid_in_cgroups,
+        process_matches_cmdline, session_finalize_done, signal_pid_in_cgroups,
     };
 
     #[test]
@@ -2440,17 +2339,6 @@ mod tests {
             "the claim must be released on drop"
         );
     }
-
-    #[test]
-    fn shared_container_bus_name_matches_umu_derivation() {
-        // Observed live: umu's container for this WINEPREFIX registered
-        // com.steampowered.App9ab17f3e489d0c144ccb2e8685166f0f.
-        assert_eq!(
-            shared_container_bus_name("/mnt/data-0/.wine/prefixes/pwclassic"),
-            "com.steampowered.App9ab17f3e489d0c144ccb2e8685166f0f"
-        );
-    }
-
     #[test]
     fn session_finalize_claim_is_exclusive_and_gates_removal() {
         let key = ("test-finalize-claim".to_string(), current_epoch_seconds());

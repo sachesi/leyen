@@ -9,10 +9,10 @@ use gtk4::glib;
 use leyen_model::i18n::gettext;
 use leyen_model::models::{GLOBAL_SETTINGS_VERSION, GlobalSettings};
 use leyen_model::runtime::{get_umu_runtime_dir, resolve_proton_path};
-use leyen_model::tools::{gamemode_available, mangohud_available};
+use leyen_model::tools::mangohud_available;
 use libadwaita as adw;
 
-use super::{PrefixToolsGroup, ProtonChoices, ToolTarget, choose_folder_into};
+use super::{PrefixToolsGroup, ProtonChoices, SandboxFoldersRow, ToolTarget, choose_folder_into};
 use crate::daemon::{self, gio_blocking};
 
 mod imp {
@@ -30,8 +30,6 @@ mod imp {
         #[template_child]
         pub mangohud_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub gamemode_row: TemplateChild<adw::SwitchRow>,
-        #[template_child]
         pub wayland_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub wow64_row: TemplateChild<adw::SwitchRow>,
@@ -48,7 +46,9 @@ mod imp {
         #[template_child]
         pub log_operations_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub shared_container_row: TemplateChild<adw::SwitchRow>,
+        pub sandbox_network_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub folders_row: TemplateChild<SandboxFoldersRow>,
         pub protons: RefCell<Option<ProtonChoices>>,
         pub settings: RefCell<GlobalSettings>,
     }
@@ -61,6 +61,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             PrefixToolsGroup::ensure_type();
+            SandboxFoldersRow::ensure_type();
             klass.bind_template();
             klass.bind_template_callbacks();
         }
@@ -124,8 +125,6 @@ impl PreferencesDialog {
 
         imp.mangohud_row.set_visible(mangohud_available());
         imp.mangohud_row.set_active(settings.global_mangohud);
-        imp.gamemode_row.set_visible(gamemode_available());
-        imp.gamemode_row.set_active(settings.global_gamemode);
         imp.wayland_row.set_active(settings.global_wayland);
         imp.wow64_row.set_active(settings.global_wow64);
         imp.ntsync_row.set_active(settings.global_ntsync);
@@ -134,8 +133,10 @@ impl PreferencesDialog {
         imp.log_errors_row.set_active(settings.log_errors);
         imp.log_warnings_row.set_active(settings.log_warnings);
         imp.log_operations_row.set_active(settings.log_operations);
-        imp.shared_container_row
-            .set_active(settings.use_shared_container);
+        imp.sandbox_network_row
+            .set_active(settings.global_sandbox_network);
+        imp.folders_row
+            .set_folders(&settings.global_sandbox_folders);
         imp.settings.replace(settings);
 
         let weak = dialog.downgrade();
@@ -167,7 +168,6 @@ impl PreferencesDialog {
             default_prefix_path: imp.prefix_row.text().to_string(),
             default_proton: self.chosen_proton(),
             global_mangohud: mangohud_available() && imp.mangohud_row.is_active(),
-            global_gamemode: gamemode_available() && imp.gamemode_row.is_active(),
             global_wayland: imp.wayland_row.is_active(),
             global_wow64: imp.wow64_row.is_active(),
             global_ntsync: imp.ntsync_row.is_active(),
@@ -177,7 +177,8 @@ impl PreferencesDialog {
             log_errors: imp.log_errors_row.is_active(),
             log_warnings: imp.log_warnings_row.is_active(),
             log_operations: imp.log_operations_row.is_active(),
-            use_shared_container: imp.shared_container_row.is_active(),
+            global_sandbox_network: imp.sandbox_network_row.is_active(),
+            global_sandbox_folders: imp.folders_row.folders(),
         }
     }
 

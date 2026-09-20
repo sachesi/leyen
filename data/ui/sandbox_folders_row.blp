@@ -1,0 +1,19 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $LeyenSandboxFoldersRow: Adw.ExpanderRow {
+  title: _("Extra Folders");
+  subtitle: _("Folders to share besides the game's own: a data folder elsewhere, mods, saves you keep apart.");
+
+  Adw.ActionRow add_row {
+    title: _("Add Folder…");
+    activatable: true;
+    activated => $on_add() swapped;
+
+    [suffix]
+    Image {
+      icon-name: "list-add-symbolic";
+      accessible-role: presentation;
+    }
+  }
+}

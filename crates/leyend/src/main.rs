@@ -676,16 +676,6 @@ async fn run() -> anyhow::Result<()> {
     info!("leyend: owning {} at {}", leyen_ipc::BUS_NAME, OBJECT_PATH);
 
     install_listeners(&connection);
-    install_bus_name_probe(&connection).await;
-
-    // Detached engine tasks (deferred shared-container launches) hold a work
-    // token so the idle-exit cannot kill the daemon mid-launch. The token also
-    // carries a LaunchGuard: during the container wait nothing is registered
-    // as running yet, and a dependency job slipping in would mutate the very
-    // prefix the pending launch is about to use.
-    leyen_core::launch::set_work_guard_source(|| {
-        Box::new((ActivityGuard::new(), LaunchGuard::new()))
-    });
 
     // Crash recovery: re-adopt live scopes, then start the one monitor.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;
@@ -787,25 +777,6 @@ fn spawn_signal_handlers(shutdown: Arc<tokio::sync::Notify>) {
             _ = int.recv() => info!("leyend: received SIGINT, shutting down"),
         }
         shutdown.notify_one();
-    });
-}
-
-/// Gives the engine a session-bus name probe so it can wait for a shared
-/// pressure-vessel container (`com.steampowered.App<md5(prefix)>`) to become
-/// joinable before launching a same-prefix follower with NSENTER.
-async fn install_bus_name_probe(connection: &Connection) {
-    let Ok(dbus) = zbus::fdo::DBusProxy::new(connection).await else {
-        warn!("leyend: failed to build DBus proxy; shared-container waits disabled");
-        return;
-    };
-    leyen_core::launch::set_bus_name_probe(move |name| {
-        let dbus = dbus.clone();
-        Box::pin(async move {
-            match zbus::names::BusName::try_from(name) {
-                Ok(bus_name) => dbus.name_has_owner(bus_name).await.unwrap_or(false),
-                Err(_) => false,
-            }
-        })
     });
 }
 

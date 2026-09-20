@@ -23,20 +23,24 @@ Depends: ${shlibs:Depends},
          libgtk-4-1 (>= 4.22),
          libadwaita-1-0 (>= 1.9),
          hicolor-icon-theme,
+         bubblewrap,
          dbus,
          systemd,
          curl,
          tar
-Recommends: mangohud,
-            gamemode
+Recommends: mangohud
 Description: Run Windows games with Proton
  Leyen keeps a library of Windows games and runs them with Proton through umu-
  launcher, each in its own Wine prefix or in one shared with its group. A daemon
  on the session bus launches, tracks and stops the games, so the window, the
  applications menu and the command line see the same running games.
  .
+ Every game runs in a bubblewrap sandbox with a system-call filter: it sees its
+ prefix, its own folder and the devices it needs, not the rest of the home
+ directory, and it cannot reach the session bus.
+ .
  Groups with a prefix and a Proton their games inherit, playtime and the last
- session of every game, per-game launch arguments, MangoHud, GameMode, Wayland,
+ session of every game, per-game launch arguments, MangoHud, Wayland,
  WoW64, NTSync and HDR switches, winetricks components managed per prefix, the
  Wine configuration and the registry editor for any prefix, a live log, menu
  entries that start a game from the desktop, and leyen list, run, kill and logs

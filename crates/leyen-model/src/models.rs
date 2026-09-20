@@ -1,5 +1,64 @@
 use serde::{Deserialize, Serialize};
 
+/// Whether a program reaches the network from inside its sandbox. A game takes
+/// the group's answer, a group the global setting, and the global setting allows
+/// it — a game that cannot reach the network is the exception, not the rule.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NetworkAccess {
+    #[default]
+    Inherit,
+    Allowed,
+    Blocked,
+}
+
+/// Resolves the three levels into the answer a launch needs.
+pub fn resolve_network_access(
+    game: NetworkAccess,
+    group: Option<NetworkAccess>,
+    global: bool,
+) -> bool {
+    for level in [Some(game), group] {
+        match level {
+            Some(NetworkAccess::Allowed) => return true,
+            Some(NetworkAccess::Blocked) => return false,
+            _ => {}
+        }
+    }
+    global
+}
+
+/// A folder the sandbox exposes besides the prefix and the game's own folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SandboxFolder {
+    pub path: String,
+    pub writable: bool,
+}
+
+/// Every folder named at any of the three levels. A path named more than once
+/// keeps what the narrowest level says about writing to it.
+pub fn resolve_sandbox_folders(
+    game: &[SandboxFolder],
+    group: Option<&[SandboxFolder]>,
+    global: &[SandboxFolder],
+) -> Vec<SandboxFolder> {
+    let mut resolved: Vec<SandboxFolder> = Vec::new();
+    for level in [Some(game), group, Some(global)] {
+        for folder in level.unwrap_or_default() {
+            let path = folder.path.trim();
+            if path.is_empty() || resolved.iter().any(|kept| kept.path == path) {
+                continue;
+            }
+            resolved.push(SandboxFolder {
+                path: path.to_string(),
+                writable: folder.writable,
+            });
+        }
+    }
+    resolved
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Game {
@@ -10,12 +69,19 @@ pub struct Game {
     pub proton: String,
     pub launch_args: String,
     pub mangohud: bool,
-    pub gamemode: bool,
     pub wayland: bool,
     pub wow64: bool,
     pub ntsync: bool,
     pub hdr: bool,
     pub proton_log: bool,
+    pub sandbox_network: NetworkAccess,
+    /// Folders the sandbox exposes to this game on top of the ones its group and
+    /// the preferences name.
+    pub sandbox_folders: Vec<SandboxFolder>,
+    /// The one folder of the user's the game sees. Set by hand, never derived
+    /// from the executable: for some games it is the executable's folder, for
+    /// others the install root above it. A game without one does not launch.
+    pub game_dir: String,
     pub custom_icon: bool,
     pub leyen_id: String,
     pub game_id: String,
@@ -30,6 +96,9 @@ pub struct Game {
 pub struct GroupLaunchDefaults {
     pub prefix_path: String,
     pub proton: String,
+    pub sandbox_network: NetworkAccess,
+    /// Folders the sandbox exposes to every game in the group.
+    pub sandbox_folders: Vec<SandboxFolder>,
 }
 
 fn default_true() -> bool {
@@ -69,7 +138,6 @@ pub struct GlobalSettings {
     pub default_prefix_path: String,
     pub default_proton: String,
     pub global_mangohud: bool,
-    pub global_gamemode: bool,
     pub global_wayland: bool,
     pub global_wow64: bool,
     pub global_ntsync: bool,
@@ -79,12 +147,12 @@ pub struct GlobalSettings {
     pub log_errors: bool,
     pub log_warnings: bool,
     pub log_operations: bool,
-    /// When a game launches while another sharing its Wine prefix is already
-    /// running, run it inside the existing pressure-vessel container
-    /// (`UMU_CONTAINER_NSENTER`). Disable to launch it in its own container on the
-    /// same prefix instead. Defaults to enabled to preserve prior behavior.
+    /// Whether a game reaches the network from inside its sandbox, for every
+    /// game that does not answer for itself or through its group.
     #[serde(default = "default_true")]
-    pub use_shared_container: bool,
+    pub global_sandbox_network: bool,
+    /// Folders the sandbox exposes to every game.
+    pub global_sandbox_folders: Vec<SandboxFolder>,
 }
 
 /// Logging defaults to fully enabled: the Logs window is a primary debugging
@@ -96,7 +164,6 @@ impl Default for GlobalSettings {
             default_prefix_path: String::new(),
             default_proton: String::new(),
             global_mangohud: false,
-            global_gamemode: false,
             global_wayland: false,
             global_wow64: false,
             global_ntsync: false,
@@ -106,7 +173,8 @@ impl Default for GlobalSettings {
             log_errors: true,
             log_warnings: true,
             log_operations: true,
-            use_shared_container: true,
+            global_sandbox_network: true,
+            global_sandbox_folders: Vec::new(),
         }
     }
 }
@@ -138,6 +206,52 @@ mod tests {
 
         let settings: GlobalSettings = toml::from_str("").unwrap();
         assert_eq!(settings.version, 1);
+    }
+
+    #[test]
+    fn the_narrowest_answer_decides_whether_a_game_has_network() {
+        use NetworkAccess::{Allowed, Blocked, Inherit};
+        // The game answers for itself, whatever the group and the setting say.
+        assert!(resolve_network_access(Allowed, Some(Blocked), false));
+        assert!(!resolve_network_access(Blocked, Some(Allowed), true));
+        // Otherwise the group answers, and last the global setting.
+        assert!(!resolve_network_access(Inherit, Some(Blocked), true));
+        assert!(resolve_network_access(Inherit, Some(Inherit), true));
+        assert!(!resolve_network_access(Inherit, None, false));
+    }
+
+    #[test]
+    fn a_folder_named_at_several_levels_keeps_the_narrowest_answer() {
+        let folder = |path: &str, writable: bool| SandboxFolder {
+            path: path.to_string(),
+            writable,
+        };
+        let resolved = resolve_sandbox_folders(
+            &[folder("/games/mods", true)],
+            Some(&[folder("/games/shared", false)]),
+            &[folder("/games/mods", false), folder("/media/assets", true)],
+        );
+        assert_eq!(
+            resolved,
+            vec![
+                folder("/games/mods", true),
+                folder("/games/shared", false),
+                folder("/media/assets", true),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_folder_entry_is_dropped() {
+        let resolved = resolve_sandbox_folders(
+            &[SandboxFolder {
+                path: "   ".to_string(),
+                writable: true,
+            }],
+            None,
+            &[],
+        );
+        assert!(resolved.is_empty());
     }
 
     #[test]

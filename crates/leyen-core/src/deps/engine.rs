@@ -19,6 +19,7 @@ use crate::runtime::umu::{
     download_winetricks, get_umu_run_path, get_winetricks_path, is_umu_run_available,
     is_winetricks_available,
 };
+use crate::sandbox::{Confined, SandboxRequest, Share, confine_in_scope, is_available};
 
 use super::recipes::get_dep_steps;
 use super::state::{read_prefix_dep_state_checked, remove_installed_dep, upsert_installed_dep};
@@ -127,9 +128,9 @@ fn join_err(e: tokio::task::JoinError) -> String {
     }
 }
 
-/// Runs a umu command to completion with a timeout, inside a transient systemd
-/// user scope like a game. Cancel and the timeout stop the whole scope — every
-/// process the command started, including those that left its process group
+/// Runs a umu command to completion with a timeout, sandboxed in a transient
+/// systemd user scope like a game. Cancel and the timeout stop the whole scope —
+/// every process the command started, including those that left its process group
 /// (wineserver calls setsid) — with SIGTERM first and SIGKILL after a grace.
 pub(super) async fn run_umu_command(
     cmd: AsyncCommand,
@@ -144,8 +145,17 @@ pub(super) async fn run_umu_command(
             "A systemd user session is required to install or remove dependencies.",
         ));
     }
+    // An installer is a Windows program from the internet: no sandbox, no run.
+    tokio::task::spawn_blocking(is_available)
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))?;
+
+    let settings = crate::config::load_settings().await;
     let unit = format!("leyen-dep-{}.scope", uuid::Uuid::new_v4());
-    let mut scoped = crate::launch::in_scope(&cmd, &unit);
+    let sandbox = dependency_sandbox(&cmd, &settings.global_sandbox_folders);
+    let Confined {
+        command: mut scoped,
+    } = confine_in_scope(&cmd, &unit, &sandbox).await?;
     scoped.stdin(Stdio::null());
     // Nothing reads stdout; piping it only buffered installer chatter in memory.
     scoped.stdout(Stdio::null());
@@ -153,10 +163,47 @@ pub(super) async fn run_umu_command(
 
     // Run on the Tokio runtime (not the GTK/glib executor) so the process and
     // timer drivers advance while the main loop stays responsive for Cancel.
-    tokio::spawn(run_umu_command_inner(scoped, unit, label, cancel))
+    tokio::spawn(async move { run_umu_command_inner(scoped, unit, label, cancel).await })
         .await
         .map_err(|e| format!("Command task panicked: {e}"))
         .and_then(|r| r)
+}
+
+/// The sandbox a dependency install runs in. The prefix and the Proton are on
+/// the command as environment variables already, so they are read back from
+/// there rather than threaded through every caller.
+fn dependency_sandbox(
+    cmd: &AsyncCommand,
+    shared_folders: &[leyen_model::models::SandboxFolder],
+) -> SandboxRequest {
+    let value = |name: &str| {
+        cmd.as_std()
+            .get_envs()
+            .find(|(key, _)| *key == name)
+            .and_then(|(_, value)| value)
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let home = std::env::var("HOME").unwrap_or_default();
+    // What the preferences share with everything Leyen runs. A refused folder is
+    // logged by the launch that owns it; here it is skipped.
+    let (mut shares, _) = crate::sandbox::shares_from(shared_folders);
+    // winetricks keeps what it downloads in a cache it shares between prefixes,
+    // and re-downloading every component per prefix is no gain.
+    let winetricks_cache = PathBuf::from(home).join(".cache/winetricks");
+    let _ = std::fs::create_dir_all(&winetricks_cache);
+    shares.push(Share::writable(winetricks_cache));
+    // The installers Leyen downloaded and verified: readable, so a component
+    // being installed cannot tamper with the one installed next.
+    shares.push(Share::read_only(get_deps_cache_dir()));
+    SandboxRequest {
+        prefix_path: value("WINEPREFIX"),
+        proton_path: value("PROTONPATH"),
+        work_dir: None,
+        shares,
+        // Installers fetch what they install.
+        network: true,
+    }
 }
 
 async fn run_umu_command_inner(
@@ -1427,6 +1474,12 @@ fn collect_snapshot(
 
         // Skip dosdevices to avoid redundant scanning and infinite loops (symlink cycles)
         if path.file_name().is_some_and(|n| n == "dosdevices") {
+            continue;
+        }
+
+        // The sandbox's own directory in the prefix: caches, nothing a
+        // dependency installs.
+        if current == root && path.file_name().is_some_and(|n| n == ".leyen") {
             continue;
         }
 

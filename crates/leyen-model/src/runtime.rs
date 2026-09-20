@@ -77,10 +77,20 @@ pub fn get_umu_runtime_dir() -> String {
         .to_string()
 }
 
-/// Returns `true` if `cmd` is found in `$PATH`.
-fn is_in_path(cmd: &str) -> bool {
+/// Where `cmd` is installed system-wide, resolved. A copy under the home
+/// directory does not count: the sandbox does not have it.
+fn system_program(cmd: &str) -> Option<String> {
     let path_env = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path_env).any(|dir| dir.join(cmd).is_file())
+    std::env::split_paths(&path_env)
+        .map(|dir| dir.join(cmd))
+        .filter(|candidate| candidate.is_file())
+        .filter_map(|candidate| fs::canonicalize(candidate).ok())
+        .find(|resolved| {
+            ["/usr", "/bin", "/sbin", "/nix"]
+                .iter()
+                .any(|root| resolved.starts_with(root))
+        })
+        .map(|resolved| resolved.to_string_lossy().into_owned())
 }
 
 static NIXOS: OnceLock<bool> = OnceLock::new();
@@ -113,10 +123,10 @@ pub fn get_umu_run_path() -> String {
     static CACHED_PATH: OnceLock<String> = OnceLock::new();
     CACHED_PATH
         .get_or_init(|| {
-            if is_nixos() {
-                return "umu-run".to_string();
+            if let Some(system) = system_program("umu-run") {
+                return system;
             }
-            if is_in_path("umu-run") {
+            if is_nixos() {
                 return "umu-run".to_string();
             }
             let local_path = get_local_umu_run_path();
@@ -155,7 +165,7 @@ pub fn is_umu_run_available() -> bool {
 }
 
 fn is_umu_run_available_impl() -> bool {
-    if is_in_path("umu-run") {
+    if system_program("umu-run").is_some() {
         return true;
     }
     if is_nixos() {
@@ -183,10 +193,10 @@ pub fn get_winetricks_path() -> String {
     static CACHED_PATH: OnceLock<String> = OnceLock::new();
     CACHED_PATH
         .get_or_init(|| {
-            if is_nixos() {
-                return "winetricks".to_string();
+            if let Some(system) = system_program("winetricks") {
+                return system;
             }
-            if is_in_path("winetricks") {
+            if is_nixos() {
                 return "winetricks".to_string();
             }
             let local_path = get_local_winetricks_path();
@@ -225,7 +235,7 @@ pub fn is_winetricks_available() -> bool {
 }
 
 fn is_winetricks_available_impl() -> bool {
-    if is_in_path("winetricks") {
+    if system_program("winetricks").is_some() {
         return true;
     }
     std::path::Path::new(&get_local_winetricks_path()).exists()

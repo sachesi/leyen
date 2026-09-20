@@ -31,6 +31,8 @@ BuildRequires:  pkgconfig(glib-2.0)
 Requires:       libgtk-4-1 >= 4.22
 Requires:       libadwaita-1-0 >= 1.9
 Requires:       hicolor-icon-theme
+# Every game runs in a bubblewrap sandbox; without it a launch is refused.
+Requires:       bubblewrap
 # Every game runs in a transient scope of the systemd user manager, which is how
 # the daemon tracks and stops it; without one a launch is refused.
 Requires:       systemd
@@ -40,7 +42,6 @@ Requires:       curl
 Requires:       tar
 # Their switches appear once the tools are installed.
 Recommends:     mangohud
-Recommends:     gamemode
 
 %description
 Leyen keeps a library of Windows games and runs them with Proton through
@@ -48,8 +49,12 @@ umu-launcher, each in its own Wine prefix or in one shared with its group. A
 daemon on the session bus launches, tracks and stops the games, so the window,
 the applications menu and the command line see the same running games.
 
+Every game runs in a bubblewrap sandbox with a system-call filter: it sees its
+prefix, its own folder and the devices it needs, not the rest of the home
+directory, and it cannot reach the session bus.
+
 Groups with a prefix and a Proton their games inherit, playtime and the last
-session of every game, per-game launch arguments, MangoHud, GameMode, Wayland,
+session of every game, per-game launch arguments, MangoHud, Wayland,
 WoW64, NTSync and HDR switches, winetricks components managed per prefix, the
 Wine configuration and the registry editor for any prefix, a live log, menu
 entries that start a game from the desktop, and leyen list, run, kill and logs

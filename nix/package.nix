@@ -10,6 +10,7 @@
   wrapGAppsHook4,
   gtk4,
   libadwaita,
+  bubblewrap,
   curl,
   gnutar,
   runtimeShell,
@@ -60,11 +61,13 @@ rustPlatform.buildRustPackage {
     libadwaita
   ];
 
-  # Leyen fetches umu-launcher and winetricks with these when they are not in PATH.
-  # systemd-run and systemctl come from the system.
+  # bwrap builds the sandbox every game runs in; curl and gnutar fetch umu-launcher
+  # and winetricks when they are not in PATH. systemd-run and systemctl come from
+  # the system.
   preFixup = ''
     gappsWrapperArgs+=(--suffix PATH : ${
       lib.makeBinPath [
+        bubblewrap
         curl
         gnutar
       ]

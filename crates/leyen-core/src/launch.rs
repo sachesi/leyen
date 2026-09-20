@@ -1814,6 +1814,11 @@ async fn launch_game_managed(
 
     if game.proton_log {
         env_vars.push(("PROTON_LOG".to_string(), "1".to_string()));
+        // Proton writes the log into $HOME, which the sandbox replaces with a
+        // tmpfs that goes with the run; the prefix is bound read-write and stays.
+        if !prefix_path.is_empty() {
+            env_vars.push(("PROTON_LOG_DIR".to_string(), prefix_path.clone()));
+        }
     }
 
     let umu = get_umu_run_path();

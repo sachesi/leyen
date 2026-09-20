@@ -16,13 +16,13 @@ pkgbase = leyen
 	depends = hicolor-icon-theme
 	depends = libgcc
 	depends = glibc
+	depends = bubblewrap
 	depends = dbus
 	depends = systemd
 	depends = curl
 	depends = tar
 	optdepends = winetricks: use the installed winetricks instead of downloading it
 	optdepends = mangohud: MangoHud switch
-	optdepends = gamemode: GameMode switch
 	source = leyen-0.9.1.tar.gz::https://github.com/sachesi/leyen/archive/v0.9.1/leyen-0.9.1.tar.gz
 	sha256sums = af24a6a45c18545215734a1159c94771f816a9af9e94f4611089d9280ae77e62
 

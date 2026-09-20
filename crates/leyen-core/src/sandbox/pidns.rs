@@ -48,15 +48,20 @@ pub(super) fn shared_dir() -> PathBuf {
     PathBuf::from(runtime_dir()).join("leyen/shared")
 }
 
-/// The holder's process inside its namespaces, as the host numbers it.
+/// The holder's process inside its namespaces, as the host numbers it. The scope
+/// holds the outer `bwrap` as well, which stays in the daemon's own namespaces;
+/// what `nsenter` needs is a process that left them. Found that way rather than
+/// by name: the single binary NixOS links `sleep` to takes its name from the
+/// whole path it was called by.
 fn holder_pid(unit: &str) -> Option<u32> {
     let cgroup = systemctl_show_property(unit, "ControlGroup")?;
     let procs = fs::read_to_string(format!("/sys/fs/cgroup{cgroup}/cgroup.procs")).ok()?;
+    let own = fs::read_link("/proc/self/ns/pid").ok()?;
     procs
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
         .find(|pid| {
-            fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|comm| comm.trim() == "sleep")
+            fs::read_link(format!("/proc/{pid}/ns/pid")).is_ok_and(|namespace| namespace != own)
         })
 }
 
@@ -79,7 +84,7 @@ fn start_holder(unit: &str) -> Result<u32, String> {
     }
     let failed = || gettext("The sandbox's process namespace could not be created.");
     let tools = tools()?;
-    let sleep = super::find_program("sleep").ok_or_else(failed)?;
+    let sleep = super::find_program_unresolved("sleep").ok_or_else(failed)?;
     let shared = shared_dir();
     fs::create_dir_all(&shared).map_err(|_| failed())?;
 

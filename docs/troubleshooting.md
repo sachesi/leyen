@@ -13,7 +13,9 @@ container or over plain SSH there usually is none.
 ## A launch is refused with "bubblewrap is required…"
 
 Games only run sandboxed, so `bwrap` has to be there: install `bubblewrap`. It is a
-dependency of Leyen's packages; a build installed by hand may be missing it.
+dependency of Leyen's packages; a build installed by hand may be missing it. The same goes for
+`nsenter` from `util-linux`, which puts every program on a prefix in one process namespace, and
+which every distribution has anyway.
 
 ## A launch is refused with "The sandbox could not be created"
 
@@ -77,12 +79,11 @@ link the build there.
 Repair Runtime in the preferences deletes umu-launcher's `steamrt3`, which it downloads
 again on the next install.
 
-## Two games on one prefix behave oddly
+## Stopping one game takes down the others on its prefix
 
-Each gets a pressure-vessel container of its own: a game cannot join another's container
-without joining its sandbox, which holds that game's folder and not its own. Two wineservers
-on one prefix is Wine's business, not Leyen's — give the games separate prefixes if it goes
-wrong.
+Games on one prefix share a wineserver, as Wine requires, and it runs with the game that
+started first. Stopping that game from Leyen stops the wineserver too. Close it from inside
+the game instead, and the others keep running.
 
 ## The prefix tools say a game is running
 

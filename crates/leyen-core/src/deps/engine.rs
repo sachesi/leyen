@@ -155,6 +155,7 @@ pub(super) async fn run_umu_command(
     let sandbox = dependency_sandbox(&cmd, &settings.global_sandbox_folders);
     let Confined {
         command: mut scoped,
+        lease,
     } = confine_in_scope(&cmd, &unit, &sandbox).await?;
     scoped.stdin(Stdio::null());
     // Nothing reads stdout; piping it only buffered installer chatter in memory.
@@ -163,10 +164,15 @@ pub(super) async fn run_umu_command(
 
     // Run on the Tokio runtime (not the GTK/glib executor) so the process and
     // timer drivers advance while the main loop stays responsive for Cancel.
-    tokio::spawn(async move { run_umu_command_inner(scoped, unit, label, cancel).await })
-        .await
-        .map_err(|e| format!("Command task panicked: {e}"))
-        .and_then(|r| r)
+    tokio::spawn(async move {
+        lease.spawned();
+        let output = run_umu_command_inner(scoped, unit, label, cancel).await;
+        crate::sandbox::release_namespace(&sandbox.prefix_path).await;
+        output
+    })
+    .await
+    .map_err(|e| format!("Command task panicked: {e}"))
+    .and_then(|r| r)
 }
 
 /// The sandbox a dependency install runs in. The prefix and the Proton are on

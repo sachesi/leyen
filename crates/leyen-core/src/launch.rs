@@ -125,12 +125,6 @@ pub enum LaunchError {
     Other(String),
 }
 
-enum PrefixLockState {
-    Available,
-    Busy,
-    Unavailable,
-}
-
 /// Grace period after launch during which a session with an empty/unqueryable
 /// scope is still treated as running. Covers the brief window between spawning
 /// `systemd-run` and the transient scope becoming visible to the user manager.
@@ -335,6 +329,10 @@ async fn finalize_finished_session(session: &RunningGameSession) {
     } else {
         "Last run: completed"
     };
+
+    if let Some(prefix) = &session.match_prefix_path {
+        crate::sandbox::release_namespace(prefix).await;
+    }
 
     // The game tree is gone; its output-capture readers will never see EOF if a
     // descendant inherited the pipe fds. Give the tail a moment to drain, then
@@ -979,49 +977,6 @@ fn working_directory_for(exe_path: &str) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-async fn try_lock_prefix(prefix_path: &str) -> PrefixLockState {
-    if prefix_path.trim().is_empty() {
-        return PrefixLockState::Unavailable;
-    }
-
-    let path_clone = prefix_path.to_string();
-    let create_result = tokio::task::spawn_blocking(move || fs::create_dir_all(&path_clone)).await;
-    match create_result {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => {
-            warn!("Failed to create prefix directory '{}': {}", prefix_path, e);
-            return PrefixLockState::Unavailable;
-        }
-        Err(e) => {
-            warn!(
-                "spawn_blocking task failed while creating prefix directory '{}': {e}",
-                prefix_path
-            );
-            return PrefixLockState::Unavailable;
-        }
-    }
-
-    match synchronize_running_sessions().await {
-        Ok(sessions) => {
-            if sessions
-                .iter()
-                .any(|session| session.match_prefix_path.as_deref() == Some(prefix_path))
-            {
-                PrefixLockState::Busy
-            } else {
-                PrefixLockState::Available
-            }
-        }
-        Err(e) => {
-            warn!(
-                "Failed to inspect runtime prefix usage '{}': {}",
-                prefix_path, e
-            );
-            PrefixLockState::Unavailable
-        }
-    }
-}
-
 /// Hard cap on every `systemctl --user` invocation. The user manager can stall
 /// for seconds while pressure-vessel containers churn; without a cap a stalled
 /// query blocks its `spawn_blocking` thread indefinitely and, repeated, exhausts
@@ -1092,7 +1047,7 @@ pub(crate) fn in_scope(cmd: &tokio::process::Command, unit: &str) -> tokio::proc
 /// it lingers. `systemctl stop` can return before the cgroup is empty (or fail
 /// outright on a half-started unit), which would leak the scope and its
 /// processes.
-fn stop_scope_verified(unit: &str) {
+pub(crate) fn stop_scope_verified(unit: &str) {
     let _ = systemctl(&["stop", unit]);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while systemctl(&["is-active", "--quiet", unit]) {
@@ -1107,7 +1062,7 @@ fn stop_scope_verified(unit: &str) {
 /// Returns the value of a single systemd property for `unit`, or `None` if the
 /// unit is gone / the query fails / it timed out. Used to resolve a scope's
 /// `ControlGroup`. Output is tiny so the pipe never deadlocks the poll loop.
-fn systemctl_show_property(unit: &str, property: &str) -> Option<String> {
+pub(crate) fn systemctl_show_property(unit: &str, property: &str) -> Option<String> {
     let mut child = StdCommand::new("systemctl")
         .arg("--user")
         .arg("show")
@@ -1895,15 +1850,6 @@ async fn launch_game_managed(
     let working_dir = tokio::task::spawn_blocking(move || working_directory_for(&exe_path_clone))
         .await
         .unwrap_or_default();
-    // A container of its own even on a busy prefix: joining the other game's
-    // container means running in its sandbox, which holds its folder, not this
-    // game's.
-    if let PrefixLockState::Busy = try_lock_prefix(&prefix_path).await {
-        notices.push(gettext(
-            "Another game is using this prefix. This one gets a container of its own on it.",
-        ));
-    }
-
     let exe = Path::new(&game.exe_path);
     if !exe.starts_with(game.game_dir.trim()) && !exe.starts_with(&prefix_path) {
         return Err(LaunchError::Other(gettext(
@@ -2053,7 +1999,10 @@ async fn finish_launch(
     let confined = crate::sandbox::confine_in_scope(&unconfined, &scope_unit, &sandbox)
         .await
         .map_err(LaunchError::Other)?;
-    let crate::sandbox::Confined { command: scoped } = confined;
+    let crate::sandbox::Confined {
+        command: scoped,
+        lease,
+    } = confined;
 
     let env_vars_game_id = env_vars
         .iter()
@@ -2086,6 +2035,7 @@ async fn finish_launch(
         })
         .await
         .map_err(|e| LaunchError::Other(join_err(e)))??;
+    lease.spawned();
     let match_exe = Path::new(&game.exe_path)
         .file_name()
         .map(|name| name.to_string_lossy().to_lowercase())

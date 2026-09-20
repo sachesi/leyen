@@ -12,6 +12,7 @@ fn host(prefix: &Path) -> HostLayout {
         home: PathBuf::from("/home/player"),
         runtime_dir: PathBuf::from("/run/user/1000"),
         bus_socket: PathBuf::from("/run/user/1000/leyen/bus"),
+        shared_dir: PathBuf::from("/run/user/1000/leyen/shared"),
         wayland_socket: Some(PathBuf::from("/run/user/1000/wayland-0")),
         x11_socket: None,
         xauthority: None,
@@ -139,7 +140,13 @@ fn what_the_program_may_reach_follows_the_request() {
 
     let online = bwrap_args(&request(prefix), &host, &BTreeMap::new());
     assert!(!online.iter().any(|arg| arg == "--unshare-net"));
-    assert!(online.iter().any(|arg| arg == "--unshare-pid"));
+    // The PID namespace is the prefix's holder's, entered before bwrap runs.
+    assert!(!online.iter().any(|arg| arg == "--unshare-pid"));
+    assert!(binds(&online).contains(&(
+        "--bind".to_string(),
+        "/run/user/1000/leyen/shared/shm".to_string(),
+        "/dev/shm".to_string(),
+    )));
 
     let mut offline = request(prefix);
     offline.network = false;
@@ -193,6 +200,9 @@ fn a_program_in_the_sandbox_sees_the_prefix_and_not_the_home_directory() {
     let mut host = host(&prefix);
     host.home = home.clone();
     host.bus_socket = bus;
+    host.shared_dir = temp.path().join("shared");
+    std::fs::create_dir_all(host.shared_dir.join("wine")).unwrap();
+    std::fs::create_dir_all(host.shared_dir.join("shm")).unwrap();
     host.wayland_socket = None;
     host.umu_writable = Vec::new();
     host.umu_read_only = Vec::new();
@@ -362,6 +372,9 @@ fn a_sandbox_starts_with_a_proton_that_is_a_symlink() {
     let mut host = host(&prefix);
     host.home = home;
     host.bus_socket = bus;
+    host.shared_dir = temp.path().join("shared");
+    std::fs::create_dir_all(host.shared_dir.join("wine")).unwrap();
+    std::fs::create_dir_all(host.shared_dir.join("shm")).unwrap();
     host.wayland_socket = None;
     host.umu_writable = Vec::new();
     host.umu_read_only = Vec::new();

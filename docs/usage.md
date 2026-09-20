@@ -44,6 +44,7 @@ the content beside it — the folder above. Everything else has a default:
   `DXVK_HUD=fps %command% -windowed`.
 - **Environment**: MangoHud, Wayland, WoW64, NTSync, HDR and a Proton log, each
   on or off for this game. A new game starts with the switches from the preferences.
+  The Proton log is written into the prefix, as `steam-<game>.log`.
 - **Sandbox** is what the game may reach besides its own folder. **Network Access** is
   Default, which takes the answer from the group and then the preferences, Allowed, or
   Blocked. **Extra Folders** are folders to share on top: mods kept elsewhere, assets on

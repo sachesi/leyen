@@ -11,6 +11,8 @@
   gtk4,
   libadwaita,
   bubblewrap,
+  util-linux,
+  coreutils,
   curl,
   gnutar,
   runtimeShell,
@@ -61,13 +63,16 @@ rustPlatform.buildRustPackage {
     libadwaita
   ];
 
-  # bwrap builds the sandbox every game runs in; curl and gnutar fetch umu-launcher
-  # and winetricks when they are not in PATH. systemd-run and systemctl come from
-  # the system.
+  # bwrap builds the sandbox every game runs in; nsenter puts a game in the process
+  # namespace its prefix is served from, which an idle sleep holds open; curl and
+  # gnutar fetch umu-launcher and winetricks when they are not in PATH. systemd-run
+  # and systemctl come from the system.
   preFixup = ''
     gappsWrapperArgs+=(--suffix PATH : ${
       lib.makeBinPath [
         bubblewrap
+        util-linux
+        coreutils
         curl
         gnutar
       ]

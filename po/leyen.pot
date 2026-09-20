@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.9.1\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-20 20:00+0300\n"
+"POT-Creation-Date: 2026-09-20 20:01+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -170,7 +170,7 @@ msgid "Launching {}..."
 msgstr ""
 
 #: crates/leyen-core/src/prefix_tool.rs:50
-#: crates/leyen-core/src/sandbox/mod.rs:620
+#: crates/leyen-core/src/sandbox/mod.rs:653
 #: crates/leyen-gtk/src/prefix_tools.rs:26
 #, no-c-format
 msgid "Prefix path is required"
@@ -192,65 +192,65 @@ msgstr ""
 msgid "Failed to run {}: {}"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:103
+#: crates/leyen-core/src/sandbox/mod.rs:104
 #, no-c-format
 msgid ""
 "bubblewrap is required to run games in a sandbox. Install the “bubblewrap” "
 "package."
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:107
+#: crates/leyen-core/src/sandbox/mod.rs:108
 #, no-c-format
 msgid ""
 "nsenter is required to run games in a sandbox. Install the “util-linux” "
 "package."
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:130
+#: crates/leyen-core/src/sandbox/mod.rs:135
 #, no-c-format
 msgid "Failed to start bubblewrap: {}"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:138
+#: crates/leyen-core/src/sandbox/mod.rs:143
 #, no-c-format
 msgid "The sandbox could not be created: {}"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:146
+#: crates/leyen-core/src/sandbox/mod.rs:151
 #, no-c-format
 msgid "Failed to prepare the sandbox: {}"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:202
+#: crates/leyen-core/src/sandbox/mod.rs:216
 #, no-c-format
 msgid "“{}” is not an absolute path"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:205
+#: crates/leyen-core/src/sandbox/mod.rs:219
 #, no-c-format
 msgid "The folder “{}” cannot be used: {}"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:210
+#: crates/leyen-core/src/sandbox/mod.rs:224
 #, no-c-format
 msgid "“{}” is not a folder"
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:219
+#: crates/leyen-core/src/sandbox/mod.rs:233
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: keeping it out is what the "
 "sandbox is for."
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:225
+#: crates/leyen-core/src/sandbox/mod.rs:239
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: it holds “{}”, and keeping "
 "that out is what the sandbox is for."
 msgstr ""
 
-#: crates/leyen-core/src/sandbox/mod.rs:660
+#: crates/leyen-core/src/sandbox/mod.rs:693
 #, no-c-format
 msgid "Failed to prepare the sandbox directory “{}”: {}"
 msgstr ""

@@ -14,7 +14,8 @@ explicit list of what the program may see, and a seccomp filter over it. A game 
 games do inside that sandbox is not a vulnerability; a way out of it is.
 
 What the sandbox holds a game to: its Wine prefix and its game folder, read-write; `/usr`,
-`/etc` and `/sys`, read-only; the device nodes for graphics, sound and controllers; the
+`/etc` and `/sys`, read-only, and on NixOS `/nix/store`, the system profile and the graphics
+drivers with them; the device nodes for graphics, sound and controllers; the
 display and audio sockets; a bus socket with nothing listening on it. `$HOME`, `/tmp` and
 `$XDG_RUNTIME_DIR` are empty filesystems with only those paths bound back in, so Leyen's own
 configuration — which decides what Leyen launches next — is not there at all. Games only

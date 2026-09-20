@@ -79,6 +79,7 @@ fn start_holder(unit: &str) -> Result<u32, String> {
     }
     let failed = || gettext("The sandbox's process namespace could not be created.");
     let tools = tools()?;
+    let sleep = super::find_program("sleep").ok_or_else(failed)?;
     let shared = shared_dir();
     fs::create_dir_all(&shared).map_err(|_| failed())?;
 
@@ -90,7 +91,9 @@ fn start_holder(unit: &str) -> Result<u32, String> {
         bwrap.args(["--perms", "0700", "--dir"]);
         bwrap.arg(shared.join(dir));
     }
-    bwrap.args(["--", "/usr/bin/sleep", "infinity"]);
+    bwrap.arg("--");
+    bwrap.arg(&sleep);
+    bwrap.arg("infinity");
     let mut scoped = in_scope(&bwrap, unit);
     scoped
         .stdin(Stdio::null())

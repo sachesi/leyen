@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-20 20:00+0300\n"
+"POT-Creation-Date: 2026-09-20 20:01+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -172,7 +172,7 @@ msgid "Launching {}..."
 msgstr "Запуск {}..."
 
 #: crates/leyen-core/src/prefix_tool.rs:50
-#: crates/leyen-core/src/sandbox/mod.rs:620
+#: crates/leyen-core/src/sandbox/mod.rs:653
 #: crates/leyen-gtk/src/prefix_tools.rs:26
 #, no-c-format
 msgid "Prefix path is required"
@@ -194,7 +194,7 @@ msgstr "Для запуску програм у префіксі потрібе�
 msgid "Failed to run {}: {}"
 msgstr "Не вдалося запустити {}: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:103
+#: crates/leyen-core/src/sandbox/mod.rs:104
 #, no-c-format
 msgid ""
 "bubblewrap is required to run games in a sandbox. Install the “bubblewrap” "
@@ -203,7 +203,7 @@ msgstr ""
 "Щоб запускати ігри в пісочниці, потрібен bubblewrap. Встановіть пакунок "
 "«bubblewrap»."
 
-#: crates/leyen-core/src/sandbox/mod.rs:107
+#: crates/leyen-core/src/sandbox/mod.rs:108
 #, no-c-format
 msgid ""
 "nsenter is required to run games in a sandbox. Install the “util-linux” "
@@ -212,37 +212,37 @@ msgstr ""
 "Щоб запускати ігри в пісочниці, потрібен nsenter. Встановіть пакунок «util-"
 "linux»."
 
-#: crates/leyen-core/src/sandbox/mod.rs:130
+#: crates/leyen-core/src/sandbox/mod.rs:135
 #, no-c-format
 msgid "Failed to start bubblewrap: {}"
 msgstr "Не вдалося запустити bubblewrap: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:138
+#: crates/leyen-core/src/sandbox/mod.rs:143
 #, no-c-format
 msgid "The sandbox could not be created: {}"
 msgstr "Не вдалося створити пісочницю: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:146
+#: crates/leyen-core/src/sandbox/mod.rs:151
 #, no-c-format
 msgid "Failed to prepare the sandbox: {}"
 msgstr "Не вдалося підготувати пісочницю: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:202
+#: crates/leyen-core/src/sandbox/mod.rs:216
 #, no-c-format
 msgid "“{}” is not an absolute path"
 msgstr "«{}» не є абсолютним шляхом"
 
-#: crates/leyen-core/src/sandbox/mod.rs:205
+#: crates/leyen-core/src/sandbox/mod.rs:219
 #, no-c-format
 msgid "The folder “{}” cannot be used: {}"
 msgstr "Теку «{}» не можна використати: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:210
+#: crates/leyen-core/src/sandbox/mod.rs:224
 #, no-c-format
 msgid "“{}” is not a folder"
 msgstr "«{}» не є текою"
 
-#: crates/leyen-core/src/sandbox/mod.rs:219
+#: crates/leyen-core/src/sandbox/mod.rs:233
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: keeping it out is what the "
@@ -251,7 +251,7 @@ msgstr ""
 "Теку «{}» не можна надати грі: саме щоб тримати її поза грою, і існує "
 "пісочниця."
 
-#: crates/leyen-core/src/sandbox/mod.rs:225
+#: crates/leyen-core/src/sandbox/mod.rs:239
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: it holds “{}”, and keeping "
@@ -260,7 +260,7 @@ msgstr ""
 "Теку «{}» не можна надати грі: вона містить «{}», а саме щоб тримати це поза "
 "грою, і існує пісочниця."
 
-#: crates/leyen-core/src/sandbox/mod.rs:660
+#: crates/leyen-core/src/sandbox/mod.rs:693
 #, no-c-format
 msgid "Failed to prepare the sandbox directory “{}”: {}"
 msgstr "Не вдалося підготувати теку пісочниці «{}»: {}"

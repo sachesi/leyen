@@ -17,6 +17,7 @@
 //!   or systemd to start a unit outside the sandbox.
 
 mod bus;
+mod pidns;
 pub mod seccomp;
 
 #[cfg(test)]
@@ -34,6 +35,7 @@ use leyen_model::runtime::get_umu_runtime_dir;
 use log::info;
 use tokio::process::Command as AsyncCommand;
 
+pub use pidns::{Lease, release as release_namespace};
 use seccomp::{SECCOMP_FD, SeccompFilter};
 
 /// What one sandboxed program reaches on top of the fixed layout.
@@ -74,11 +76,14 @@ impl Share {
 /// The tools the sandbox is built from, resolved and probed once.
 struct Tools {
     bwrap: PathBuf,
+    nsenter: PathBuf,
 }
 
 /// A command wrapped in the sandbox and in its systemd scope, ready to spawn.
 pub struct Confined {
     pub command: AsyncCommand,
+    /// To be dropped once `command` has been spawned.
+    pub lease: Lease,
 }
 
 /// Resolves the tools and proves a sandbox can be built here, once per daemon
@@ -98,6 +103,10 @@ fn probe_tools() -> Result<Tools, String> {
             "bubblewrap is required to run games in a sandbox. Install the “bubblewrap” package.",
         )
     })?;
+    let nsenter = find_program("nsenter").ok_or_else(|| {
+        gettext("nsenter is required to run games in a sandbox. Install the “util-linux” package.")
+    })?;
+
     // The real thing in miniature: a user namespace, a PID namespace and the
     // filter.
     let filter = SeccompFilter::compile().map_err(prepare_error)?;
@@ -130,7 +139,7 @@ fn probe_tools() -> Result<Tools, String> {
     }
 
     info!("Sandbox ready: {}", bwrap.display());
-    Ok(Tools { bwrap })
+    Ok(Tools { bwrap, nsenter })
 }
 
 fn prepare_error(error: impl std::fmt::Display) -> String {
@@ -248,6 +257,9 @@ pub struct HostLayout {
     /// The socket bound into the sandbox as `$XDG_RUNTIME_DIR/bus`, which nothing
     /// listens on.
     pub bus_socket: PathBuf,
+    /// The prefix's holder keeps the wineserver's directory and `/dev/shm` here,
+    /// the same for every sandbox on the prefix.
+    pub shared_dir: PathBuf,
     pub wayland_socket: Option<PathBuf>,
     pub x11_socket: Option<PathBuf>,
     pub xauthority: Option<PathBuf>,
@@ -312,6 +324,7 @@ impl HostLayout {
             home: home.clone(),
             runtime_dir,
             bus_socket,
+            shared_dir: pidns::shared_dir(),
             wayland_socket,
             x11_socket,
             xauthority,
@@ -386,12 +399,7 @@ pub fn bwrap_args(
     let mut args: Vec<String> = Vec::new();
     flag(
         &mut args,
-        &[
-            "--unshare-user",
-            "--unshare-pid",
-            "--unshare-uts",
-            "--unshare-cgroup",
-        ],
+        &["--unshare-user", "--unshare-uts", "--unshare-cgroup"],
     );
     flag(&mut args, &["--hostname", "leyen-sandbox"]);
     if !request.network {
@@ -423,6 +431,7 @@ pub fn bwrap_args(
         bind(&mut args, "--ro-bind-try", resolv, resolv);
     }
 
+    // The PID namespace is the prefix's holder's, entered before bwrap runs.
     flag(&mut args, &["--tmpfs", "/tmp"]);
     flag(&mut args, &["--tmpfs", "/var/tmp"]);
     args.push("--tmpfs".into());
@@ -469,6 +478,23 @@ pub fn bwrap_args(
     for (mode, source, target) in &mounts {
         bind(&mut args, mode, source, target);
     }
+
+    // One wineserver per prefix: its socket directory and the shared memory
+    // fsync keeps in /dev/shm are the holder's.
+    // SAFETY: getuid cannot fail and takes no arguments.
+    let wine_dir = format!("/tmp/.wine-{}", unsafe { libc::getuid() });
+    bind(
+        &mut args,
+        "--bind",
+        &host.shared_dir.join("wine"),
+        Path::new(&wine_dir),
+    );
+    bind(
+        &mut args,
+        "--bind",
+        &host.shared_dir.join("shm"),
+        Path::new("/dev/shm"),
+    );
 
     // Fonts, and the configuration of the overlays a game may run with.
     for relative in [
@@ -605,8 +631,10 @@ pub async fn confine_in_scope(
     let env = sandbox_env(command, &host);
     let filter = SeccompFilter::compile().map_err(prepare_error)?;
 
+    let (holder, lease) = pidns::holder(&request.prefix_path).await?;
     let inner = command.as_std();
-    let mut sandboxed = AsyncCommand::new(&tools.bwrap);
+    let mut sandboxed = pidns::enter(&tools.nsenter, holder);
+    sandboxed.arg(&tools.bwrap);
     sandboxed.args(bwrap_args(request, &host, &env));
     sandboxed.arg(inner.get_program());
     sandboxed.args(inner.get_args());
@@ -617,7 +645,10 @@ pub async fn confine_in_scope(
     let mut scoped = crate::launch::in_scope(&sandboxed, unit);
     filter.place_on_fd(&mut scoped).map_err(prepare_error)?;
 
-    Ok(Confined { command: scoped })
+    Ok(Confined {
+        command: scoped,
+        lease,
+    })
 }
 
 /// `bwrap` refuses a bind whose source is missing. The prefix too: a dependency

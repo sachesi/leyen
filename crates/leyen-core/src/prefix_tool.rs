@@ -143,6 +143,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     };
     let Confined {
         command: mut scoped,
+        lease,
     } = confine_in_scope(&cmd, &unit, &sandbox).await?;
     scoped.stdin(Stdio::null());
     scoped.stdout(Stdio::piped());
@@ -152,6 +153,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
             .replacen("{}", &label, 1)
             .replacen("{}", &e.to_string(), 1)
     })?;
+    lease.spawned();
 
     // Also what keeps the daemon from exiting while the program runs.
     running().insert(unit.clone(), prefix.clone());
@@ -181,6 +183,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         running().remove(&unit);
+        crate::sandbox::release_namespace(&prefix).await;
         info!("'{label}' in prefix '{prefix}' has ended");
     });
     Ok(())

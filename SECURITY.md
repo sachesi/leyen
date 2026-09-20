@@ -25,7 +25,8 @@ What it deliberately still exposes, and what is therefore not a vulnerability: t
 game can read input devices; the PipeWire and PulseAudio sockets, which carry the microphone
 as well as the speakers, and on PipeWire any camera it offers; the X11 socket on an X11
 session, where any client can watch the others; `/etc` and `/sys` as any program on the
-system can read them; the network, unless it is switched off for that game, its group or all games; and the folders
+system can read them; the other programs on the same prefix, which share a process namespace, a wineserver and
+`/dev/shm` with it, as Wine requires; the network, unless it is switched off for that game, its group or all games; and the folders
 you share under Extra Folders, which are yours to choose. A folder that would undo the
 sandbox — your home directory, Leyen's own directories, a system directory, or any folder
 holding one of them — is refused when the game launches, after the path is resolved, so a

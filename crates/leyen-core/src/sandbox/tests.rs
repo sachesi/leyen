@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use leyen_model::models::SandboxFolder;
 
 use super::{
-    HostLayout, SandboxRequest, Share, bwrap_args, check_folder, is_available, shares_from,
+    HostLayout, SandboxRequest, Share, bwrap_args, check_folder, find_program_unresolved,
+    is_available, shares_from,
 };
 
 fn host(prefix: &Path) -> HostLayout {
@@ -422,6 +423,21 @@ fn the_store_the_drivers_and_the_system_profile_are_bound_for_nixos() {
             .any(|dir| dir == "/run/current-system/sw/bin"),
         "PATH misses the system profile: {}",
         env["PATH"]
+    );
+}
+
+/// The holder reaches its program through a whole root, so it runs the path as
+/// installed. Resolved, `sleep` on NixOS is coreutils' single binary, which under
+/// that name only prints a usage error.
+#[test]
+fn the_program_the_holder_runs_keeps_the_name_it_was_found_by() {
+    let sleep = find_program_unresolved("sleep").expect("sleep is installed");
+
+    assert_eq!(
+        sleep.file_name().expect("a file name"),
+        "sleep",
+        "the holder would run {} instead of sleep",
+        sleep.display()
     );
 }
 

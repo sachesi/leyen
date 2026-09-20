@@ -151,14 +151,11 @@ fn prepare_error(error: impl std::fmt::Display) -> String {
     gettext("Failed to prepare the sandbox: {}").replacen("{}", &error.to_string(), 1)
 }
 
-/// Looks for `name` in `PATH` and in the usual system directories. Fedora and
-/// openSUSE ship `bwrap` in `/usr/sbin`, which a user session's `PATH` does not
-/// always include; NixOS has it in `/run/current-system/sw/bin`.
-///
-/// The path comes back resolved, because that is the one a sandbox can run: on
-/// NixOS the directories above are symlinks into `/nix/store`, and the store is
-/// what a sandbox has.
-fn find_program(name: &str) -> Option<PathBuf> {
+/// Every place a program is looked for, in order: `PATH` and the usual system
+/// directories. Fedora and openSUSE ship `bwrap` in `/usr/sbin`, which a user
+/// session's `PATH` does not always include; NixOS has it in
+/// `/run/current-system/sw/bin`.
+fn program_candidates(name: &str) -> Vec<PathBuf> {
     let path = std::env::var("PATH").unwrap_or_default();
     std::env::split_paths(&path)
         .filter(|dir| !dir.as_os_str().is_empty())
@@ -175,7 +172,24 @@ fn find_program(name: &str) -> Option<PathBuf> {
         )
         .map(|dir| dir.join(name))
         .filter(|candidate| candidate.is_file())
+        .collect()
+}
+
+/// Looks for `name`, resolved, because that is the path a sandbox can run: on
+/// NixOS the directories searched are symlinks into `/nix/store`, and the store
+/// is what a sandbox has.
+fn find_program(name: &str) -> Option<PathBuf> {
+    program_candidates(name)
+        .into_iter()
         .find_map(|candidate| fs::canonicalize(candidate).ok())
+}
+
+/// Looks for `name` as it is installed, symlink and all, for a program reached
+/// through a whole root rather than a sandbox: resolving `sleep` on NixOS lands
+/// on coreutils' single binary, which under its own name only prints a usage
+/// error.
+fn find_program_unresolved(name: &str) -> Option<PathBuf> {
+    program_candidates(name).into_iter().next()
 }
 
 /// Whether a sandbox can be built. Cheap after the first call.

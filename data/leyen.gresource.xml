@@ -8,6 +8,7 @@
     <file preprocess="xml-stripblanks">ui/game_dialog.ui</file>
     <file preprocess="xml-stripblanks">ui/group_dialog.ui</file>
     <file preprocess="xml-stripblanks">ui/prefix_tools_group.ui</file>
+    <file preprocess="xml-stripblanks">ui/sandbox_folders_row.ui</file>
     <file preprocess="xml-stripblanks">ui/preferences_dialog.ui</file>
     <file preprocess="xml-stripblanks">ui/dependencies_page.ui</file>
     <file preprocess="xml-stripblanks">ui/dependency_row.ui</file>

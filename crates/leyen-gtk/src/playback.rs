@@ -44,18 +44,12 @@ pub async fn launch_or_stop(game: &Game) -> Option<String> {
         match daemon::stop_game(&game.leyen_id).await {
             Ok(true) => gettext("Stopping {}…").replacen("{}", &game.title, 1),
             Ok(false) => gettext("Game is no longer running"),
-            Err(reason) => format!(
-                "{}: {reason}",
-                gettext("Failed to stop {}").replacen("{}", &game.title, 1)
-            ),
+            Err(reason) => reason,
         }
     } else {
         match daemon::launch_game(&game.leyen_id).await {
             Ok(()) => gettext("Launching {}…").replacen("{}", &game.title, 1),
-            Err(reason) => format!(
-                "{}: {reason}",
-                gettext("Failed to launch {}").replacen("{}", &game.title, 1)
-            ),
+            Err(reason) => reason,
         }
     })
 }

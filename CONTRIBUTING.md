@@ -22,9 +22,11 @@ The workspace has one crate per program and two shared ones:
                            and their files, the dependency catalogue, where things live,
                            gettext setup. No tokio, no GTK.
     crates/leyen-core      the engine, used by the daemon: launching games in systemd
-                           scopes and tracking them (launch.rs), the prefix tools' programs
-                           (prefix_tool.rs), umu-launcher and winetricks (runtime/),
-                           dependency installs (deps/), the log (logging.rs)
+                           scopes and tracking them (launch.rs), the bubblewrap sandbox and
+                           its seccomp filter every Windows program runs in (sandbox/), the
+                           prefix tools' programs (prefix_tool.rs), umu-launcher and
+                           winetricks (runtime/), dependency installs (deps/), the log
+                           (logging.rs)
     crates/leyen-ipc       the D-Bus interface: the proxy, the types on the wire, the errors;
                            the XML beside it describes the same interface
     crates/leyend          the daemon: owns the session bus name, serves the interface,
@@ -43,7 +45,8 @@ And in `leyen-gtk`:
     src/game_row.rs, group_row.rs, library_icon.rs
                            the rows of the library and their icons
     src/dialogs/           adding and editing games and groups, the preferences, the
-                           prefix tools they share and the dependency manager they open
+                           prefix tools and the sandbox's shared folders they share, and
+                           the dependency manager they open
     src/log_window.rs, running_games.rs
                            the two secondary windows
     src/daemon.rs          the bridge to the daemon (below)
@@ -95,7 +98,15 @@ po` merges it into every `po/<lang>.po`. A new language is a new line in `po/LIN
 the `.po` file. `install` compiles the catalogues and merges the desktop and metainfo
 translations with `msgfmt`.
 
-A game's processes are whatever lives in its systemd scope, plus, for a game that joined
-another's pressure-vessel container, the processes there that match its executable,
-arguments and `GAMEID`. Stopping a game kills those and nothing else; read the comments on
-`RunningGameSession` and `stop_game` in `launch.rs` before touching either.
+A game's processes are whatever lives in its systemd scope, plus, for a session adopted from
+a daemon old enough to have joined another game's pressure-vessel container, the processes
+there that match its executable, arguments and `GAMEID`. Stopping a game kills those and
+nothing else; read the comments on `RunningGameSession` and `stop_game` in `launch.rs` before
+touching either.
+
+Everything that runs Windows code goes through `sandbox::confine_in_scope`: `systemd-run` →
+`bwrap` → the program, so the scope's cgroup still holds the whole tree while the program
+itself is confined. The argument list is built by `sandbox::bwrap_args`, which is pure and
+covered by tests that assert what is bound and what is not; a path added there is a path every
+game can read, so add it with a reason. There is no unsandboxed path, and adding one would
+defeat the point: where the sandbox cannot be built, the launch is refused.

@@ -10,15 +10,16 @@ use leyen_model::i18n::gettext;
 use leyen_model::library::{
     find_game_by_leyen_id, generate_unique_leyen_id, insert_game, replace_game, umu_game_id,
 };
-use leyen_model::models::{Game, GameGroup, GlobalSettings};
+use leyen_model::models::{Game, GameGroup, GlobalSettings, NetworkAccess};
 use leyen_model::runtime::resolve_proton_path;
-use leyen_model::tools::{gamemode_available, mangohud_available};
+use leyen_model::tools::mangohud_available;
 use libadwaita as adw;
 
 use super::prefix_tools_group::managed_by_preferences;
 use super::{
-    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, ToolTarget, apply_game_icon,
-    choose_file_into, choose_folder_into, image_filter, proton_exists, windows_programs_filter,
+    IconBackup, PrefixSuggestion, PrefixToolsGroup, ProtonChoices, SandboxFoldersRow, ToolTarget,
+    apply_game_icon, choose_file_into, choose_folder_into, image_filter, network_row_value,
+    proton_exists, setup_network_row, windows_programs_filter,
 };
 use crate::daemon::{self, gio_blocking};
 use crate::desktop::{
@@ -45,6 +46,8 @@ mod imp {
         #[template_child]
         pub exe_row: TemplateChild<adw::EntryRow>,
         #[template_child]
+        pub game_folder_row: TemplateChild<adw::EntryRow>,
+        #[template_child]
         pub group_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub leyen_id_row: TemplateChild<adw::ActionRow>,
@@ -69,8 +72,6 @@ mod imp {
         #[template_child]
         pub mangohud_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub gamemode_row: TemplateChild<adw::SwitchRow>,
-        #[template_child]
         pub wayland_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub wow64_row: TemplateChild<adw::SwitchRow>,
@@ -80,6 +81,10 @@ mod imp {
         pub hdr_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub proton_log_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub network_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub folders_row: TemplateChild<SandboxFoldersRow>,
         #[template_child]
         pub tools_group: TemplateChild<PrefixToolsGroup>,
         #[template_child]
@@ -109,6 +114,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             PrefixToolsGroup::ensure_type();
+            SandboxFoldersRow::ensure_type();
             klass.bind_template();
             klass.bind_template_callbacks();
         }
@@ -180,6 +186,14 @@ mod imp {
         }
 
         #[template_callback]
+        fn on_browse_game_folder(&self, _button: &gtk4::Button) {
+            let row = self.game_folder_row.get();
+            glib::spawn_future_local(async move {
+                choose_folder_into(&row, &gettext("Select Game Folder")).await;
+            });
+        }
+
+        #[template_callback]
         fn on_browse_icon(&self, _button: &gtk4::Button) {
             let row = self.icon_row.get();
             glib::spawn_future_local(async move {
@@ -243,7 +257,6 @@ impl GameDialog {
         let settings = imp.settings.borrow().clone();
         dialog.set_environment(
             settings.global_mangohud,
-            settings.global_gamemode,
             settings.global_wayland,
             settings.global_wow64,
             settings.global_ntsync,
@@ -251,6 +264,7 @@ impl GameDialog {
             settings.global_proton_log,
         );
         dialog.select_proton("Default");
+        setup_network_row(&imp.network_row, NetworkAccess::Inherit);
         dialog.present(Some(window));
     }
 
@@ -262,11 +276,11 @@ impl GameDialog {
 
         imp.title_row.set_text(&game.title);
         imp.exe_row.set_text(&game.exe_path);
+        imp.game_folder_row.set_text(&game.game_dir);
         imp.args_entry.set_text(&game.launch_args);
         dialog.show_ids(&game.leyen_id);
         dialog.set_environment(
             game.mangohud,
-            game.gamemode,
             game.wayland,
             game.wow64,
             game.ntsync,
@@ -286,6 +300,8 @@ impl GameDialog {
         imp.custom_icon_row.set_enable_expansion(game.custom_icon);
         imp.custom_icon_row.set_expanded(game.custom_icon);
 
+        setup_network_row(&imp.network_row, game.sandbox_network);
+        imp.folders_row.set_folders(&game.sandbox_folders);
         imp.prefix.replace(PrefixSuggestion::new(
             &imp.settings.borrow().default_prefix_path,
             &game.prefix_path,
@@ -321,7 +337,6 @@ impl GameDialog {
         imp.protons.replace(Some(protons));
 
         imp.mangohud_row.set_visible(mangohud_available());
-        imp.gamemode_row.set_visible(gamemode_available());
 
         if let Some(group) = &group {
             imp.group_row.set_subtitle(&group.title);
@@ -362,7 +377,6 @@ impl GameDialog {
     fn set_environment(
         &self,
         mangohud: bool,
-        gamemode: bool,
         wayland: bool,
         wow64: bool,
         ntsync: bool,
@@ -371,7 +385,6 @@ impl GameDialog {
     ) {
         let imp = self.imp();
         imp.mangohud_row.set_active(mangohud);
-        imp.gamemode_row.set_active(gamemode);
         imp.wayland_row.set_active(wayland);
         imp.wow64_row.set_active(wow64);
         imp.ntsync_row.set_active(ntsync);
@@ -510,12 +523,17 @@ impl GameDialog {
         let imp = self.imp();
         let title = imp.title_row.text().trim().to_string();
         let exe = imp.exe_row.text().to_string();
+        let game_dir = imp.game_folder_row.text().trim().to_string();
         if title.is_empty() {
             self.toast(&gettext("Title is required"));
             return;
         }
         if exe.trim().is_empty() {
             self.toast(&gettext("Executable path is required"));
+            return;
+        }
+        if game_dir.is_empty() {
+            self.toast(&gettext("Game folder is required"));
             return;
         }
         let proton = self.chosen_proton();
@@ -526,7 +544,7 @@ impl GameDialog {
 
         // Once, however often Save is pressed while this runs.
         imp.save_button.set_sensitive(false);
-        let saved = self.write(title, exe, proton).await;
+        let saved = self.write(title, exe, game_dir, proton).await;
         imp.save_button.set_sensitive(true);
         if let Some(message) = saved {
             if let Some(window) = imp.window.upgrade() {
@@ -539,7 +557,13 @@ impl GameDialog {
 
     /// Writes the game into the library. Returns the message for the window, or
     /// `None` when it failed and the reason is shown in the dialog.
-    async fn write(&self, title: String, exe: String, proton: String) -> Option<String> {
+    async fn write(
+        &self,
+        title: String,
+        exe: String,
+        game_dir: String,
+        proton: String,
+    ) -> Option<String> {
         let imp = self.imp();
         let mut items = match daemon::load_library().await {
             Ok(items) => items,
@@ -590,12 +614,14 @@ impl GameDialog {
             proton,
             launch_args: imp.args_entry.text().to_string(),
             mangohud: imp.mangohud_row.is_active(),
-            gamemode: imp.gamemode_row.is_active(),
             wayland: imp.wayland_row.is_active(),
             wow64: imp.wow64_row.is_active(),
             ntsync: imp.ntsync_row.is_active(),
             hdr: imp.hdr_row.is_active(),
             proton_log: imp.proton_log_row.is_active(),
+            sandbox_network: network_row_value(&imp.network_row),
+            sandbox_folders: imp.folders_row.folders(),
+            game_dir,
             game_id: umu_game_id(&leyen_id),
             leyen_id,
             custom_icon,

@@ -10,7 +10,8 @@
     <ul>
       <li>Games in groups, with the playtime and the last session of each</li>
       <li>A Proton version, a prefix and launch arguments per game, or inherited from the group and the defaults</li>
-      <li>MangoHud, GameMode, Wayland, WoW64, NTSync and HDR switches</li>
+      <li>MangoHud, Wayland, WoW64, NTSync and HDR switches</li>
+      <li>Every game sandboxed: it reaches its prefix, its own folder and nothing else of your files</li>
       <li>Winetricks components, the Wine configuration and the registry editor for any prefix</li>
       <li>Menu entries that start a game from the desktop, and a command line to list, run and stop games</li>
     </ul>

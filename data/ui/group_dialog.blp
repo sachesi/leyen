@@ -45,7 +45,7 @@ template $LeyenGroupDialog: Adw.Dialog {
 
             Adw.PreferencesGroup {
               title: _("Group Defaults");
-              description: _("Leave prefix empty or Proton on Default to inherit global settings.");
+              description: _("Leave the prefix empty, or Proton and Network Access on Default, to inherit the global settings.");
 
               Adw.ExpanderRow custom_icon_row {
                 title: _("Custom Icon");
@@ -97,6 +97,13 @@ template $LeyenGroupDialog: Adw.Dialog {
               Adw.ComboRow proton_row {
                 title: _("Proton");
               }
+
+              Adw.ComboRow network_row {
+                title: _("Network Access");
+                subtitle: _("Whether the group's games reach the network from inside their sandbox. “Default” takes the answer from the preferences.");
+              }
+
+              $LeyenSandboxFoldersRow folders_row {}
             }
 
             $LeyenPrefixToolsGroup tools_group {

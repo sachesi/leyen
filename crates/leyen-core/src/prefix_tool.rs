@@ -1,7 +1,7 @@
 //! Programs run in a prefix outside the library: Wine Configuration, the
-//! Registry Editor and a program picked by hand. Each runs in a transient systemd
-//! user scope, as games do, and while one runs its prefix is in use: a game
-//! cannot launch on it and the daemon starts no dependency job.
+//! Registry Editor and a program picked by hand. Each runs sandboxed in a
+//! transient systemd user scope, as games do, and while one runs its prefix is in
+//! use: a game cannot launch on it and the daemon starts no dependency job.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,11 +10,13 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use leyen_model::i18n::gettext;
+use leyen_model::models::SandboxFolder;
 use log::info;
 use tokio::process::Command as AsyncCommand;
 
-use crate::launch::{for_each_output_line, in_scope, systemd_user_available, unit_is_active};
+use crate::launch::{for_each_output_line, systemd_user_available, unit_is_active};
 use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
+use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
 
 /// Scope unit → prefix, for every program running in a prefix.
 fn running() -> MutexGuard<'static, HashMap<String, String>> {
@@ -85,6 +87,34 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
             "A systemd user session is required to run programs in a prefix.",
         ));
     }
+    // Wine runs here too: sandboxed like a game, refused the same way.
+    tokio::task::spawn_blocking(is_available)
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()))?;
+
+    let is_own_program = !matches!(program, "winecfg" | "regedit");
+    let program_folder = working_dir.clone();
+    // A program picked by hand sees the folder it sits in, and the preferences'
+    // folders; a game's own belong to that game.
+    let settings = crate::config::load_settings().await;
+    let own_folder = program_folder.clone();
+    let shares = tokio::task::spawn_blocking(move || {
+        let mut shares = Vec::new();
+        if let Some(folder) = own_folder {
+            shares.push(crate::sandbox::check_folder(&SandboxFolder {
+                path: folder.to_string_lossy().into_owned(),
+                writable: false,
+            })?);
+        }
+        let (shared, refused) = crate::sandbox::shares_from(&settings.global_sandbox_folders);
+        for reason in refused {
+            log::warn!("{reason}");
+        }
+        shares.extend(shared);
+        Ok::<_, String>(shares)
+    })
+    .await
+    .unwrap_or_else(|e| Err(e.to_string()))?;
 
     let mut cmd = AsyncCommand::new(get_umu_run_path());
     cmd.arg(program);
@@ -102,7 +132,18 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
         cmd.current_dir(dir);
     }
     let unit = format!("leyen-tool-{}.scope", uuid::Uuid::new_v4());
-    let mut scoped = in_scope(&cmd, &unit);
+    let sandbox = SandboxRequest {
+        prefix_path: prefix.clone(),
+        proton_path: proton_path.to_string(),
+        work_dir: program_folder,
+        shares,
+        // An installer run by hand fetches what it installs; winecfg and regedit
+        // have no business on the network.
+        network: is_own_program,
+    };
+    let Confined {
+        command: mut scoped,
+    } = confine_in_scope(&cmd, &unit, &sandbox).await?;
     scoped.stdin(Stdio::null());
     scoped.stdout(Stdio::piped());
     scoped.stderr(Stdio::piped());

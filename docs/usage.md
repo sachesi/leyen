@@ -23,7 +23,10 @@ closes by itself once the last game ends.
 ## Adding and editing games
 
 "+" in the header adds a game or a group; inside a group it adds a game to that group. A game
-needs a title and an executable. Everything else has a default:
+needs a title, an executable and a game folder. The game folder is the only one of your files
+the game will see, so Leyen does not guess it: name the game's install root, which for some
+games is the folder the executable sits in and for others — `Binaries/Win64/game.exe` with
+the content beside it — the folder above. Everything else has a default:
 
 - **Leyen ID** and **Game ID** are given to the game once and never change. The Leyen ID
   (`ly-1234`) is what the command line and the menu entries use; the Game ID (`umu-ly1234`)
@@ -39,8 +42,13 @@ needs a title and an executable. Everything else has a default:
 - **Launch Arguments** are passed to the game. `%command%` stands for the game itself, so
   anything before it wraps the launch, as on Steam:
   `DXVK_HUD=fps %command% -windowed`.
-- **Environment**: MangoHud, GameMode, Wayland, WoW64, NTSync, HDR and a Proton log, each
+- **Environment**: MangoHud, Wayland, WoW64, NTSync, HDR and a Proton log, each
   on or off for this game. A new game starts with the switches from the preferences.
+- **Sandbox** is what the game may reach besides its own folder. **Network Access** is Default, which takes the answer from the group and then the
+  preferences, Allowed, or Blocked. **Extra Folders** are folders to share on top: mods kept
+  elsewhere, assets on another drive, a save folder of your own, each read-only unless
+  switched writable. The group and the preferences share folders with every game the same
+  way.
 
 Adding a game also adds it to the applications menu. **Menu Entry** in its settings removes
 it or adds it again; the entry runs `leyen run <Leyen ID>` and is named after the game, or
@@ -52,9 +60,9 @@ running: stop it first.
 
 ## Groups
 
-A group gives its games a prefix and a Proton to inherit, and has an icon of its own. A game
-that has its own prefix or Proton keeps it. Editing a group's title renames the menu entries
-of its games.
+A group gives its games a prefix, a Proton and a network answer to inherit, and has an icon of
+its own. A game that has its own prefix, Proton or network answer keeps it. Editing a group's
+title renames the menu entries of its games.
 
 ## Prefix tools
 
@@ -73,6 +81,40 @@ break. The other way round too: while Wine Configuration, the Registry Editor or
 run, and until everything they started has ended, no game starts on that prefix and no
 dependency is installed or removed. What they print is in the log. A game that uses its group's or the default prefix points there instead of offering
 the tools, and a group whose games keep prefixes of their own names them.
+
+## The sandbox
+
+Every game runs confined, and so does everything else that runs Windows code: `winecfg`, the
+Registry Editor, a program run by hand and a dependency install. There is no switch for it —
+where a sandbox cannot be built, the launch is refused instead.
+
+What a game can reach:
+
+- its Wine prefix, read-write. Saves, the registry and the caches are there: what the game
+  sees as `~/.cache` is `<prefix>/.leyen/cache`, so shader caches survive a run without
+  reaching the rest of your home directory.
+- its game folder, the one named in its settings, read-write.
+- the folders shared with it under Extra Folders, in its settings, its group's or the
+  preferences, read-only unless switched writable. A folder named at more than one level
+  keeps what the narrowest one says, so a game can write in a folder the preferences share
+  read-only.
+- `/usr`, `/etc` and `/sys`, read-only, and the devices for graphics, sound and controllers.
+- the display and audio sockets, and the network unless it is switched off.
+- a bus socket with nothing listening on it, so a game asking for the session bus is
+  refused as it would be on a machine without one. Your session bus is not in the sandbox: a
+  game on it could tell Leyen to launch anything, or your systemd to start something outside
+  the sandbox.
+
+What is not there: your home directory, `/tmp`, Leyen's own configuration, umu-launcher and
+winetricks as anything but read-only copies, and the games you did not start. Some folders
+cannot be shared at all, whatever the settings say — your home directory itself, Leyen's own
+directories, `/etc`, `/usr` and the other system directories, and any folder holding one of
+them. Naming one is refused when the game launches, with the reason in the log, and the game
+starts without it.
+
+Two games on one prefix each get a pressure-vessel container of their own — a game cannot
+join another's container without also joining its sandbox, which holds the other game's
+folder and not its own.
 
 ## Running games and logs
 

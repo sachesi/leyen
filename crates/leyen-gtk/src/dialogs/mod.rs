@@ -7,18 +7,21 @@ mod game;
 mod group;
 mod preferences;
 mod prefix_tools_group;
+mod sandbox_folders;
 
 pub use dependencies::DependenciesPage;
 pub use game::GameDialog;
 pub use group::GroupDialog;
 pub use preferences::PreferencesDialog;
 pub use prefix_tools_group::{PrefixToolsGroup, ToolTarget};
+pub use sandbox_folders::SandboxFoldersRow;
 
 use std::path::{Path, PathBuf};
 
+use adw::prelude::*;
 use gtk4::prelude::*;
 use leyen_model::i18n::gettext;
-use leyen_model::models::GlobalSettings;
+use leyen_model::models::{GlobalSettings, NetworkAccess};
 use libadwaita as adw;
 
 use crate::daemon::gio_blocking;
@@ -71,6 +74,34 @@ impl ProtonChoices {
             .cloned()
             .unwrap_or_else(|| "Default".to_string())
     }
+}
+
+/// What a "Network Access" combo row offers, in the order it shows them.
+const NETWORK_CHOICES: [NetworkAccess; 3] = [
+    NetworkAccess::Inherit,
+    NetworkAccess::Allowed,
+    NetworkAccess::Blocked,
+];
+
+/// Fills a "Network Access" combo row and selects `access`.
+pub fn setup_network_row(row: &adw::ComboRow, access: NetworkAccess) {
+    let names = [gettext("Default"), gettext("Allowed"), gettext("Blocked")];
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    row.set_model(Some(&gtk4::StringList::new(&names)));
+    row.set_selected(
+        NETWORK_CHOICES
+            .iter()
+            .position(|choice| *choice == access)
+            .unwrap_or(0) as u32,
+    );
+}
+
+/// What such a row is set to.
+pub fn network_row_value(row: &adw::ComboRow) -> NetworkAccess {
+    NETWORK_CHOICES
+        .get(row.selected() as usize)
+        .copied()
+        .unwrap_or_default()
 }
 
 /// Whether a chosen Proton version is still installed. "Default" always is.

@@ -10,6 +10,47 @@ Every game runs in a transient scope of the systemd user manager, which is how L
 it and stops it, so there has to be one: `systemctl --user status` should answer. Inside a
 container or over plain SSH there usually is none.
 
+## A launch is refused with "bubblewrap is required…"
+
+Games only run sandboxed, so `bwrap` has to be there: install `bubblewrap`. It is a
+dependency of Leyen's packages; a build installed by hand may be missing it.
+
+## A launch is refused with "The sandbox could not be created"
+
+The message carries what `bwrap` said. Almost always it is unprivileged user namespaces being
+switched off: `sysctl kernel.unprivileged_userns_clone` should be `1` where the setting
+exists, and `/proc/sys/user/max_user_namespaces` must not be `0`. Nothing in Leyen runs
+Windows code without the sandbox, so this refuses every launch until it is fixed.
+
+## A launch is refused with "Set this game's folder…"
+
+The sandbox gives a game one folder of yours, and Leyen does not guess which: open the game's
+settings and fill in **Game Folder**. A game added before the sandbox existed has none.
+
+## A game does not find its own files
+
+The sandbox gives a game one folder of yours: **Game Folder** in its settings. For a game
+whose executable lives below its install root — `Binaries/Win64/game.exe` with the content
+beside it — that has to be the root, not the folder the executable sits in. Anything else it
+needs goes under **Extra Folders**. The log says what it was given: "Sandbox: network … |
+folders …".
+
+## A game cannot reach the internet
+
+**Network Access** for the game, its group, or all games under Sandbox in the preferences. The
+narrowest answer wins. On an X11 session without a Wayland compositor, cutting the network can
+also cut the X server off, because X11 clients reach it through an abstract socket that lives
+with the network namespace.
+
+## There is no GameMode switch
+
+GameMode does not work from inside the sandbox. A game registers with `gamemoded` under its
+own process ID, and the daemon looks that ID up on the host; a sandboxed game has a process
+ID namespace of its own, so the two never agree. The way round that is to leave the game in
+the host's namespace, where it sees every process of yours and can signal them — kill them
+included — and to open a service on the session bus to it. Neither is worth a CPU governor
+switch; set the power profile for the session instead.
+
 ## "Downloading umu-launcher…" does not go away
 
 The daemon fetches umu-launcher and winetricks with `curl` and unpacks them with `tar`, into
@@ -35,6 +76,13 @@ link the build there.
 
 Repair Runtime in the preferences deletes umu-launcher's `steamrt3`, which it downloads
 again on the next install.
+
+## Two games on one prefix behave oddly
+
+Each gets a pressure-vessel container of its own: a game cannot join another's container
+without joining its sandbox, which holds that game's folder and not its own. Two wineservers
+on one prefix is Wine's business, not Leyen's — give the games separate prefixes if it goes
+wrong.
 
 ## The prefix tools say a game is running
 

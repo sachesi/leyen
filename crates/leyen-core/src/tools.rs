@@ -2,7 +2,7 @@
 //! the GUI); re-exported here so existing `crate::tools::*` call sites keep
 //! working.
 
-pub use leyen_model::tools::{command_available, gamemode_available, mangohud_available};
+pub use leyen_model::tools::{command_available, mangohud_available};
 
 pub fn join_err(e: tokio::task::JoinError) -> String {
     if e.is_panic() {

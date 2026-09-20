@@ -36,6 +36,7 @@ template $LeyenGameDialog: Adw.Dialog {
           content: Adw.PreferencesPage {
             Adw.PreferencesGroup {
               title: _("Game");
+              description: _("The game sees only its game folder: the install root, which for some games is above the executable.");
 
               Adw.EntryRow title_row {
                 title: _("Title");
@@ -51,6 +52,22 @@ template $LeyenGameDialog: Adw.Dialog {
                   tooltip-text: _("Browse for executable");
                   valign: center;
                   clicked => $on_browse_exe() swapped;
+
+                  styles [
+                    "flat",
+                  ]
+                }
+              }
+
+              Adw.EntryRow game_folder_row {
+                title: _("Game Folder");
+
+                [suffix]
+                Button {
+                  icon-name: "folder-open-symbolic";
+                  tooltip-text: _("Browse for the game folder");
+                  valign: center;
+                  clicked => $on_browse_game_folder() swapped;
 
                   styles [
                     "flat",
@@ -174,10 +191,6 @@ template $LeyenGameDialog: Adw.Dialog {
                 title: _("MangoHud");
               }
 
-              Adw.SwitchRow gamemode_row {
-                title: _("GameMode");
-              }
-
               Adw.SwitchRow wayland_row {
                 title: _("Wayland");
               }
@@ -197,6 +210,18 @@ template $LeyenGameDialog: Adw.Dialog {
               Adw.SwitchRow proton_log_row {
                 title: _("Proton Log");
               }
+            }
+
+            Adw.PreferencesGroup {
+              title: _("Sandbox");
+              description: _("The game sees its prefix, its own folder and the folders shared below. Nothing else of your files.");
+
+              Adw.ComboRow network_row {
+                title: _("Network Access");
+                subtitle: _("“Default” takes the answer from the group, or from the preferences.");
+              }
+
+              $LeyenSandboxFoldersRow folders_row {}
             }
 
             $LeyenPrefixToolsGroup tools_group {

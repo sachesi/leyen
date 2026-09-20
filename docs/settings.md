@@ -14,10 +14,15 @@ the daemon reads it again at once.
   switches afterwards; changing these does not change the games already in the library.
 - **Logging**: which of Leyen's own errors, warnings and operations the log keeps. What
   games print is always kept.
-- **Use Shared Container**: when a game launches while another on the same Wine prefix is
-  running, it joins that game's pressure-vessel container (`UMU_CONTAINER_NSENTER`), which
-  is what two programs sharing a prefix usually need. Off, it gets a container of its own
-  on the same prefix.
+- **Sandbox → Extra Folders**: folders every game may reach besides its own, read-only
+  unless switched writable. A group and a game add their own in their settings; the folders
+  of all three levels are shared together, and a folder named twice keeps what the narrowest
+  level says. The same folders are shared with the prefix tools and with
+  dependency installs.
+- **Sandbox → Network Access**: whether games reach the network from inside their sandbox.
+  On, which is how it starts, online games work; off, a game is on a loopback of its own. A
+  group and a game can answer for themselves in their own settings, and the narrowest answer
+  wins: the game's, then its group's, then this one.
 - **Repair Runtime**: deletes umu-launcher's Steam Linux Runtime, `steamrt3`, which it
   downloads again the next time it is needed. The cure for "pressure-vessel-wrap" errors
   while installing dependencies. Refused while a game runs.
@@ -29,6 +34,8 @@ the daemon reads it again at once.
     ~/.config/leyen/running.toml     what the daemon is tracking, so it survives a restart
     ~/.config/leyen/logs.jsonl       the log
     ~/.local/share/leyen/prefixes/   the default prefix and, usually, the others
+    <prefix>/.leyen/cache/           what the sandbox shows the game as ~/.cache: shader
+                                     and font caches, kept between runs
     ~/.local/share/leyen/proton/     Proton builds offered next to Default
     ~/.local/share/leyen/core/       umu-launcher and winetricks, when not installed
     ~/.local/share/icons/hicolor/256x256/apps/   game and group icons
@@ -52,3 +59,10 @@ A game uses its own prefix, then its group's, then the default. The dependencies
 through Leyen are recorded in the prefix itself, in `.leyen/deps/state.toml`, so a prefix
 shared by several games shows the same components for all of them. Downloads for them are
 cached in `~/.local/share/leyen/deps/cache`.
+
+## The sandbox
+
+Every Windows program Leyen starts — a game, `winecfg`, the Registry Editor, a program run by
+hand, a dependency install — runs inside bubblewrap with a system-call filter over it. See
+[the sandbox](usage.md#the-sandbox) for what it can reach, and
+[SECURITY.md](../SECURITY.md) for what it is meant to hold back.

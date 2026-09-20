@@ -184,8 +184,8 @@ jobs:
           Architecture: $arch
           Maintainer: sachesi <xsachesi@pm.me>
           Installed-Size: $(du -sk stage | cut -f1)
-          Depends: ${shlibs:+$shlibs, }libgtk-4-1 (>= 4.22), libadwaita-1-0 (>= 1.9), hicolor-icon-theme, dbus, systemd, curl, tar
-          Recommends: mangohud, gamemode
+          Depends: ${shlibs:+$shlibs, }libgtk-4-1 (>= 4.22), libadwaita-1-0 (>= 1.9), hicolor-icon-theme, bubblewrap, dbus, systemd, curl, tar
+          Recommends: mangohud
           Section: games
           Priority: optional
           Homepage: https://github.com/sachesi/leyen
@@ -195,8 +195,12 @@ jobs:
            daemon on the session bus launches, tracks and stops the games, so the window,
            the applications menu and the command line see the same running games.
            .
+           Every game runs in a bubblewrap sandbox with a system-call filter: it sees its
+           prefix, its own folder and the devices it needs, not the rest of the home
+           directory, and it cannot reach the session bus.
+           .
            Groups with a prefix and a Proton their games inherit, playtime and the last
-           session of every game, per-game launch arguments, MangoHud, GameMode, Wayland,
+           session of every game, per-game launch arguments, MangoHud, Wayland,
            WoW64, NTSync and HDR switches, winetricks components managed per prefix, the
            Wine configuration and the registry editor for any prefix, a live log, menu
            entries that start a game from the desktop, and leyen list, run, kill and logs

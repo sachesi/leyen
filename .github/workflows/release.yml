@@ -226,13 +226,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build
         run: |
-          pacman -Syu --noconfirm --needed git
+          pacman -Syu --noconfirm --needed git pacman-contrib
           useradd -m builder
           install -d -o builder pkg
-          cp packaging/aur/PKGBUILD pkg/
+          install -o builder packaging/aur/PKGBUILD pkg/
           sed -i "s/^pkgver=.*/pkgver=${TAG#v}/; s/^pkgrel=.*/pkgrel=1/" pkg/PKGBUILD
           (source pkg/PKGBUILD && pacman -S --noconfirm --needed --asdeps "${depends[@]}" "${makedepends[@]}")
-          su builder -c 'cd pkg && makepkg --noconfirm'
+          # The checksum in the repository belongs to the release before this one; the
+          # tarball of this tag is only hashable now that the tag exists, as in aur.yml.
+          su builder -c 'cd pkg && updpkgsums && makepkg --noconfirm'
           name=$(source pkg/PKGBUILD && echo "$pkgname")
           mkdir dist && mv pkg/"$name-${TAG#v}"-1-*.pkg.tar.zst dist/
           # The dependencies resolve on Arch as it is today.

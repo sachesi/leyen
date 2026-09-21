@@ -19,23 +19,27 @@
   <launchable type="desktop-id">io.github.sachesi.leyen.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/library.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/library.png</image>
       <caption>Keep every game in one library, on its own or in a group</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/group.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/group.png</image>
       <caption>Open a group to reach the games that share its prefix and Proton</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/game-settings.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/game-settings.png</image>
       <caption>Give a game its own Proton, prefix and launch arguments</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/dependencies.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/sandbox.png</image>
+      <caption>Share a folder with a game, or cut it off from the network</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/dependencies.png</image>
       <caption>Install winetricks components into the prefix of a game</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.9.1/data/screenshots/preferences.png</image>
+      <image>https://raw.githubusercontent.com/sachesi/leyen/v0.10.0/data/screenshots/preferences.png</image>
       <caption>Set the prefix, the Proton and the switches every new game inherits</caption>
     </screenshot>
   </screenshots>
@@ -52,6 +56,13 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.10.0" date="2026-09-21">
+      <description>
+        <p>Every game runs in a sandbox now, and so does everything else that runs Windows code: the Wine configuration, the registry editor, a program run by hand and a dependency install. A program reaches its Wine prefix, the game folder named in its settings and the folders shared with it, and nothing else of your files; where the sandbox cannot be built, the launch is refused instead of running unconfined. Two settings come with it, at the preferences, the group and the game: extra folders to share, each read-only unless switched writable, and network access.</p>
+        <p>Because the game folder is the one folder of yours a game sees, it is required and set by hand, so games in a library from an earlier version need it filled in before they launch again. GameMode is gone, switch and setting: it cannot work from inside the sandbox, and keeping a game outside it would let the game signal every program you run. bubblewrap and unprivileged user namespaces are requirements from here on.</p>
+        <p>Games that share a prefix still share one wineserver, so three windows of one game keep each other's registry writes. The Proton log is written into the prefix, where it can be read after the game exits. The interface is translated into Russian. On NixOS the sandbox builds and the prefix's process namespace starts.</p>
+      </description>
+    </release>
     <release version="0.9.1" date="2026-09-18">
       <description>
         <p>A dependency installed into a prefix that does not exist yet no longer counts the whole Wine installation as its own files, so removing it, or a failed install, leaves the prefix alone. Removing a component keeps the DLL overrides another installed component set too, and removes the overrides winetricks set, which were left behind. Reinstalling a winetricks component works again, the first install waits for winetricks to finish downloading, and the dependency manager waits for installs that take longer than five minutes, such as .NET.</p>

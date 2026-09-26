@@ -111,6 +111,10 @@ mod imp {
         pub list: TemplateChild<gtk4::ListBox>,
         /// Rows by game id.
         pub rows: RefCell<HashMap<String, RunningGameRow>>,
+        /// Game titles by game id, read again only when the library changes.
+        pub titles: RefCell<HashMap<String, String>>,
+        /// The running set shown now, redrawn with new titles.
+        pub sessions: RefCell<Vec<RunningGameSnapshot>>,
         pub tasks: RefCell<Vec<glib::JoinHandle<()>>>,
     }
 
@@ -216,10 +220,23 @@ impl RunningGamesWindow {
             #[weak(rename_to = window)]
             self,
             async move {
-                window.reload().await;
+                window.load_titles().await;
+                window.show(daemon::running_games_snapshot().await);
+                // SessionsChanged carries the set and comes whenever a process count
+                // moves, so it is drawn as it is, without asking the daemon again.
                 while let Ok(event) = events.recv().await {
-                    if matches!(event, DaemonEvent::SessionsChanged(_)) {
-                        window.reload().await;
+                    match event {
+                        DaemonEvent::SessionsChanged(sessions) => window.show(sessions),
+                        DaemonEvent::LibraryChanged => {
+                            window.load_titles().await;
+                            let sessions = window.imp().sessions.take();
+                            window.show(sessions);
+                        }
+                        DaemonEvent::DaemonRestarted => {
+                            window.load_titles().await;
+                            window.show(daemon::running_games_snapshot().await);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -255,15 +272,17 @@ impl RunningGamesWindow {
         }
     }
 
-    async fn reload(&self) {
-        let titles: HashMap<String, String> =
-            flatten_games(&daemon::load_library().await.unwrap_or_default())
-                .into_iter()
-                .map(|game| (game.id, game.title))
-                .collect();
-        let snapshots = daemon::running_games_snapshot().await;
+    async fn load_titles(&self) {
+        let titles = flatten_games(&daemon::load_library().await.unwrap_or_default())
+            .into_iter()
+            .map(|game| (game.id, game.title))
+            .collect();
+        self.imp().titles.replace(titles);
+    }
 
+    fn show(&self, snapshots: Vec<RunningGameSnapshot>) {
         let imp = self.imp();
+        let titles = imp.titles.borrow();
         let mut rows = imp.rows.borrow_mut();
         let mut stale: HashSet<String> = rows.keys().cloned().collect();
         for snapshot in &snapshots {
@@ -286,5 +305,6 @@ impl RunningGamesWindow {
         imp.list.invalidate_sort();
         imp.stack
             .set_visible_child_name(if rows.is_empty() { "empty" } else { "list" });
+        imp.sessions.replace(snapshots);
     }
 }

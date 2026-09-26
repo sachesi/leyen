@@ -692,6 +692,7 @@ async fn run() -> anyhow::Result<()> {
     let shutdown = Arc::new(tokio::sync::Notify::new());
     spawn_idle_exit(last_activity, shutdown.clone());
     spawn_signal_handlers(shutdown.clone());
+    spawn_bus_watch(connection.clone(), shutdown.clone());
 
     // Serve until the idle-exit or a termination signal requests shutdown,
     // then tear down gracefully.
@@ -779,6 +780,17 @@ fn spawn_signal_handlers(shutdown: Arc<tokio::sync::Notify>) {
             _ = term.recv() => info!("leyend: received SIGTERM, shutting down"),
             _ = int.recv() => info!("leyend: received SIGINT, shutting down"),
         }
+        shutdown.notify_one();
+    });
+}
+
+/// Requests shutdown once the bus connection is gone. Off the bus the daemon
+/// serves nobody, and the next client call activates another one: two daemons
+/// would both track the running games and both record their playtime.
+fn spawn_bus_watch(connection: Connection, shutdown: Arc<tokio::sync::Notify>) {
+    spawn_supervised("bus-watch", async move {
+        connection.closed().await;
+        warn!("leyend: lost the session bus connection, shutting down");
         shutdown.notify_one();
     });
 }

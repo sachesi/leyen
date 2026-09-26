@@ -1781,7 +1781,11 @@ async fn launch_game_managed(
         None => settings.default_proton.clone(),
     };
 
-    if mangohud_available() && game.mangohud {
+    if game.mangohud
+        && tokio::task::spawn_blocking(mangohud_available)
+            .await
+            .unwrap_or(false)
+    {
         env_vars.push(("MANGOHUD".to_string(), "1".to_string()));
     }
 

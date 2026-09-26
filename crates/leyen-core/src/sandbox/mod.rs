@@ -672,12 +672,14 @@ pub async fn confine_in_scope(
     }
     let tools = tools()?;
 
-    let host = HostLayout::detect(bus::dead_socket()?);
-
     let directories = request.clone();
-    tokio::task::spawn_blocking(move || prepare_directories(&directories))
-        .await
-        .map_err(prepare_error)??;
+    let host = tokio::task::spawn_blocking(move || {
+        let host = HostLayout::detect(bus::dead_socket()?);
+        prepare_directories(&directories)?;
+        Ok::<_, String>(host)
+    })
+    .await
+    .map_err(prepare_error)??;
 
     let env = sandbox_env(command, &host);
     let filter = SeccompFilter::compile().map_err(prepare_error)?;

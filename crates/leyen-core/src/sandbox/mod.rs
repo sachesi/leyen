@@ -714,7 +714,14 @@ fn prepare_directories(request: &SandboxRequest) -> Result<(), String> {
             .replacen("{}", &directory.display().to_string(), 1)
             .replacen("{}", &e.to_string(), 1)
     };
-    fs::create_dir_all(prefix).map_err(|e| failed(prefix, e))?;
+    if prefix.is_absolute() {
+        fs::create_dir_all(prefix).map_err(|e| failed(prefix, e))?;
+    }
+    // Bound read-write like the game's own folder, so held to the same rule.
+    check_folder(&SandboxFolder {
+        path: request.prefix_path.clone(),
+        writable: true,
+    })?;
     // A link here, left by a program from before the folder was read-only in its
     // sandbox, is refused rather than followed.
     let leyen = prefix.join(".leyen");

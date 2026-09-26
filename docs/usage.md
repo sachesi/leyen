@@ -115,7 +115,7 @@ winetricks as anything but read-only copies, and the games you did not start. So
 cannot be shared at all, whatever the settings say — your home directory itself, Leyen's own
 directories, `/etc`, `/usr` and the other system directories, and any folder holding one of
 them. Naming one is refused when the game launches, with the reason in the log, and the game
-starts without it.
+starts without it. A game folder or a prefix that is one of them refuses the launch instead.
 
 Two games on one prefix each get a pressure-vessel container of their own — a game cannot
 join another's container without also joining its sandbox, which holds the other game's

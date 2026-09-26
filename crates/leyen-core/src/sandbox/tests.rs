@@ -522,3 +522,15 @@ fn a_program_cannot_turn_its_cache_into_a_link_out_of_the_sandbox() {
     std::os::unix::fs::symlink(&home, prefix.join(".leyen/cache")).unwrap();
     assert!(super::prepare_directories(&request).is_err());
 }
+
+/// The prefix is bound read-write, so it is held to the rule a shared folder is.
+#[test]
+fn a_prefix_that_would_undo_the_sandbox_is_refused() {
+    let home = std::env::var("HOME").expect("a home directory");
+    for prefix in [home.as_str(), "/", "games/prefix"] {
+        assert!(
+            super::prepare_directories(&request(Path::new(prefix))).is_err(),
+            "a prefix at {prefix} must be refused"
+        );
+    }
+}

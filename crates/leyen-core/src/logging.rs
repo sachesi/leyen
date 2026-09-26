@@ -299,11 +299,12 @@ pub fn get_log_entries() -> Vec<LogEntry> {
 /// next call. Entries older than the retained ring (rotated out) are skipped —
 /// the client resyncs from the oldest retained line.
 pub fn get_logs_since(since_offset: u64) -> (u64, Vec<LogEntry>) {
-    let total = TOTAL_LOG_LINES_PRODUCED.load(Ordering::Relaxed);
-    let entries = match UI_LOG_ENTRIES.get().and_then(|buf| buf.read().ok()) {
-        Some(guard) => guard,
-        None => return (total, Vec::new()),
+    let Some(entries) = UI_LOG_ENTRIES.get().and_then(|buf| buf.read().ok()) else {
+        return (TOTAL_LOG_LINES_PRODUCED.load(Ordering::Relaxed), Vec::new());
     };
+    // Read under the lock, as the writer bumps it: a total read before a line went
+    // in, against a ring read after, would skip one line and send another twice.
+    let total = TOTAL_LOG_LINES_PRODUCED.load(Ordering::Relaxed);
     let skip = batch_skip(total, entries.len() as u64, since_offset);
     let batch = entries.iter().skip(skip).cloned().collect();
     (total, batch)
@@ -322,8 +323,8 @@ pub fn clear_log_buffer() {
         && let Ok(mut entries) = buf.write()
     {
         entries.clear();
+        TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::Relaxed);
     }
-    TOTAL_LOG_LINES_PRODUCED.store(0, Ordering::Relaxed);
 
     // Synchronous: two unlinks are cheap, and a detached thread could be killed
     // by daemon exit before the files are actually removed.

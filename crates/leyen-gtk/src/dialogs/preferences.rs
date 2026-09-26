@@ -123,7 +123,8 @@ impl PreferencesDialog {
             .set_selected(protons.position(&settings.default_proton));
         imp.protons.replace(Some(protons));
 
-        imp.mangohud_row.set_visible(mangohud_available());
+        imp.mangohud_row
+            .set_visible(gio_blocking(mangohud_available).await.unwrap_or(false));
         imp.mangohud_row.set_active(settings.global_mangohud);
         imp.wayland_row.set_active(settings.global_wayland);
         imp.wow64_row.set_active(settings.global_wow64);
@@ -167,7 +168,7 @@ impl PreferencesDialog {
             version: GLOBAL_SETTINGS_VERSION,
             default_prefix_path: imp.prefix_row.text().to_string(),
             default_proton: self.chosen_proton(),
-            global_mangohud: mangohud_available() && imp.mangohud_row.is_active(),
+            global_mangohud: imp.mangohud_row.is_visible() && imp.mangohud_row.is_active(),
             global_wayland: imp.wayland_row.is_active(),
             global_wow64: imp.wow64_row.is_active(),
             global_ntsync: imp.ntsync_row.is_active(),

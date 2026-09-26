@@ -243,7 +243,7 @@ impl GameDialog {
             .and_then(|id| leyen_model::library::find_group(&library, id))
             .cloned();
 
-        let dialog = Self::build(window, settings, group);
+        let dialog = Self::build(window, settings, group).await;
         let imp = dialog.imp();
         let title = if imp.group.borrow().is_some() {
             gettext("Add Game to Group")
@@ -270,7 +270,7 @@ impl GameDialog {
 
     pub async fn present_edit(window: &LeyenWindow, game: Game, group: Option<GameGroup>) {
         let settings = daemon::load_settings().await;
-        let dialog = Self::build(window, settings, group);
+        let dialog = Self::build(window, settings, group).await;
         let imp = dialog.imp();
         dialog.set_titles(&gettext("Edit Game"), &gettext("Save"));
 
@@ -326,7 +326,11 @@ impl GameDialog {
         dialog.present(Some(window));
     }
 
-    fn build(window: &LeyenWindow, settings: GlobalSettings, group: Option<GameGroup>) -> Self {
+    async fn build(
+        window: &LeyenWindow,
+        settings: GlobalSettings,
+        group: Option<GameGroup>,
+    ) -> Self {
         let dialog: Self = glib::Object::new();
         let imp = dialog.imp();
         imp.window.set(Some(window));
@@ -336,7 +340,8 @@ impl GameDialog {
         imp.grouped_proton_row.set_model(Some(&protons.model));
         imp.protons.replace(Some(protons));
 
-        imp.mangohud_row.set_visible(mangohud_available());
+        imp.mangohud_row
+            .set_visible(gio_blocking(mangohud_available).await.unwrap_or(false));
 
         if let Some(group) = &group {
             imp.group_row.set_subtitle(&group.title);

@@ -133,7 +133,12 @@ impl log::Log for LeyenLogger {
             Level::Trace => "TRACE",
         };
 
-        let message = record.args().to_string();
+        let mut message = record.args().to_string();
+        // Game output can carry NUL bytes, and a D-Bus string cannot: `GetLogs`
+        // would send one and the bus would drop the daemon's connection.
+        if message.contains('\0') {
+            message = message.replace('\0', "\u{fffd}");
+        }
 
         // Human-first lines: module paths are developer noise in a user-facing
         // log. Game-targeted INFO lines (piped game output, launch lifecycle)

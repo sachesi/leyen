@@ -261,6 +261,9 @@ impl Manager {
                 .map(|c| c.items)
                 .map_err(|e| {
                     warn!("SaveLibrary: parse failed: {e}");
+                    // The message quotes the payload, and a NUL in a D-Bus string
+                    // makes the bus drop the daemon's connection.
+                    let e = e.to_string().replace('\0', "\u{fffd}");
                     leyen_ipc::Error::Failed(format!("Library payload failed to parse: {e}"))
                 })
         })

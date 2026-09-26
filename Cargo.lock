@@ -1000,6 +1000,7 @@ dependencies = [
  "futures-util",
  "leyen-ipc",
  "leyen-model",
+ "libc",
  "tokio",
  "zbus",
 ]

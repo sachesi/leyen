@@ -44,6 +44,11 @@ enum Commands {
 
 #[tokio::main]
 async fn main() {
+    // A closed output pipe (`leyen list | head`) ends the program quietly, as it
+    // does any other command, rather than as a panic on the next print. The bus
+    // is unaffected: zbus sends with MSG_NOSIGNAL.
+    // SAFETY: only the disposition of SIGPIPE changes, back to its default.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     let cli = Cli::parse();
     let result = match cli.command {
         Commands::List => list_games().await,

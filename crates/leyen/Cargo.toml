@@ -21,3 +21,4 @@ tokio.workspace = true
 futures-util.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+libc.workspace = true

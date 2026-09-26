@@ -5,6 +5,7 @@
 //! `nsenter` and build their own view of the filesystem from there.
 
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -37,8 +38,13 @@ fn gate() -> std::sync::Arc<Mutex<()>> {
     GATE.get_or_init(Default::default).clone()
 }
 
+/// Named after the folder rather than how the prefix is spelled: a trailing slash
+/// or a symlink must not get a second holder, and with it a second wineserver
+/// that loses the first one's registry writes.
 fn unit_name(prefix: &str) -> String {
-    let digest = Sha256::digest(prefix.as_bytes());
+    let path = Path::new(prefix);
+    let folder = fs::canonicalize(path).unwrap_or_else(|_| path.components().collect());
+    let digest = Sha256::digest(folder.as_os_str().as_bytes());
     format!("leyen-prefix-{}.scope", hex::encode(&digest[..8]))
 }
 
@@ -69,8 +75,8 @@ fn holder_pid(unit: &str) -> Option<u32> {
 /// until the program entering it has been spawned.
 pub(super) async fn holder(prefix: &str) -> Result<(u32, Lease), String> {
     let lease = Lease(gate().lock_owned().await);
-    let unit = unit_name(prefix);
-    let pid = tokio::task::spawn_blocking(move || start_holder(&unit))
+    let prefix = prefix.to_string();
+    let pid = tokio::task::spawn_blocking(move || start_holder(&unit_name(&prefix)))
         .await
         .map_err(|e| e.to_string())??;
     Ok((pid, lease))
@@ -118,8 +124,9 @@ fn start_holder(unit: &str) -> Result<u32, String> {
 /// Stops the holder of `prefix` once nothing but the holder is left in it.
 pub async fn release(prefix: &str) {
     let _lease = gate().lock_owned().await;
-    let unit = unit_name(prefix);
+    let prefix = prefix.to_string();
     let _ = tokio::task::spawn_blocking(move || {
+        let unit = unit_name(&prefix);
         let Some(pid) = holder_pid(&unit) else {
             return;
         };
@@ -148,4 +155,25 @@ pub(super) fn enter(nsenter: &Path, holder: u32) -> AsyncCommand {
     command.args(["--target", &holder.to_string()]);
     command.args(["--user", "--pid", "--mount", "--preserve-credentials", "--"]);
     command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unit_name;
+
+    #[test]
+    fn one_prefix_has_one_holder_however_it_is_spelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("pfx");
+        std::fs::create_dir(&prefix).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&prefix, &link).unwrap();
+
+        let plain = unit_name(prefix.to_str().unwrap());
+        assert_eq!(unit_name(&format!("{}/", prefix.display())), plain);
+        assert_eq!(unit_name(link.to_str().unwrap()), plain);
+        // A prefix that is not there yet, or no longer, still loses the slash.
+        assert_eq!(unit_name("/nowhere/pfx/"), unit_name("/nowhere/pfx"));
+        assert_ne!(unit_name("/nowhere/pfx"), plain);
+    }
 }

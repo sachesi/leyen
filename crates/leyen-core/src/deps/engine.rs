@@ -152,7 +152,11 @@ pub(super) async fn run_umu_command(
 
     let settings = crate::config::load_settings().await;
     let unit = format!("leyen-dep-{}.scope", uuid::Uuid::new_v4());
-    let sandbox = dependency_sandbox(&cmd, &settings.global_sandbox_folders);
+    let shares =
+        tokio::task::spawn_blocking(move || dependency_shares(&settings.global_sandbox_folders))
+            .await
+            .map_err(join_err)?;
+    let sandbox = dependency_sandbox(&cmd, shares);
     let Confined {
         command: mut scoped,
         lease,
@@ -178,10 +182,7 @@ pub(super) async fn run_umu_command(
 /// The sandbox a dependency install runs in. The prefix and the Proton are on
 /// the command as environment variables already, so they are read back from
 /// there rather than threaded through every caller.
-fn dependency_sandbox(
-    cmd: &AsyncCommand,
-    shared_folders: &[leyen_model::models::SandboxFolder],
-) -> SandboxRequest {
+fn dependency_sandbox(cmd: &AsyncCommand, shares: Vec<Share>) -> SandboxRequest {
     let value = |name: &str| {
         cmd.as_std()
             .get_envs()
@@ -190,6 +191,18 @@ fn dependency_sandbox(
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_default()
     };
+    SandboxRequest {
+        prefix_path: value("WINEPREFIX"),
+        proton_path: value("PROTONPATH"),
+        work_dir: None,
+        shares,
+        // Installers fetch what they install.
+        network: true,
+    }
+}
+
+/// What a dependency install is given besides its prefix and its Proton.
+fn dependency_shares(shared_folders: &[leyen_model::models::SandboxFolder]) -> Vec<Share> {
     let home = std::env::var("HOME").unwrap_or_default();
     // What the preferences share with everything Leyen runs. A refused folder is
     // logged by the launch that owns it; here it is skipped.
@@ -202,14 +215,7 @@ fn dependency_sandbox(
     // The installers Leyen downloaded and verified: readable, so a component
     // being installed cannot tamper with the one installed next.
     shares.push(Share::read_only(get_deps_cache_dir()));
-    SandboxRequest {
-        prefix_path: value("WINEPREFIX"),
-        proton_path: value("PROTONPATH"),
-        work_dir: None,
-        shares,
-        // Installers fetch what they install.
-        network: true,
-    }
+    shares
 }
 
 async fn run_umu_command_inner(

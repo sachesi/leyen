@@ -158,12 +158,18 @@ impl SandboxFoldersRow {
                 .tooltip_text(gettext("Let the game write to this folder"))
                 .build();
             writable.update_property(&[gtk4::accessible::Property::Label(&gettext("Writable"))]);
-            let obj = self.clone();
-            let access_row = row.clone();
-            writable.connect_active_notify(move |switch| {
-                obj.set_writable(index, switch.is_active());
-                access_row.set_subtitle(&access_label(switch.is_active()));
-            });
+            // Weak: the switch sits inside both, and a strong reference from its
+            // handler would keep the whole row alive after the dialog closes.
+            writable.connect_active_notify(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[weak(rename_to = access_row)]
+                row,
+                move |switch| {
+                    obj.set_writable(index, switch.is_active());
+                    access_row.set_subtitle(&access_label(switch.is_active()));
+                }
+            ));
             row.add_suffix(&writable);
 
             let remove = gtk4::Button::builder()
@@ -172,8 +178,11 @@ impl SandboxFoldersRow {
                 .valign(gtk4::Align::Center)
                 .build();
             remove.add_css_class("flat");
-            let obj = self.clone();
-            remove.connect_clicked(move |_| obj.remove_folder(index));
+            remove.connect_clicked(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_| obj.remove_folder(index)
+            ));
             row.add_suffix(&remove);
 
             self.add_row(&row);

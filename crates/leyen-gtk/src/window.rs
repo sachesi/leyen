@@ -326,15 +326,16 @@ impl LeyenWindow {
     }
 
     async fn reload(&self) {
-        let items = match daemon::load_library().await {
+        let (items, running) =
+            futures_util::join!(daemon::load_library(), daemon::running_games_snapshot());
+        let items = match items {
             Ok(items) => items,
             Err(err) => {
                 self.toast(&err);
                 return;
             }
         };
-        let running: RunningGameMap = daemon::running_games_snapshot()
-            .await
+        let running: RunningGameMap = running
             .into_iter()
             .map(|snapshot| (snapshot.game_id.clone(), snapshot))
             .collect();

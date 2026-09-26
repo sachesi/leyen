@@ -856,8 +856,9 @@ fn install_listeners(connection: &Connection) {
     });
 }
 
-/// Emits `RuntimeStatus` whenever umu/winetricks readiness changes. Cheap
-/// (readiness checks are cached) and not the per-game scanning we eliminated.
+/// Emits `RuntimeStatus` whenever umu/winetricks readiness changes, until both
+/// are ready: the downloads are what change it, and once both are in place
+/// polling on would only repeat the `PATH` scans.
 fn spawn_runtime_status_watcher(connection: Connection) {
     spawn_supervised("runtime-status-watcher", async move {
         let mut last: Option<RuntimeReadiness> = None;
@@ -883,6 +884,9 @@ fn spawn_runtime_status_watcher(connection: Connection) {
                     warn!("leyend: failed to emit RuntimeStatus: {e}");
                 }
                 last = Some(now);
+            }
+            if now.umu_ready && now.winetricks_ready {
+                return;
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }

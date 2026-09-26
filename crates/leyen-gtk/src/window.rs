@@ -745,38 +745,52 @@ impl LeyenWindow {
                 return;
             }
         };
-        let mut notice = None;
-        let deleted = if let Some(game) = leyen_model::library::remove_game(&mut items, item_id) {
-            let id = game.id.clone();
-            let _ = daemon::gio_blocking(move || clear_game_icon(&id)).await;
-            if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
-                notice = Some(gettext("Failed to remove menu entry: {}").replacen("{}", &err, 1));
-            }
-            Some(game.title)
-        } else if let Some(group) = leyen_model::library::remove_group(&mut items, item_id) {
-            let id = group.id.clone();
-            let _ = daemon::gio_blocking(move || clear_group_icon(&id)).await;
-            for game in &group.games {
-                let id = game.id.clone();
-                let _ = daemon::gio_blocking(move || clear_game_icon(&id)).await;
-            }
-            let leyen_ids = group.games.iter().map(|g| g.leyen_id.clone()).collect();
-            if let Err(err) = remove_game_desktop_entries(leyen_ids).await {
-                notice = Some(gettext("Failed to remove a menu entry: {}").replacen("{}", &err, 1));
-            }
-            Some(group.title)
-        } else {
-            None
+        let game = leyen_model::library::remove_game(&mut items, item_id);
+        let group = match game {
+            Some(_) => None,
+            None => leyen_model::library::remove_group(&mut items, item_id),
         };
-        let Some(title) = deleted else {
+        if game.is_none() && group.is_none() {
             return;
-        };
-
+        }
         if let Err(reason) = daemon::save_library(items).await {
             self.toast(&reason);
             self.refresh_future().await;
             return;
         }
+
+        // After the save: a refused save leaves the item, so its icon and menu entry
+        // must stay too.
+        let mut notice = None;
+        let title = match (game, group) {
+            (Some(game), _) => {
+                let id = game.id.clone();
+                let _ = daemon::gio_blocking(move || clear_game_icon(&id)).await;
+                if let Err(err) = remove_game_desktop_entry(game.leyen_id.clone()).await {
+                    notice =
+                        Some(gettext("Failed to remove menu entry: {}").replacen("{}", &err, 1));
+                }
+                game.title
+            }
+            (None, Some(group)) => {
+                let group_id = group.id.clone();
+                let game_ids: Vec<String> = group.games.iter().map(|g| g.id.clone()).collect();
+                let _ = daemon::gio_blocking(move || {
+                    clear_group_icon(&group_id);
+                    for id in &game_ids {
+                        clear_game_icon(id);
+                    }
+                })
+                .await;
+                let leyen_ids = group.games.iter().map(|g| g.leyen_id.clone()).collect();
+                if let Err(err) = remove_game_desktop_entries(leyen_ids).await {
+                    notice =
+                        Some(gettext("Failed to remove a menu entry: {}").replacen("{}", &err, 1));
+                }
+                group.title
+            }
+            (None, None) => return,
+        };
         self.refresh_future().await;
         let message = match notice {
             Some(notice) => gettext("'{}' deleted successfully. {}")

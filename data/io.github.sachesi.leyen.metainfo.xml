@@ -56,6 +56,12 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.10.1" date="2026-09-26">
+      <description>
+        <p>A game can no longer reach outside its sandbox through the folder that stands in for its cache: it could swap that folder for a link to your home directory and be handed all of it on its next launch. That folder is read-only inside the sandbox now, and a prefix that is your home directory, or holds it, is refused like any other folder that would undo the sandbox.</p>
+        <p>The daemon stays on the session bus when a game prints a NUL byte, and exits if it loses the bus rather than running on beside a second one. A game whose deletion the daemon refuses keeps its icon and menu entry, a game launched again right after it ends keeps its output in the log, and a settings file that cannot be read is reported in the log instead of being replaced by the defaults in silence. The window does less work on its own thread, frees a dialog with a shared folder when it closes and redraws Running Games from the daemon's updates, and leyen list piped into head ends quietly.</p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-09-21">
       <description>
         <p>Every game runs in a sandbox now, and so does everything else that runs Windows code: the Wine configuration, the registry editor, a program run by hand and a dependency install. A program reaches its Wine prefix, the game folder named in its settings and the folders shared with it, and nothing else of your files; where the sandbox cannot be built, the launch is refused instead of running unconfined. Two settings come with it, at the preferences, the group and the game: extra folders to share, each read-only unless switched writable, and network access.</p>

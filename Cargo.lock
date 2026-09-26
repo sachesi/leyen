@@ -993,7 +993,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "leyen"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1007,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "leyen-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -1030,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "leyen-gtk"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "async-channel",
  "directories",
@@ -1053,7 +1053,7 @@ dependencies = [
 
 [[package]]
 name = "leyen-ipc"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "leyen-model",
  "serde",
@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "leyen-model"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "directories",
  "fastrand",
@@ -1078,7 +1078,7 @@ dependencies = [
 
 [[package]]
 name = "leyend"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "leyen-core",

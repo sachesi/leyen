@@ -67,10 +67,25 @@ impl Drop for FlockGuard {
 /// daemon can call it without racing the client's writes.
 pub fn load_settings() -> GlobalSettings {
     let path = get_settings_path();
-    let mut settings: GlobalSettings = fs::read_to_string(&path)
-        .ok()
-        .and_then(|data| toml::from_str(&data).ok())
-        .unwrap_or_default();
+    // Said out loud: the defaults allow the network and share no folders, whatever
+    // the file asked for.
+    let mut settings: GlobalSettings = match fs::read_to_string(&path) {
+        Ok(data) => toml::from_str(&data).unwrap_or_else(|e| {
+            log::warn!(
+                "Settings file '{}' failed to parse, using the defaults: {e}",
+                path.display()
+            );
+            GlobalSettings::default()
+        }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => GlobalSettings::default(),
+        Err(e) => {
+            log::warn!(
+                "Failed to read settings file '{}', using the defaults: {e}",
+                path.display()
+            );
+            GlobalSettings::default()
+        }
+    };
 
     // No Result channel here — settings are read unconditionally on every
     // launch. Refusing would mean no settings at all; defaulting the version

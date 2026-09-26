@@ -499,11 +499,12 @@ pub fn bwrap_args(
         mounts.push((mode, share.path.clone(), share.path.clone()));
     }
     mounts.push(("--bind", prefix.to_path_buf(), prefix.to_path_buf()));
-    mounts.push((
-        "--bind",
-        prefix.join(".leyen/cache"),
-        host.home.join(".cache"),
-    ));
+    // The next sandbox's ~/.cache comes from here, and bwrap follows a link in a
+    // bind's source on the host: a program able to swap the folder for a link
+    // would hand the next launch whatever the link names.
+    let leyen = prefix.join(".leyen");
+    mounts.push(("--ro-bind", leyen.clone(), leyen.clone()));
+    mounts.push(("--bind", leyen.join("cache"), host.home.join(".cache")));
     for path in &host.umu_writable {
         mounts.push(("--bind-try", path.clone(), path.clone()));
     }
@@ -708,12 +709,24 @@ pub async fn confine_in_scope(
 /// install that starts with `createprefix` runs in one that does not exist yet.
 fn prepare_directories(request: &SandboxRequest) -> Result<(), String> {
     let prefix = Path::new(&request.prefix_path);
-    for directory in [prefix.to_path_buf(), prefix.join(".leyen/cache")] {
-        fs::create_dir_all(&directory).map_err(|e| {
-            gettext("Failed to prepare the sandbox directory “{}”: {}")
-                .replacen("{}", &directory.display().to_string(), 1)
-                .replacen("{}", &e.to_string(), 1)
-        })?;
+    let failed = |directory: &Path, e: std::io::Error| {
+        gettext("Failed to prepare the sandbox directory “{}”: {}")
+            .replacen("{}", &directory.display().to_string(), 1)
+            .replacen("{}", &e.to_string(), 1)
+    };
+    fs::create_dir_all(prefix).map_err(|e| failed(prefix, e))?;
+    // A link here, left by a program from before the folder was read-only in its
+    // sandbox, is refused rather than followed.
+    let leyen = prefix.join(".leyen");
+    for directory in [leyen.clone(), leyen.join("cache")] {
+        match fs::symlink_metadata(&directory) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => return Err(failed(&directory, std::io::ErrorKind::NotADirectory.into())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&directory).map_err(|e| failed(&directory, e))?;
+            }
+            Err(e) => return Err(failed(&directory, e)),
+        }
     }
     Ok(())
 }

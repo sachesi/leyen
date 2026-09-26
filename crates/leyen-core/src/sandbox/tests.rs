@@ -459,3 +459,66 @@ fn a_share_holding_the_prefix_is_mounted_before_it() {
         .unwrap();
     assert!(share < bound_prefix, "the share would cover the prefix");
 }
+
+/// The folder behind the sandbox's ~/.cache is a bind source the next launch
+/// resolves on the host, so a program must not be able to swap it for a link to
+/// the real home directory.
+#[test]
+fn a_program_cannot_turn_its_cache_into_a_link_out_of_the_sandbox() {
+    if let Err(reason) = is_available() {
+        eprintln!("skipped: {reason}");
+        return;
+    }
+    let temp = tempfile::tempdir().expect("temp dir");
+    let home = temp.path().join("home");
+    let prefix = temp.path().join("prefix");
+    std::fs::create_dir_all(&home).unwrap();
+    let bus = temp.path().join("bus");
+    std::fs::write(&bus, "").unwrap();
+
+    let mut request = request(&prefix);
+    request.proton_path = String::new();
+    let mut host = host(&prefix);
+    host.home = home.clone();
+    host.bus_socket = bus;
+    host.shared_dir = temp.path().join("shared");
+    std::fs::create_dir_all(host.shared_dir.join("wine")).unwrap();
+    std::fs::create_dir_all(host.shared_dir.join("shm")).unwrap();
+    host.wayland_socket = None;
+    host.umu_writable = Vec::new();
+    host.umu_read_only = Vec::new();
+    super::prepare_directories(&request).expect("directories");
+    let args = bwrap_args(&request, &host, &BTreeMap::new());
+
+    let filter = super::SeccompFilter::compile().expect("filter");
+    let mut command = std::process::Command::new(super::tools().unwrap().bwrap.clone());
+    command.args(&args);
+    command.args([
+        "/bin/sh",
+        "-c",
+        "set -e; touch \"$2/.cache/written\"; \
+         ! rm -rf \"$1/.leyen/cache\" 2>/dev/null; ! ln -s \"$2\" \"$1/.leyen/link\" 2>/dev/null; \
+         ! mv \"$1/.leyen\" \"$1/moved\" 2>/dev/null",
+        "sh",
+    ]);
+    command.arg(&prefix);
+    command.arg(&home);
+    filter.place_on_std_fd(&mut command).expect("filter fd");
+    let output = command.output().expect("bwrap runs");
+    assert!(
+        output.status.success(),
+        "sandbox failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(prefix.join(".leyen/cache/written").exists());
+    assert!(
+        std::fs::symlink_metadata(prefix.join(".leyen/cache"))
+            .unwrap()
+            .is_dir()
+    );
+
+    // One left behind by a program from before is refused, not followed.
+    std::fs::remove_dir_all(prefix.join(".leyen/cache")).unwrap();
+    std::os::unix::fs::symlink(&home, prefix.join(".leyen/cache")).unwrap();
+    assert!(super::prepare_directories(&request).is_err());
+}

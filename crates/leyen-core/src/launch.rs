@@ -340,7 +340,7 @@ async fn finalize_finished_session(session: &RunningGameSession) {
     let handles = output_capture_tasks()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .remove(&session.game_id)
+        .remove(&instant_key)
         .unwrap_or_default();
     if !handles.is_empty() {
         tokio::spawn(async move {
@@ -680,16 +680,17 @@ impl Drop for LaunchClaim {
     }
 }
 
-/// Detached output-capture task handles per game. A game's descendants can
-/// inherit the stdout/stderr pipe fds and keep them open indefinitely (notably
-/// siblings in a shared container), so the reader tasks would never see EOF;
-/// they are aborted shortly after the session finalizes.
-static OUTPUT_CAPTURE_TASKS: OnceLock<
-    std::sync::Mutex<HashMap<String, Vec<tokio::task::JoinHandle<()>>>>,
-> = OnceLock::new();
+/// Detached output-capture task handles per session, keyed like
+/// [`SESSION_START_INSTANTS`]: a relaunch can start while the last session of the
+/// same game is still being finalized, and must keep its own readers. A game's
+/// descendants can inherit the stdout/stderr pipe fds and keep them open
+/// indefinitely (notably siblings in a shared container), so the reader tasks
+/// would never see EOF; they are aborted shortly after the session finalizes.
+type OutputCaptureTasks = HashMap<(String, u64), Vec<tokio::task::JoinHandle<()>>>;
 
-fn output_capture_tasks()
--> &'static std::sync::Mutex<HashMap<String, Vec<tokio::task::JoinHandle<()>>>> {
+static OUTPUT_CAPTURE_TASKS: OnceLock<std::sync::Mutex<OutputCaptureTasks>> = OnceLock::new();
+
+fn output_capture_tasks() -> &'static std::sync::Mutex<OutputCaptureTasks> {
     OUTPUT_CAPTURE_TASKS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -1626,11 +1627,16 @@ fn output_line_text(bytes: &[u8], truncated: bool) -> String {
     text
 }
 
-fn pipe_process_output<R>(reader: R, game_id: String, game_title: String, stream_name: &'static str)
-where
+fn pipe_process_output<R>(
+    reader: R,
+    game_id: String,
+    started_at_epoch_seconds: u64,
+    game_title: String,
+    stream_name: &'static str,
+) where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
-    let key = game_id.clone();
+    let key = (game_id.clone(), started_at_epoch_seconds);
     let handle = tokio::spawn(async move {
         for_each_output_line(reader, |line| {
             if !line.trim().is_empty() {
@@ -2118,10 +2124,22 @@ async fn finish_launch(
     }
 
     if let Some(stdout) = child_stdout {
-        pipe_process_output(stdout, game.id.clone(), game.title.clone(), "stdout");
+        pipe_process_output(
+            stdout,
+            game.id.clone(),
+            started_at_epoch_seconds,
+            game.title.clone(),
+            "stdout",
+        );
     }
     if let Some(stderr) = child_stderr {
-        pipe_process_output(stderr, game.id.clone(), game.title.clone(), "stderr");
+        pipe_process_output(
+            stderr,
+            game.id.clone(),
+            started_at_epoch_seconds,
+            game.title.clone(),
+            "stderr",
+        );
     }
 
     if reap_child_locally {

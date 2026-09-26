@@ -148,11 +148,18 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     scoped.stdin(Stdio::null());
     scoped.stdout(Stdio::piped());
     scoped.stderr(Stdio::piped());
-    let mut child = scoped.spawn().map_err(|e| {
-        gettext("Failed to run {}: {}")
-            .replacen("{}", &label, 1)
-            .replacen("{}", &e.to_string(), 1)
-    })?;
+    let mut child = match scoped.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            // Nothing enters the prefix's holder now; one started for this program
+            // would otherwise idle until the next game on the prefix ends.
+            drop(lease);
+            crate::sandbox::release_namespace(&prefix).await;
+            return Err(gettext("Failed to run {}: {}")
+                .replacen("{}", &label, 1)
+                .replacen("{}", &e.to_string(), 1));
+        }
+    };
     lease.spawned();
 
     // Also what keeps the daemon from exiting while the program runs.

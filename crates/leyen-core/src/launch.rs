@@ -2017,32 +2017,42 @@ async fn finish_launch(
         .find(|(key, _)| key == "GAMEID")
         .map(|(_, value)| value.clone());
     // Spawn process in blocking thread — fork() blocks, don't stall GTK main loop
-    let (mut child, child_pid, child_stdout, child_stderr) =
-        tokio::task::spawn_blocking(move || {
-            let mut cmd = scoped;
-            cmd.stdin(Stdio::null());
-            cmd.stdout(if capture_output {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            });
-            cmd.stderr(if capture_output {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            });
-            let mut child = cmd
-                .spawn()
-                .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
-            let pid = child
-                .id()
-                .ok_or_else(|| LaunchError::Other(gettext("Failed to get child PID")))?;
-            let child_stdout = child.stdout.take();
-            let child_stderr = child.stderr.take();
-            Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
-        })
-        .await
-        .map_err(|e| LaunchError::Other(join_err(e)))??;
+    let spawned = tokio::task::spawn_blocking(move || {
+        let mut cmd = scoped;
+        cmd.stdin(Stdio::null());
+        cmd.stdout(if capture_output {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
+        cmd.stderr(if capture_output {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| LaunchError::Other(format!("Failed to launch: {}", e)))?;
+        let pid = child
+            .id()
+            .ok_or_else(|| LaunchError::Other(gettext("Failed to get child PID")))?;
+        let child_stdout = child.stdout.take();
+        let child_stderr = child.stderr.take();
+        Ok::<_, LaunchError>((child, pid, child_stdout, child_stderr))
+    })
+    .await
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r);
+    // Nothing enters the prefix's holder now; one started for this launch would
+    // otherwise idle until the next game on the prefix ends.
+    let (mut child, child_pid, child_stdout, child_stderr) = match spawned {
+        Ok(spawned) => spawned,
+        Err(e) => {
+            drop(lease);
+            crate::sandbox::release_namespace(&prefix_path).await;
+            return Err(e);
+        }
+    };
     lease.spawned();
     let match_exe = Path::new(&game.exe_path)
         .file_name()
@@ -2073,6 +2083,7 @@ async fn finish_launch(
             let unit = scope_unit.clone();
             let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
             let _ = child.wait().await;
+            crate::sandbox::release_namespace(&prefix_path).await;
             return Err(e);
         }
     };
@@ -2080,6 +2091,7 @@ async fn finish_launch(
         let unit = scope_unit.clone();
         let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
         let _ = child.wait().await;
+        crate::sandbox::release_namespace(&prefix_path).await;
         return Err(LaunchError::Other(gettext("This game is already running")));
     }
 

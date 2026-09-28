@@ -10,7 +10,7 @@ use thiserror::Error;
 // working.
 pub use leyen_model::runtime::{
     get_local_umu_run_path, get_local_winetricks_path, get_umu_core_dir, get_umu_run_path,
-    get_umu_runtime_dir, get_winetricks_dir, get_winetricks_path, is_nixos, is_umu_run_available,
+    get_winetricks_dir, get_winetricks_path, is_nixos, is_umu_run_available,
     is_winetricks_available,
 };
 

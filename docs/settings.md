@@ -23,8 +23,8 @@ the daemon reads it again at once.
   On, which is how it starts, online games work; off, a game is on a loopback of its own. A
   group and a game can answer for themselves in their own settings, and the narrowest answer
   wins: the game's, then its group's, then this one.
-- **Repair Runtime**: deletes umu-launcher's Steam Linux Runtime, `steamrt3`, which it
-  downloads again the next time it is needed. The cure for "pressure-vessel-wrap" errors
+- **Reset umu Runtime**: deletes every Steam Linux Runtime umu-launcher keeps, `steamrt3`
+  and `steamrt4` alike, each of which it downloads again the next time it is needed. The cure for "pressure-vessel-wrap" errors
   while installing dependencies. Refused while a game runs.
 
 ## Where things are

@@ -5,10 +5,9 @@
 //! prefix tools and gate UI without depending on the engine.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
-
-use directories::ProjectDirs;
 
 use crate::models::GlobalSettings;
 use crate::paths::get_data_dir;
@@ -65,16 +64,31 @@ pub fn get_umu_core_dir() -> String {
         .to_string()
 }
 
-/// Directory where umu-run stores the Steam Linux Runtime (steamrt3).
-pub fn get_umu_runtime_dir() -> String {
-    ProjectDirs::from("", "", "umu")
-        .map(|p| p.data_dir().join("steamrt3"))
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            std::path::PathBuf::from(format!("{}/.local/share/umu/steamrt3", home))
-        })
-        .to_string_lossy()
-        .to_string()
+/// umu-launcher's own folder as a sandboxed launch names it: `XDG_DATA_HOME`
+/// does not reach inside the sandbox.
+pub fn get_umu_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".local/share/umu")
+}
+
+/// Deletes every Steam Linux Runtime (`steamrt3`, `steamrt4`, …) in `umu_dir`,
+/// which umu-launcher downloads again when it next needs one. Returns how many
+/// there were. A link in a runtime's place goes, not what it names.
+pub fn remove_umu_runtimes(umu_dir: &Path) -> std::io::Result<usize> {
+    let mut removed = 0;
+    for entry in fs::read_dir(umu_dir)? {
+        let entry = entry?;
+        if !entry.file_name().to_string_lossy().starts_with("steamrt") {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+        }
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 /// Where `cmd` is installed system-wide, resolved. A copy under the home
@@ -239,4 +253,31 @@ fn is_winetricks_available_impl() -> bool {
         return true;
     }
     std::path::Path::new(&get_local_winetricks_path()).exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_umu_runtimes;
+
+    #[test]
+    fn every_runtime_goes_and_nothing_else() {
+        let temp = tempfile::tempdir().unwrap();
+        let umu = temp.path().join("umu");
+        let outside = temp.path().join("outside");
+        for runtime in ["steamrt3", "steamrt4"] {
+            std::fs::create_dir_all(umu.join(runtime).join("var")).unwrap();
+        }
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, umu.join("steamrt3-arm64")).unwrap();
+        std::fs::write(umu.join("umu-shim"), "").unwrap();
+
+        assert_eq!(remove_umu_runtimes(&umu).unwrap(), 3);
+        let left: Vec<_> = std::fs::read_dir(&umu)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["umu-shim"]);
+        assert!(outside.is_dir(), "a link is removed, not followed");
+        assert_eq!(remove_umu_runtimes(&umu).unwrap(), 0);
+    }
 }

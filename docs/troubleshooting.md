@@ -97,8 +97,8 @@ link the build there.
 
 ## Dependencies fail with "pressure-vessel-wrap" errors
 
-Repair Runtime in the preferences deletes umu-launcher's `steamrt3`, which it downloads
-again on the next install.
+Reset umu Runtime in the preferences deletes umu-launcher's Steam Linux Runtimes, which it
+downloads again when next needed.
 
 ## Stopping one game takes down the others on its prefix
 

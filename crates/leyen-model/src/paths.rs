@@ -18,7 +18,7 @@ pub fn get_project_dirs() -> Option<ProjectDirs> {
 }
 
 /// `$HOME`, falling back to `/tmp` when even that isn't set — mirrors
-/// `leyen_model::runtime::get_umu_runtime_dir`'s fallback.
+/// `leyen_model::runtime::get_umu_dir`'s fallback.
 fn home_or_tmp() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
 }

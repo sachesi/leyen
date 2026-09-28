@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-26 15:01+0300\n"
+"POT-Creation-Date: 2026-09-28 23:58+0300\n"
 "PO-Revision-Date: 2026-09-20\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Russian\n"
@@ -13,64 +13,64 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
-#: crates/leyen-core/src/deps/engine.rs:117
-#: crates/leyen-core/src/deps/engine.rs:248
-#: crates/leyen-core/src/deps/engine.rs:442
-#: crates/leyen-core/src/deps/engine.rs:510
-#: crates/leyen-core/src/deps/engine.rs:979
-#: crates/leyen-core/src/deps/engine.rs:980
-#: crates/leyen-core/src/deps/engine.rs:989
-#: crates/leyen-core/src/deps/engine.rs:1010
-#: crates/leyen-core/src/deps/engine.rs:1214
-#: crates/leyen-core/src/deps/engine.rs:1361
+#: crates/leyen-core/src/deps/engine.rs:122
+#: crates/leyen-core/src/deps/engine.rs:253
+#: crates/leyen-core/src/deps/engine.rs:447
+#: crates/leyen-core/src/deps/engine.rs:515
+#: crates/leyen-core/src/deps/engine.rs:984
+#: crates/leyen-core/src/deps/engine.rs:985
+#: crates/leyen-core/src/deps/engine.rs:994
+#: crates/leyen-core/src/deps/engine.rs:1015
+#: crates/leyen-core/src/deps/engine.rs:1219
+#: crates/leyen-core/src/deps/engine.rs:1366
 #, no-c-format
 msgid "Cancelled."
 msgstr "Отменено."
 
-#: crates/leyen-core/src/deps/engine.rs:145
+#: crates/leyen-core/src/deps/engine.rs:150
 #, no-c-format
 msgid "A systemd user session is required to install or remove dependencies."
 msgstr ""
 "Для установки и удаления зависимостей нужен пользовательский сеанс systemd."
 
-#: crates/leyen-core/src/deps/engine.rs:834
-#: crates/leyen-core/src/deps/engine.rs:1162
+#: crates/leyen-core/src/deps/engine.rs:839
+#: crates/leyen-core/src/deps/engine.rs:1167
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr "Для этого префикса уже выполняется другая операция с зависимостями."
 
-#: crates/leyen-core/src/deps/engine.rs:845
+#: crates/leyen-core/src/deps/engine.rs:850
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr "Не удалось записать в папку кеша зависимостей: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:865
-#: crates/leyen-core/src/deps/engine.rs:1175
+#: crates/leyen-core/src/deps/engine.rs:870
+#: crates/leyen-core/src/deps/engine.rs:1180
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr "Файл состояния зависимостей повреждён: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:871
+#: crates/leyen-core/src/deps/engine.rs:876
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr "Зависимость уже установлена."
 
-#: crates/leyen-core/src/deps/engine.rs:1132
+#: crates/leyen-core/src/deps/engine.rs:1137
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr "Установлены необходимые компоненты: {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1181
+#: crates/leyen-core/src/deps/engine.rs:1186
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr "Зависимость больше не отслеживается."
 
-#: crates/leyen-core/src/deps/engine.rs:1185
+#: crates/leyen-core/src/deps/engine.rs:1190
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr "Невозможно удалить «{}»: всё ещё требуется для {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1284
+#: crates/leyen-core/src/deps/engine.rs:1289
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
@@ -79,7 +79,7 @@ msgstr ""
 "Некоторые существующие файлы префикса были изменены при установке и не "
 "возвращены."
 
-#: crates/leyen-core/src/deps/engine.rs:1287
+#: crates/leyen-core/src/deps/engine.rs:1292
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
@@ -88,19 +88,19 @@ msgstr ""
 "Удалено из отслеживания. Файлы префикса, изменённые при установке, не "
 "возвращены."
 
-#: crates/leyen-core/src/deps/engine.rs:1289
+#: crates/leyen-core/src/deps/engine.rs:1294
 #, no-c-format
 msgid "Removed from tracking."
 msgstr "Удалено из отслеживания."
 
-#: crates/leyen-core/src/deps/engine.rs:1304
-#: crates/leyen-core/src/launch.rs:1675
+#: crates/leyen-core/src/deps/engine.rs:1309
+#: crates/leyen-core/src/launch.rs:1712
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher всё ещё загружается, подождите…"
 
-#: crates/leyen-core/src/deps/engine.rs:1316
-#: crates/leyen-core/src/launch.rs:1688 crates/leyen-core/src/prefix_tool.rs:79
+#: crates/leyen-core/src/deps/engine.rs:1321
+#: crates/leyen-core/src/launch.rs:1725 crates/leyen-core/src/prefix_tool.rs:79
 #: crates/leyen-gtk/src/prefix_tools.rs:22
 #, no-c-format
 msgid ""
@@ -110,69 +110,69 @@ msgstr ""
 "umu-launcher не установлен. Проверьте подключение к интернету и "
 "перезапустите."
 
-#: crates/leyen-core/src/deps/engine.rs:1324
+#: crates/leyen-core/src/deps/engine.rs:1329
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr "winetricks всё ещё загружается, подождите…"
 
-#: crates/leyen-core/src/deps/engine.rs:1335 crates/leyen-gtk/src/window.rs:474
+#: crates/leyen-core/src/deps/engine.rs:1340 crates/leyen-gtk/src/window.rs:474
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr "Загрузка winetricks…"
 
-#: crates/leyen-core/src/deps/engine.rs:1351
+#: crates/leyen-core/src/deps/engine.rs:1356
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не удалось загрузить winetricks. Проверьте подключение к интернету."
 
-#: crates/leyen-core/src/launch.rs:1699
+#: crates/leyen-core/src/launch.rs:1736
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr "Для запуска игр нужен пользовательский сеанс systemd."
 
-#: crates/leyen-core/src/launch.rs:1723
+#: crates/leyen-core/src/launch.rs:1760
 #, no-c-format
 msgid "Set this game's folder in its settings"
 msgstr "Укажите папку этой игры в её параметрах"
 
-#: crates/leyen-core/src/launch.rs:1728 crates/leyen-core/src/launch.rs:1739
-#: crates/leyen-core/src/launch.rs:2105
+#: crates/leyen-core/src/launch.rs:1765 crates/leyen-core/src/launch.rs:1776
+#: crates/leyen-core/src/launch.rs:2152
 #, no-c-format
 msgid "This game is already running"
 msgstr "Эта игра уже запущена"
 
-#: crates/leyen-core/src/launch.rs:1732
+#: crates/leyen-core/src/launch.rs:1769
 #, no-c-format
 msgid "A program is running in this game's prefix; close it first."
 msgstr "В префиксе этой игры выполняется программа; сначала закройте её."
 
-#: crates/leyen-core/src/launch.rs:1754
+#: crates/leyen-core/src/launch.rs:1791
 #, no-c-format
 msgid "Game executable was not found"
 msgstr "Исполняемый файл игры не найден"
 
-#: crates/leyen-core/src/launch.rs:1780
+#: crates/leyen-core/src/launch.rs:1817
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr "Выбранная версия Proton не найдена"
 
-#: crates/leyen-core/src/launch.rs:1874
+#: crates/leyen-core/src/launch.rs:1920
 #, no-c-format
 msgid "The executable is outside the game folder"
 msgstr "Исполняемый файл лежит вне папки игры"
 
-#: crates/leyen-core/src/launch.rs:2048
+#: crates/leyen-core/src/launch.rs:2094
 #, no-c-format
 msgid "Failed to get child PID"
 msgstr "Не удалось получить PID дочернего процесса"
 
-#: crates/leyen-core/src/launch.rs:2171
+#: crates/leyen-core/src/launch.rs:2218
 #, no-c-format
 msgid "Launching {}..."
 msgstr "Запуск {}..."
 
 #: crates/leyen-core/src/prefix_tool.rs:50
-#: crates/leyen-core/src/sandbox/mod.rs:672
+#: crates/leyen-core/src/sandbox/mod.rs:678
 #: crates/leyen-gtk/src/prefix_tools.rs:26
 #, no-c-format
 msgid "Prefix path is required"
@@ -194,7 +194,7 @@ msgstr "Для запуска программ в префиксе нужен п
 msgid "Failed to run {}: {}"
 msgstr "Не удалось запустить {}: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:104
+#: crates/leyen-core/src/sandbox/mod.rs:103
 #, no-c-format
 msgid ""
 "bubblewrap is required to run games in a sandbox. Install the “bubblewrap” "
@@ -203,7 +203,7 @@ msgstr ""
 "Чтобы запускать игры в песочнице, нужен bubblewrap. Установите пакет "
 "«bubblewrap»."
 
-#: crates/leyen-core/src/sandbox/mod.rs:108
+#: crates/leyen-core/src/sandbox/mod.rs:107
 #, no-c-format
 msgid ""
 "nsenter is required to run games in a sandbox. Install the “util-linux” "
@@ -212,37 +212,37 @@ msgstr ""
 "Чтобы запускать игры в песочнице, нужен nsenter. Установите пакет «util-"
 "linux»."
 
-#: crates/leyen-core/src/sandbox/mod.rs:135
+#: crates/leyen-core/src/sandbox/mod.rs:134
 #, no-c-format
 msgid "Failed to start bubblewrap: {}"
 msgstr "Не удалось запустить bubblewrap: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:143
+#: crates/leyen-core/src/sandbox/mod.rs:142
 #, no-c-format
 msgid "The sandbox could not be created: {}"
 msgstr "Не удалось создать песочницу: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:151
+#: crates/leyen-core/src/sandbox/mod.rs:150
 #, no-c-format
 msgid "Failed to prepare the sandbox: {}"
 msgstr "Не удалось подготовить песочницу: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:233
+#: crates/leyen-core/src/sandbox/mod.rs:232
 #, no-c-format
 msgid "“{}” is not an absolute path"
 msgstr "«{}» не является абсолютным путём"
 
-#: crates/leyen-core/src/sandbox/mod.rs:236
+#: crates/leyen-core/src/sandbox/mod.rs:235
 #, no-c-format
 msgid "The folder “{}” cannot be used: {}"
 msgstr "Папку «{}» нельзя использовать: {}"
 
-#: crates/leyen-core/src/sandbox/mod.rs:241
+#: crates/leyen-core/src/sandbox/mod.rs:240
 #, no-c-format
 msgid "“{}” is not a folder"
 msgstr "«{}» не является папкой"
 
-#: crates/leyen-core/src/sandbox/mod.rs:250
+#: crates/leyen-core/src/sandbox/mod.rs:249
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: keeping it out is what the "
@@ -251,7 +251,7 @@ msgstr ""
 "Папку «{}» нельзя открыть игре: песочница и существует, чтобы держать её вне "
 "игры."
 
-#: crates/leyen-core/src/sandbox/mod.rs:256
+#: crates/leyen-core/src/sandbox/mod.rs:255
 #, no-c-format
 msgid ""
 "The folder “{}” cannot be shared with a game: it holds “{}”, and keeping "
@@ -260,7 +260,7 @@ msgstr ""
 "Папку «{}» нельзя открыть игре: она содержит «{}», а песочница и существует, "
 "чтобы держать это вне игры."
 
-#: crates/leyen-core/src/sandbox/mod.rs:713
+#: crates/leyen-core/src/sandbox/mod.rs:721
 #, no-c-format
 msgid "Failed to prepare the sandbox directory “{}”: {}"
 msgstr "Не удалось подготовить папку песочницы «{}»: {}"
@@ -694,14 +694,16 @@ msgstr "Сбросить среду umu?"
 #: crates/leyen-gtk/src/dialogs/preferences.rs:207
 #, no-c-format
 msgid ""
-"This deletes the Steam Linux Runtime (steamrt3) directory. umu-launcher will "
-"re-download a clean copy the next time a dependency is installed.\n"
+"This deletes every Steam Linux Runtime umu-launcher keeps (steamrt3, "
+"steamrt4). umu-launcher will re-download a clean copy the next time a game "
+"or a dependency install needs one.\n"
 "\n"
 "Use this to fix \"pressure-vessel-wrap\" errors during dependency "
 "installations."
 msgstr ""
-"Будет удалена папка Steam Linux Runtime (steamrt3). umu-launcher заново "
-"загрузит чистую копию при следующей установке зависимости.\n"
+"Будут удалены все среды Steam Linux Runtime, которые хранит umu-launcher "
+"(steamrt3, steamrt4). umu-launcher заново загрузит чистую копию, как только "
+"она понадобится игре или установке зависимости.\n"
 "\n"
 "Используйте это, чтобы исправить ошибки \"pressure-vessel-wrap\" при "
 "установке зависимостей."
@@ -711,6 +713,12 @@ msgstr ""
 msgid "Reset"
 msgstr "Сбросить"
 
+#: crates/leyen-gtk/src/dialogs/preferences.rs:224
+#: crates/leyen-gtk/src/dialogs/preferences.rs:229
+#, no-c-format
+msgid "umu runtime directory not found — nothing to reset."
+msgstr "Папка среды umu не найдена — сбрасывать нечего."
+
 #: crates/leyen-gtk/src/dialogs/preferences.rs:226
 #, no-c-format
 msgid ""
@@ -718,11 +726,6 @@ msgid ""
 msgstr ""
 "Среда umu сброшена. Запустите любую установку зависимости, чтобы загрузить "
 "свежую копию."
-
-#: crates/leyen-gtk/src/dialogs/preferences.rs:229
-#, no-c-format
-msgid "umu runtime directory not found — nothing to reset."
-msgstr "Папка среды umu не найдена — сбрасывать нечего."
 
 #: crates/leyen-gtk/src/dialogs/preferences.rs:232
 #, no-c-format
@@ -1683,11 +1686,10 @@ msgstr "Сбросить среду umu"
 
 #: ui/preferences_dialog.ui:131
 msgid ""
-"Deletes steamrt3 directory. It will be re-downloaded on next dependency "
-"install."
+"Deletes every steamrt directory. Each is re-downloaded when next needed."
 msgstr ""
-"Удаляет папку steamrt3. Она будет загружена заново при следующей установке "
-"зависимости."
+"Удаляет каждую папку steamrt. Каждая будет загружена заново, как только "
+"понадобится."
 
 #: ui/prefix_tools_group.ui:10
 msgid "Tools"

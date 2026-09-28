@@ -8,7 +8,7 @@ use adw::subclass::prelude::*;
 use gtk4::glib;
 use leyen_model::i18n::gettext;
 use leyen_model::models::{GLOBAL_SETTINGS_VERSION, GlobalSettings};
-use leyen_model::runtime::{get_umu_runtime_dir, resolve_proton_path};
+use leyen_model::runtime::{get_umu_dir, remove_umu_runtimes, resolve_proton_path};
 use leyen_model::tools::mangohud_available;
 use libadwaita as adw;
 
@@ -204,7 +204,7 @@ impl PreferencesDialog {
             // One literal: xgettext reads Rust as C, where a line continuation keeps
             // the next line's indentation.
             Some(&gettext(
-                "This deletes the Steam Linux Runtime (steamrt3) directory. umu-launcher will re-download a clean copy the next time a dependency is installed.\n\nUse this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
+                "This deletes every Steam Linux Runtime umu-launcher keeps (steamrt3, steamrt4). umu-launcher will re-download a clean copy the next time a game or a dependency install needs one.\n\nUse this to fix \"pressure-vessel-wrap\" errors during dependency installations.",
             )),
         );
         confirm.add_responses(&[("cancel", &gettext("Cancel")), ("reset", &gettext("Reset"))]);
@@ -217,12 +217,12 @@ impl PreferencesDialog {
             return;
         }
 
-        let runtime_dir = get_umu_runtime_dir();
-        let result = gio_blocking(move || std::fs::remove_dir_all(&runtime_dir))
+        let result = gio_blocking(|| remove_umu_runtimes(&get_umu_dir()))
             .await
             .unwrap_or_else(|| Err(std::io::Error::other("background task failed")));
         let message = match result {
-            Ok(()) => gettext(
+            Ok(0) => gettext("umu runtime directory not found — nothing to reset."),
+            Ok(_) => gettext(
                 "umu runtime reset. Re-run any dependency install to download a fresh copy.",
             ),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {

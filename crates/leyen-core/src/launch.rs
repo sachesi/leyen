@@ -86,6 +86,9 @@ struct RunningGameSession {
     /// otherwise indistinguishable by cmdline.
     #[serde(default)]
     match_game_id: Option<String>,
+    /// The Proton the launch was started with, as selected.
+    #[serde(default)]
+    proton: String,
     termination_requested: bool,
 }
 
@@ -939,6 +942,40 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     result
 }
 
+/// Whether a game registered as running uses `prefix` with the Proton `proton`.
+async fn prefix_runs_game_on(prefix: &str, proton: &str) -> bool {
+    let prefix = prefix.to_string();
+    let proton = proton.to_string();
+    tokio::task::spawn_blocking(move || {
+        with_running_registry(|registry| {
+            (runs_game_on(&registry.sessions, &prefix, &proton), false)
+        })
+    })
+    .await
+    .map_err(|e| LaunchError::Other(join_err(e)))
+    .and_then(|r| r)
+    .unwrap_or_else(|e| {
+        warn!("Could not read the running games registry: {e}");
+        false
+    })
+}
+
+/// The prefix compares as the folder it names, as its holder is found.
+fn runs_game_on(sessions: &[RunningGameSession], prefix: &str, proton: &str) -> bool {
+    let folder = |path: &str| {
+        let path = Path::new(path.trim());
+        fs::canonicalize(path).unwrap_or_else(|_| path.components().collect())
+    };
+    let prefix = folder(prefix);
+    sessions.iter().any(|session| {
+        session.proton == proton
+            && session
+                .match_prefix_path
+                .as_deref()
+                .is_some_and(|other| folder(other) == prefix)
+    })
+}
+
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
     if !game.prefix_path.trim().is_empty() {
         return game.prefix_path.clone();
@@ -1787,6 +1824,15 @@ async fn launch_game_managed(
         None => settings.default_proton.clone(),
     };
 
+    // umu's default verb waits for the prefix's wineserver to exit before it
+    // starts anything, so a second game on a prefix would sit until the first one
+    // closed. Only on the same Proton: another one would update the prefix under
+    // a wineserver it cannot talk to, where waiting is the only way. Set before
+    // the launch options, which may name a verb of their own.
+    if !prefix_path.is_empty() && prefix_runs_game_on(&prefix_path, &proton_path).await {
+        env_vars.push(("PROTON_VERB".to_string(), "run".to_string()));
+    }
+
     if game.mangohud
         && tokio::task::spawn_blocking(mangohud_available)
             .await
@@ -2081,6 +2127,7 @@ async fn finish_launch(
         match_args,
         container_cgroup_dir: None,
         match_game_id: env_vars_game_id,
+        proton: proton_path.clone(),
         termination_requested: false,
     };
 
@@ -2175,9 +2222,10 @@ async fn finish_launch(
 #[cfg(test)]
 mod tests {
     use super::{
-        LaunchClaim, MAX_OUTPUT_LINE, active_from_exit_code, cgroup_within, claim_session_finalize,
-        current_epoch_seconds, for_each_output_line, in_scope, mark_session_finalized,
-        process_matches_cmdline, session_finalize_done, signal_pid_in_cgroups,
+        LaunchClaim, MAX_OUTPUT_LINE, RunningGameSession, active_from_exit_code, cgroup_within,
+        claim_session_finalize, current_epoch_seconds, for_each_output_line, in_scope,
+        mark_session_finalized, process_matches_cmdline, runs_game_on, session_finalize_done,
+        signal_pid_in_cgroups,
     };
 
     #[test]
@@ -2292,6 +2340,35 @@ mod tests {
             child.wait().unwrap().code().is_none(),
             "killed by the signal"
         );
+    }
+
+    #[test]
+    fn a_game_joins_a_running_prefix_only_on_the_same_proton() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix");
+        std::fs::create_dir(&prefix).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&prefix, &link).unwrap();
+        let running = [RunningGameSession {
+            game_id: "a".to_string(),
+            match_prefix_path: Some(prefix.to_string_lossy().into_owned()),
+            proton: "/proton/GE-Proton10".to_string(),
+            ..Default::default()
+        }];
+
+        let link = link.to_string_lossy();
+        assert!(runs_game_on(&running, &link, "/proton/GE-Proton10"));
+        assert!(runs_game_on(
+            &running,
+            &format!("{link}/"),
+            "/proton/GE-Proton10"
+        ));
+        assert!(!runs_game_on(&running, &link, "/proton/GE-Proton9"));
+        assert!(!runs_game_on(
+            &running,
+            &temp.path().join("other").to_string_lossy(),
+            "/proton/GE-Proton10"
+        ));
     }
 
     #[tokio::test]

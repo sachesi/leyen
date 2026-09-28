@@ -56,6 +56,12 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.10.2" date="2026-09-29">
+      <description>
+        <p>umu-launcher keeps the Steam Linux Runtime it downloads: an update to it was fetched again on every launch, as the sandbox held the runtime's folder where umu could not replace it, and a first download went with the sandbox when umu's folders did not exist yet. A umu-launcher that Leyen installed is brought to the release this version pins instead of being kept as it is, without holding launches back while the new one downloads.</p>
+        <p>A game started while another one runs in its prefix on the same Proton starts at once, where it waited for the first to close. Reset umu Runtime in the preferences deletes every Steam Linux Runtime umu keeps, steamrt4 as well as steamrt3.</p>
+      </description>
+    </release>
     <release version="0.10.1" date="2026-09-26">
       <description>
         <p>A game can no longer reach outside its sandbox through the folder that stands in for its cache: it could swap that folder for a link to your home directory and be handed all of it on its next launch. That folder is read-only inside the sandbox now, and a prefix that is your home directory, or holds it, is refused like any other folder that would undo the sandbox.</p>

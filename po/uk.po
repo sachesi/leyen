@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-28 23:58+0300\n"
+"POT-Creation-Date: 2026-09-29 00:04+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -1172,6 +1172,24 @@ msgstr ""
 
 #: data/io.github.sachesi.leyen.metainfo.xml:61
 msgid ""
+"umu-launcher keeps the Steam Linux Runtime it downloads: an update to it was "
+"fetched again on every launch, as the sandbox held the runtime's folder "
+"where umu could not replace it, and a first download went with the sandbox "
+"when umu's folders did not exist yet. A umu-launcher that Leyen installed is "
+"brought to the release this version pins instead of being kept as it is, "
+"without holding launches back while the new one downloads."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:62
+msgid ""
+"A game started while another one runs in its prefix on the same Proton "
+"starts at once, where it waited for the first to close. Reset umu Runtime in "
+"the preferences deletes every Steam Linux Runtime umu keeps, steamrt4 as "
+"well as steamrt3."
+msgstr ""
+
+#: data/io.github.sachesi.leyen.metainfo.xml:67
+msgid ""
 "A game can no longer reach outside its sandbox through the folder that "
 "stands in for its cache: it could swap that folder for a link to your home "
 "directory and be handed all of it on its next launch. That folder is read-"
@@ -1179,7 +1197,7 @@ msgid ""
 "holds it, is refused like any other folder that would undo the sandbox."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:62
+#: data/io.github.sachesi.leyen.metainfo.xml:68
 msgid ""
 "The daemon stays on the session bus when a game prints a NUL byte, and exits "
 "if it loses the bus rather than running on beside a second one. A game whose "
@@ -1191,7 +1209,7 @@ msgid ""
 "the daemon's updates, and leyen list piped into head ends quietly."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:67
+#: data/io.github.sachesi.leyen.metainfo.xml:73
 msgid ""
 "Every game runs in a sandbox now, and so does everything else that runs "
 "Windows code: the Wine configuration, the registry editor, a program run by "
@@ -1203,7 +1221,7 @@ msgid ""
 "unless switched writable, and network access."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:68
+#: data/io.github.sachesi.leyen.metainfo.xml:74
 msgid ""
 "Because the game folder is the one folder of yours a game sees, it is "
 "required and set by hand, so games in a library from an earlier version need "
@@ -1213,7 +1231,7 @@ msgid ""
 "namespaces are requirements from here on."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:69
+#: data/io.github.sachesi.leyen.metainfo.xml:75
 msgid ""
 "Games that share a prefix still share one wineserver, so three windows of "
 "one game keep each other's registry writes. The Proton log is written into "
@@ -1222,7 +1240,7 @@ msgid ""
 "process namespace starts."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:74
+#: data/io.github.sachesi.leyen.metainfo.xml:80
 msgid ""
 "A dependency installed into a prefix that does not exist yet no longer "
 "counts the whole Wine installation as its own files, so removing it, or a "
@@ -1234,7 +1252,7 @@ msgid ""
 "minutes, such as .NET."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:75
+#: data/io.github.sachesi.leyen.metainfo.xml:81
 msgid ""
 "A failed download says why, and a failed installer ends its message with the "
 "last lines of its output instead of all of it. A font installed again after "
@@ -1243,7 +1261,7 @@ msgid ""
 "a game ID Leyen gave."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:80
+#: data/io.github.sachesi.leyen.metainfo.xml:86
 msgid ""
 "A launch whose first command cannot start, such as a wrapper in the launch "
 "arguments that is not installed, no longer shows as running for good. "
@@ -1252,7 +1270,7 @@ msgid ""
 "reaching the log when it prints text that is not UTF-8."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:81
+#: data/io.github.sachesi.leyen.metainfo.xml:87
 msgid ""
 "Wine Configuration, the Registry Editor and programs run in a prefix are "
 "tracked by the daemon: while they, or anything they started, run, no game "
@@ -1262,7 +1280,7 @@ msgid ""
 "the systemd user session, as launching games does."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:82
+#: data/io.github.sachesi.leyen.metainfo.xml:88
 msgid ""
 "The umu-launcher and winetricks that Leyen downloads are releases pinned in "
 "it, refused unless their SHA-256 matches. The log file is readable by you "
@@ -1270,7 +1288,7 @@ msgid ""
 "editing a group updates its menu entries in one pass."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:87
+#: data/io.github.sachesi.leyen.metainfo.xml:93
 msgid ""
 "The window is rebuilt with GTK 4.22 and libadwaita 1.9. A group opens as a "
 "page of its own that the back button, Escape or a swipe leave, and the "
@@ -1283,7 +1301,7 @@ msgid ""
 "scrolled to."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:88
+#: data/io.github.sachesi.leyen.metainfo.xml:94
 msgid ""
 "Adding and editing share one dialog for games and one for groups, which "
 "cannot add the same game twice. The prefix tools are rows, the menu entry of "
@@ -1293,7 +1311,7 @@ msgid ""
 "and a game that is running cannot be deleted, nor a group with one running."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:89
+#: data/io.github.sachesi.leyen.metainfo.xml:95
 msgid ""
 "The application id is io.github.sachesi.leyen; icons and menu entries "
 "written under the old id are moved over on the first start. Ctrl+Q quits, "
@@ -1303,7 +1321,7 @@ msgid ""
 "interface."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:94
+#: data/io.github.sachesi.leyen.metainfo.xml:100
 msgid ""
 "Winetricks components install again over an earlier attempt, removing one "
 "takes it out of the prefix's record, catalogue entries run the verbs "
@@ -1313,14 +1331,14 @@ msgid ""
 "runtimes are unpacked beside their destination before they replace it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:95
+#: data/io.github.sachesi.leyen.metainfo.xml:101
 msgid ""
 "The window survives a restart of the daemon and no longer rebuilds the "
 "library every few seconds while a game runs. The add and edit dialogs have a "
 "title, and a group can be edited from the header while it is open."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:100
+#: data/io.github.sachesi.leyen.metainfo.xml:106
 msgid ""
 "Downloaded runtimes are checked against their digests and winetricks is "
 "pinned to a known release. The files Leyen keeps carry a version of their "
@@ -1330,7 +1348,7 @@ msgid ""
 "task that crashes no longer leaves the window waiting on it."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:105
+#: data/io.github.sachesi.leyen.metainfo.xml:111
 msgid ""
 "Files are read and written away from the thread drawing the window. A "
 "dependency job and a launch no longer run against the same prefix at once, a "
@@ -1338,11 +1356,11 @@ msgid ""
 "a running game that is no longer in the library."
 msgstr ""
 
-#: data/io.github.sachesi.leyen.metainfo.xml:110
+#: data/io.github.sachesi.leyen.metainfo.xml:116
 msgid "The library keeps its scroll position when it is refreshed."
 msgstr "Бібліотека зберігає позицію прокручування під час оновлення."
 
-#: data/io.github.sachesi.leyen.metainfo.xml:115
+#: data/io.github.sachesi.leyen.metainfo.xml:121
 msgid ""
 "Games are started and tracked by a daemon on the session bus, which the "
 "window and the command line talk to. It exits when it has nothing to do, "

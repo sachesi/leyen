@@ -20,6 +20,10 @@ pub static UMU_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 /// The daemon emits `RuntimeStatus` based on readiness; this gates launches.
 pub static UMU_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 
+/// `true` while another release of umu-launcher downloads next to the one in
+/// use, which launches keep using meanwhile.
+static UMU_UPDATING: AtomicBool = AtomicBool::new(false);
+
 pub static WINETRICKS_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// `true` while the background winetricks download thread is actively running.
@@ -180,7 +184,8 @@ pub fn download_winetricks() -> Result<(), UmuError> {
 /// If it is not found in the system
 /// PATH or in the local leyen data directory, spawns a background thread that
 /// downloads the pinned zipapp release from the umu-launcher GitHub repository
-/// and extracts it to `~/.local/share/leyen/core/umu-launcher/`.
+/// and extracts it to `~/.local/share/leyen/core/umu-launcher/`. A copy there of
+/// another release is replaced the same way.
 pub async fn check_or_install_umu() {
     // If we're on NixOS, we expect umu-run to be provided by the system/flake.
     // We don't want to download a generic linux zipapp.
@@ -192,28 +197,47 @@ pub async fn check_or_install_umu() {
         .await
         .unwrap_or(false);
 
-    if available {
-        // Prime the OnceLock cache so first game launch doesn't block the UI.
-        let _ = tokio::task::spawn_blocking(get_umu_run_path).await;
-        return;
-    }
+    // Also primes the OnceLock cache so first game launch doesn't block the UI.
+    let outdated = if available {
+        let Some(installed) = tokio::task::spawn_blocking(outdated_umu_version)
+            .await
+            .unwrap_or(None)
+        else {
+            return;
+        };
+        Some(installed)
+    } else {
+        None
+    };
 
-    if !claim_download(&UMU_DOWNLOAD_STARTED, &UMU_DOWNLOADING) {
+    let replacing = outdated.is_some();
+    let downloading = if replacing {
+        &UMU_UPDATING
+    } else {
+        &UMU_DOWNLOADING
+    };
+    if !claim_download(&UMU_DOWNLOAD_STARTED, downloading) {
         return;
     }
 
     let umu_core_dir = get_umu_core_dir();
 
-    info!(
-        "[dbg] umu-launcher not found, starting background download to {}",
-        umu_core_dir
-    );
+    match outdated {
+        Some(installed) => {
+            info!("Updating umu-launcher '{installed}' to {UMU_VERSION} in {umu_core_dir}")
+        }
+        None => info!(
+            "[dbg] umu-launcher not found, starting background download to {}",
+            umu_core_dir
+        ),
+    }
     tokio::spawn(async move {
         // A panic in the blocking task must still reset the flags below, or
         // UMU_DOWNLOADING stuck at `true` blocks every future launch.
-        let result = tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir))
-            .await
-            .unwrap_or_else(|e| Err(UmuError::Download(format!("install task failed: {e}"))));
+        let result =
+            tokio::task::spawn_blocking(move || download_and_install_umu(&umu_core_dir, replacing))
+                .await
+                .unwrap_or_else(|e| Err(UmuError::Download(format!("install task failed: {e}"))));
         match &result {
             Ok(()) => info!("[dbg] umu-launcher download+install completed"),
             Err(e) => warn!("[dbg] umu-launcher download+install failed: {e}"),
@@ -222,8 +246,20 @@ pub async fn check_or_install_umu() {
             // Reset so the next application start can retry.
             UMU_DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
         }
-        UMU_DOWNLOADING.store(false, Ordering::Relaxed);
+        downloading.store(false, Ordering::Relaxed);
     });
+}
+
+/// The version of the umu-launcher Leyen installed when it is not the one this
+/// build pins; `None` when it is, or when the system's own is in use.
+fn outdated_umu_version() -> Option<String> {
+    if get_umu_run_path() != get_local_umu_run_path() {
+        return None;
+    }
+    let installed = fs::read_to_string(format!("{}/version", get_umu_core_dir()))
+        .map(|version| version.trim().to_string())
+        .unwrap_or_default();
+    (installed != UMU_VERSION).then_some(installed)
 }
 
 /// Checks whether `winetricks` is available.
@@ -267,8 +303,8 @@ pub async fn check_or_install_winetricks() {
 }
 
 /// Downloads the pinned umu-launcher zipapp tarball and extracts it into
-/// `dest_dir`.
-fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
+/// `dest_dir`, `replacing` the release there.
+fn download_and_install_umu(dest_dir: &str, replacing: bool) -> Result<(), UmuError> {
     fs::create_dir_all(dest_dir)?;
     let version = UMU_VERSION;
     let tarball_name = format!("umu-launcher-{version}-zipapp.tar");
@@ -322,22 +358,89 @@ fn download_and_install_umu(dest_dir: &str) -> Result<(), UmuError> {
             let _ = fs::set_permissions(&umu_run, perms);
         }
     }
-    let _ = fs::remove_dir_all(&umu_dir);
-    if let Err(e) = fs::rename(&staged_umu, &umu_dir) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(UmuError::Extraction(format!(
-            "Failed to move extracted umu into place: {e}"
-        )));
-    }
+    let placed = if replacing {
+        replace_while_unused(Path::new(&staged_umu), Path::new(&umu_dir))
+    } else {
+        let _ = fs::remove_dir_all(&umu_dir);
+        fs::rename(&staged_umu, &umu_dir).map_err(|e| {
+            UmuError::Extraction(format!("Failed to move extracted umu into place: {e}"))
+        })
+    };
+    // After a swap the release it replaced is here.
     let _ = fs::remove_dir_all(&staging);
+    placed?;
     let version_file = format!("{}/version", dest_dir);
     let _ = fs::write(version_file, version);
     Ok(())
 }
 
+/// Swaps `staged` and `installed` while nothing runs umu-launcher, and refuses
+/// otherwise: a running copy reads its modules from the zipapp by path, and
+/// would read them from the new one. Launches wait for the swap and no longer.
+fn replace_while_unused(staged: &Path, installed: &Path) -> Result<(), UmuError> {
+    UMU_DOWNLOADING.store(true, Ordering::SeqCst);
+    let in_use = crate::launch::is_any_game_running()
+        || crate::prefix_tool::any_running()
+        || crate::deps::engine::any_in_progress();
+    let result = if in_use {
+        Err(UmuError::Extraction(
+            "umu-launcher is in use; the update waits for the next start".to_string(),
+        ))
+    } else {
+        exchange(staged, installed).map_err(|e| {
+            UmuError::Extraction(format!("Failed to move extracted umu into place: {e}"))
+        })
+    };
+    UMU_DOWNLOADING.store(false, Ordering::SeqCst);
+    result
+}
+
+/// Swaps two paths in one step, so there is no moment with neither in place.
+fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let a = std::ffi::CString::new(a.as_os_str().as_bytes())?;
+    let b = std::ffi::CString::new(b.as_os_str().as_bytes())?;
+    // SAFETY: both are NUL-terminated paths that outlive the call.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::keep_if_sha256;
+    use super::{exchange, keep_if_sha256};
+
+    #[test]
+    fn an_update_swaps_the_install_in_one_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("staged");
+        let installed = dir.path().join("umu");
+        std::fs::create_dir(&staged).unwrap();
+        std::fs::create_dir(&installed).unwrap();
+        std::fs::write(staged.join("umu-run"), "new").unwrap();
+        std::fs::write(installed.join("umu-run"), "old").unwrap();
+
+        exchange(&staged, &installed).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(installed.join("umu-run")).unwrap(),
+            "new"
+        );
+        assert_eq!(
+            std::fs::read_to_string(staged.join("umu-run")).unwrap(),
+            "old"
+        );
+    }
 
     #[test]
     fn a_download_is_kept_only_with_the_pinned_digest() {

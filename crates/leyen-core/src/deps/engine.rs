@@ -42,6 +42,11 @@ fn busy_prefixes() -> &'static Mutex<HashSet<String>> {
     BUSY.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+/// Whether a dependency operation runs on any prefix.
+pub fn any_in_progress() -> bool {
+    busy_prefixes().lock().map_or(true, |set| !set.is_empty())
+}
+
 /// Releases the prefix lock on drop.
 struct PrefixOpGuard(String);
 

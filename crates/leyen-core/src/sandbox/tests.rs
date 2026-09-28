@@ -487,7 +487,7 @@ fn a_program_cannot_turn_its_cache_into_a_link_out_of_the_sandbox() {
     host.wayland_socket = None;
     host.umu_writable = Vec::new();
     host.umu_read_only = Vec::new();
-    super::prepare_directories(&request).expect("directories");
+    super::prepare_directories(&request, &host).expect("directories");
     let args = bwrap_args(&request, &host, &BTreeMap::new());
 
     let filter = super::SeccompFilter::compile().expect("filter");
@@ -520,17 +520,77 @@ fn a_program_cannot_turn_its_cache_into_a_link_out_of_the_sandbox() {
     // One left behind by a program from before is refused, not followed.
     std::fs::remove_dir_all(prefix.join(".leyen/cache")).unwrap();
     std::os::unix::fs::symlink(&home, prefix.join(".leyen/cache")).unwrap();
-    assert!(super::prepare_directories(&request).is_err());
+    assert!(super::prepare_directories(&request, &host).is_err());
 }
 
 /// The prefix is bound read-write, so it is held to the rule a shared folder is.
 #[test]
 fn a_prefix_that_would_undo_the_sandbox_is_refused() {
     let home = std::env::var("HOME").expect("a home directory");
+    let host = host(Path::new("/home/player/.local/share/leyen/prefixes/game"));
     for prefix in [home.as_str(), "/", "games/prefix"] {
         assert!(
-            super::prepare_directories(&request(Path::new(prefix))).is_err(),
+            super::prepare_directories(&request(Path::new(prefix)), &host).is_err(),
             "a prefix at {prefix} must be refused"
         );
     }
+}
+
+/// umu-launcher replaces the Steam Linux Runtime by renaming folders next to it,
+/// on every launch until it succeeds; one it cannot rename is downloaded again
+/// each time. What it downloads must also outlive the sandbox's home directory.
+#[test]
+fn umu_can_replace_its_runtime_and_keep_it() {
+    if let Err(reason) = is_available() {
+        eprintln!("skipped: {reason}");
+        return;
+    }
+    let temp = tempfile::tempdir().expect("temp dir");
+    let home = temp.path().join("home");
+    let prefix = temp.path().join("prefix");
+    let bus = temp.path().join("bus");
+    std::fs::write(&bus, "").unwrap();
+
+    let mut request = request(&prefix);
+    request.proton_path = String::new();
+    let mut host = host(&prefix);
+    host.home = home.clone();
+    host.bus_socket = bus;
+    host.shared_dir = temp.path().join("shared");
+    std::fs::create_dir_all(host.shared_dir.join("wine")).unwrap();
+    std::fs::create_dir_all(host.shared_dir.join("shm")).unwrap();
+    host.wayland_socket = None;
+    host.umu_writable = super::umu_folders(&home);
+    host.umu_read_only = Vec::new();
+    super::prepare_directories(&request, &host).expect("directories");
+    let umu = home.join(".local/share/umu");
+    std::fs::create_dir(umu.join("steamrt3")).unwrap();
+    let args = bwrap_args(&request, &host, &BTreeMap::new());
+
+    let filter = super::SeccompFilter::compile().expect("filter");
+    let mut command = std::process::Command::new(super::tools().unwrap().bwrap.clone());
+    command.args(&args);
+    command.args([
+        "/bin/sh",
+        "-c",
+        "set -e; mkdir \"$1/.new\"; touch \"$1/.new/VERSIONS.txt\"; \
+         mv \"$1/steamrt3\" \"$1/.old\"; mv \"$1/.new\" \"$1/steamrt3\"; \
+         touch \"$2/.cache/umu/parts\" \"$2/.local/share/Steam/compatibilitytools.d/proton\"",
+        "sh",
+    ]);
+    command.arg(&umu);
+    command.arg(&home);
+    filter.place_on_std_fd(&mut command).expect("filter fd");
+    let output = command.output().expect("bwrap runs");
+    assert!(
+        output.status.success(),
+        "sandbox failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(umu.join("steamrt3/VERSIONS.txt").exists());
+    assert!(home.join(".cache/umu/parts").exists());
+    assert!(
+        home.join(".local/share/Steam/compatibilitytools.d/proton")
+            .exists()
+    );
 }

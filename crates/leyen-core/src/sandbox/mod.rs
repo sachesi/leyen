@@ -32,7 +32,6 @@ use std::sync::OnceLock;
 use leyen_model::i18n::gettext;
 use leyen_model::models::SandboxFolder;
 use leyen_model::paths::{get_config_dir, get_data_dir};
-use leyen_model::runtime::get_umu_runtime_dir;
 use log::info;
 use tokio::process::Command as AsyncCommand;
 
@@ -361,17 +360,24 @@ impl HostLayout {
             xauthority,
             resolv_conf,
             devices,
-            umu_writable: vec![
-                PathBuf::from(get_umu_runtime_dir()),
-                home.join(".local/share/umu"),
-                home.join(".cache/umu"),
-                // umu-launcher downloads Proton into Steam's tools directory.
-                home.join(".local/share/Steam/compatibilitytools.d"),
-            ],
+            umu_writable: umu_folders(&home),
             // `core` holds umu-launcher and winetricks both.
             umu_read_only: vec![get_data_dir().join("core")],
         }
     }
+}
+
+/// umu-launcher's folders under `home`, as it names them in a sandbox that does
+/// not pass `XDG_DATA_HOME` or `XDG_CACHE_HOME` through. The Steam Linux Runtime
+/// is not bound on its own: umu swaps a new one in by renaming its folder, which
+/// a mount point refuses.
+fn umu_folders(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".local/share/umu"),
+        home.join(".cache/umu"),
+        // umu-launcher downloads Proton into Steam's tools directory.
+        home.join(".local/share/Steam/compatibilitytools.d"),
+    ]
 }
 
 fn runtime_dir() -> String {
@@ -676,7 +682,7 @@ pub async fn confine_in_scope(
     let directories = request.clone();
     let host = tokio::task::spawn_blocking(move || {
         let host = HostLayout::detect(bus::dead_socket()?);
-        prepare_directories(&directories)?;
+        prepare_directories(&directories, &host)?;
         Ok::<_, String>(host)
     })
     .await
@@ -707,7 +713,9 @@ pub async fn confine_in_scope(
 
 /// `bwrap` refuses a bind whose source is missing. The prefix too: a dependency
 /// install that starts with `createprefix` runs in one that does not exist yet.
-fn prepare_directories(request: &SandboxRequest) -> Result<(), String> {
+/// umu's folders are bound only if they exist, and without them what it downloads
+/// goes with the sandbox's home directory.
+fn prepare_directories(request: &SandboxRequest, host: &HostLayout) -> Result<(), String> {
     let prefix = Path::new(&request.prefix_path);
     let failed = |directory: &Path, e: std::io::Error| {
         gettext("Failed to prepare the sandbox directory “{}”: {}")
@@ -733,6 +741,12 @@ fn prepare_directories(request: &SandboxRequest) -> Result<(), String> {
                 fs::create_dir(&directory).map_err(|e| failed(&directory, e))?;
             }
             Err(e) => return Err(failed(&directory, e)),
+        }
+    }
+    // Without one a game still runs, only umu fetches again what it would keep.
+    for directory in &host.umu_writable {
+        if let Err(e) = fs::create_dir_all(directory) {
+            log::warn!("{}", failed(directory, e));
         }
     }
     Ok(())

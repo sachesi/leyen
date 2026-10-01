@@ -10,9 +10,10 @@ its playtime and when it was last played, every group how many games it holds, h
 them run and when one was last played.
 
 Clicking a game, or pressing Enter on it, launches it; doing it again stops it. The round
-button does the same. Clicking a group opens it as a page of its own, with the group's title in the
-header, a button to edit it and one to add a game to it. Back, Escape or a swipe returns to
-the library.
+button does the same. Stopping ends the game at once, without the chance to save that quitting
+from inside it gives; other games on its prefix keep running. Clicking a group opens it as a
+page of its own, with the group's title in the header, a button to edit it and one to add a
+game to it. Back, Escape or a swipe returns to the library.
 
 Search (Ctrl+F, or just typing) looks through the titles of every game, including the ones
 inside groups, and through the titles of groups: a group that matches lists all its games.

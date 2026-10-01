@@ -345,9 +345,13 @@ async fn finalize_finished_session(session: &RunningGameSession) {
         current_epoch_seconds().saturating_sub(session.started_at_epoch_seconds)
     });
     let status = if session.termination_requested {
-        "Last run: stopped"
+        "Last run: stopped".to_string()
     } else {
-        "Last run: completed"
+        match launch_exit(session, monotonic_elapsed.is_some()).await {
+            Some(Some(code)) if code != 0 => format!("Last run: exited with code {code}"),
+            Some(None) => "Last run: killed".to_string(),
+            _ => "Last run: completed".to_string(),
+        }
     };
 
     if let Some(prefix) = &session.match_prefix_path {
@@ -372,7 +376,7 @@ async fn finalize_finished_session(session: &RunningGameSession) {
     }
 
     let total_playtime = add_game_playtime(&session.game_id, elapsed_seconds).await;
-    if !record_game_launch_result(&session.game_id, elapsed_seconds, status).await {
+    if !record_game_launch_result(&session.game_id, elapsed_seconds, &status).await {
         warn!(target: &format!("game:{}", session.game_id), "Failed to record launch result");
     }
 
@@ -584,6 +588,41 @@ fn finalize_claims() -> std::sync::MutexGuard<'static, FinalizeClaims> {
         .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|e| e.into_inner())
+}
+
+/// How the process each launch started ended, keyed like
+/// [`SESSION_START_INSTANTS`]: its exit code, or `None` when a signal ended it.
+type LaunchExits = HashMap<(String, u64), Option<i32>>;
+
+fn launch_exits() -> std::sync::MutexGuard<'static, LaunchExits> {
+    static EXITS: OnceLock<std::sync::Mutex<LaunchExits>> = OnceLock::new();
+    EXITS
+        .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// How `session`'s launch ended, when that tells how the game did: the
+/// launcher passes the game's exit code on. Only once the scope is empty, which
+/// it is not on a shared prefix, where the launcher outlives the game. The
+/// process is reaped as the scope empties, so a launch of this daemon's
+/// (`launched_here`) is given a moment for its status to arrive.
+async fn launch_exit(session: &RunningGameSession, launched_here: bool) -> Option<Option<i32>> {
+    let key = (session.game_id.clone(), session.started_at_epoch_seconds);
+    let empty = session
+        .cgroup_dir
+        .as_deref()
+        .is_none_or(|dir| read_cgroup_populated(Path::new(dir)) != Some(true));
+    let attempts = if launched_here && empty { 20 } else { 1 };
+    for attempt in 0..attempts {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if let Some(exit) = launch_exits().remove(&key) {
+            return empty.then_some(exit);
+        }
+    }
+    None
 }
 
 /// Re-scans running sessions and republishes them so the UI reflects the change
@@ -2272,6 +2311,7 @@ async fn finish_launch(
     if reap_child_locally {
         let game_id_log = game.id.clone();
         let game_title_log = game.title.clone();
+        let key = (game.id.clone(), started_at_epoch_seconds);
         tokio::spawn(async move {
             match child.wait().await {
                 Ok(status) => {
@@ -2280,6 +2320,9 @@ async fn finish_launch(
                         .map(|c| c.to_string())
                         .unwrap_or_else(|| "signal".to_string());
                     info!(target: &format!("game:{}", game_id_log), "'{}' exited with status {}", game_title_log, code);
+                    if !session_finalize_done(&key) {
+                        launch_exits().insert(key, status.code());
+                    }
                 }
                 Err(e) => {
                     warn!(target: &format!("game:{}", game_id_log), "'{}' wait error: {}", game_title_log, e);

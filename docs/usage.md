@@ -106,9 +106,12 @@ What a game can reach:
   game on it could tell Leyen to launch anything, or your systemd to start something outside
   the sandbox.
 
-Games on the same prefix run side by side, several windows of one game included. Each has
-a sandbox of its own, with its own folders and network setting; they share a process
-namespace and a wineserver, because Wine serves a prefix from one.
+Games on the same prefix run side by side, several windows of one game included, as long as
+they use the same Proton. Each has a sandbox of its own, with its own folders and network
+setting; they share a process namespace and a wineserver, because Wine serves a prefix from
+one. The wineserver runs in the sandbox of the game that started first and looks there for
+what the others start, so a game whose folder that sandbox does not have is refused until the
+folder is shared with the first game, or the first game is closed.
 
 What is not there: your home directory, `/tmp`, Leyen's own configuration, umu-launcher and
 winetricks as anything but read-only copies, and the games you did not start. Some folders

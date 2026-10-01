@@ -936,21 +936,28 @@ pub async fn stop_game(game_id: &str) -> Result<bool, LaunchError> {
     result
 }
 
-/// Whether a game registered as running uses `prefix` with the Proton `proton`.
-async fn prefix_runs_game_on(prefix: &str, proton: &str) -> bool {
+/// What already runs on the prefix a game is about to start on.
+#[derive(Debug, PartialEq, Eq)]
+enum PrefixOccupant {
+    Nobody,
+    /// A game with the same Proton, whose wineserver the new one joins.
+    SameProton,
+    /// A game with another Proton, whose wineserver the new one cannot talk to.
+    OtherProton,
+}
+
+async fn prefix_occupant(prefix: &str, proton: &str) -> PrefixOccupant {
     let prefix = prefix.to_string();
     let proton = proton.to_string();
     tokio::task::spawn_blocking(move || {
-        with_running_registry(|registry| {
-            (runs_game_on(&registry.sessions, &prefix, &proton), false)
-        })
+        with_running_registry(|registry| (occupant(&registry.sessions, &prefix, &proton), false))
     })
     .await
     .map_err(|e| LaunchError::Other(join_err(e)))
     .and_then(|r| r)
     .unwrap_or_else(|e| {
         warn!("Could not read the running games registry: {e}");
-        false
+        PrefixOccupant::Nobody
     })
 }
 
@@ -960,15 +967,21 @@ fn prefix_folder(path: &str) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.components().collect())
 }
 
-fn runs_game_on(sessions: &[RunningGameSession], prefix: &str, proton: &str) -> bool {
+fn occupant(sessions: &[RunningGameSession], prefix: &str, proton: &str) -> PrefixOccupant {
     let prefix = prefix_folder(prefix);
-    sessions.iter().any(|session| {
-        session.proton == proton
-            && session
-                .match_prefix_path
-                .as_deref()
-                .is_some_and(|other| prefix_folder(other) == prefix)
-    })
+    let mut found = PrefixOccupant::Nobody;
+    for session in sessions.iter().filter(|session| {
+        session
+            .match_prefix_path
+            .as_deref()
+            .is_some_and(|other| prefix_folder(other) == prefix)
+    }) {
+        if session.proton != proton {
+            return PrefixOccupant::OtherProton;
+        }
+        found = PrefixOccupant::SameProton;
+    }
+    found
 }
 
 fn resolve_launch_prefix(game: &Game, group: Option<&GameGroup>, default_prefix: &str) -> String {
@@ -1809,12 +1822,39 @@ async fn launch_game_managed(
     };
 
     // umu's default verb waits for the prefix's wineserver to exit before it
-    // starts anything, so a second game on a prefix would sit until the first one
-    // closed. Only on the same Proton: another one would update the prefix under
-    // a wineserver it cannot talk to, where waiting is the only way. Set before
-    // the launch options, which may name a verb of their own.
-    if !prefix_path.is_empty() && prefix_runs_game_on(&prefix_path, &proton_path).await {
-        env_vars.push(("PROTON_VERB".to_string(), "run".to_string()));
+    // starts anything, so a second game on a prefix would sit, shown as running,
+    // until the first one closed. On the same Proton it joins that wineserver
+    // at once; another Proton cannot talk to it. Set before the launch options,
+    // which may name a verb of their own.
+    let occupant = if prefix_path.is_empty() {
+        PrefixOccupant::Nobody
+    } else {
+        prefix_occupant(&prefix_path, &proton_path).await
+    };
+    match occupant {
+        PrefixOccupant::Nobody => {}
+        PrefixOccupant::OtherProton => {
+            return Err(LaunchError::Other(gettext(
+                "A game with another Proton is running in this prefix; close it first.",
+            )));
+        }
+        PrefixOccupant::SameProton => {
+            // The wineserver looks the executable up in the sandbox of the game
+            // that started it.
+            let prefix = prefix_path.clone();
+            let exe = PathBuf::from(&game.exe_path);
+            let reachable = tokio::task::spawn_blocking(move || {
+                crate::sandbox::reachable_in_prefix(&prefix, &exe)
+            })
+            .await
+            .unwrap_or(true);
+            if !reachable {
+                return Err(LaunchError::Other(gettext(
+                    "The game running in this prefix cannot reach this game's folder; close it first or share the folder with it.",
+                )));
+            }
+            env_vars.push(("PROTON_VERB".to_string(), "run".to_string()));
+        }
     }
 
     if game.mangohud
@@ -2199,10 +2239,10 @@ async fn finish_launch(
 #[cfg(test)]
 mod tests {
     use super::{
-        LaunchClaim, MAX_OUTPUT_LINE, PidUniverse, ProcInfo, Process, ProcessKind,
+        LaunchClaim, MAX_OUTPUT_LINE, PidUniverse, PrefixOccupant, ProcInfo, Process, ProcessKind,
         RunningGameSession, active_from_exit_code, cgroup_within, claim_session_finalize,
-        current_epoch_seconds, for_each_output_line, in_scope, mark_session_finalized,
-        process_kind, runs_game_on, session_finalize_done, session_game_pids, session_is_live,
+        current_epoch_seconds, for_each_output_line, in_scope, mark_session_finalized, occupant,
+        process_kind, session_finalize_done, session_game_pids, session_is_live,
         signal_pid_in_cgroups,
     };
 
@@ -2407,20 +2447,23 @@ mod tests {
             proton: "/proton/GE-Proton10".to_string(),
             ..Default::default()
         }];
+        let ge10 = "/proton/GE-Proton10";
 
         let link = link.to_string_lossy();
-        assert!(runs_game_on(&running, &link, "/proton/GE-Proton10"));
-        assert!(runs_game_on(
-            &running,
-            &format!("{link}/"),
-            "/proton/GE-Proton10"
-        ));
-        assert!(!runs_game_on(&running, &link, "/proton/GE-Proton9"));
-        assert!(!runs_game_on(
-            &running,
-            &temp.path().join("other").to_string_lossy(),
-            "/proton/GE-Proton10"
-        ));
+        assert_eq!(occupant(&running, &link, ge10), PrefixOccupant::SameProton);
+        assert_eq!(
+            occupant(&running, &format!("{link}/"), ge10),
+            PrefixOccupant::SameProton
+        );
+        assert_eq!(
+            occupant(&running, &link, "/proton/GE-Proton9"),
+            PrefixOccupant::OtherProton
+        );
+        let other = temp.path().join("other");
+        assert_eq!(
+            occupant(&running, &other.to_string_lossy(), ge10),
+            PrefixOccupant::Nobody
+        );
     }
 
     #[tokio::test]

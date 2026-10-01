@@ -100,6 +100,18 @@ link the build there.
 Reset umu Runtime in the preferences deletes umu-launcher's Steam Linux Runtimes, which it
 downloads again when next needed.
 
+## A game says the game running in its prefix cannot reach its folder
+
+Games on one prefix share a wineserver, as Wine requires, and it runs in the sandbox of the
+game that started first, where it looks for the programs the others start. Add the second
+game's folder to the first one's Extra Folders, or to their group's, or close the first game
+before starting the second.
+
+## A game says a game with another Proton is running in its prefix
+
+A wineserver serves the programs of its own Wine only, so games on one prefix run together on
+the same Proton. Close the other game first, or give both the same Proton.
+
 ## The prefix tools say a game is running
 
 Nothing changes a prefix while a game runs, whichever prefix it uses: close the games first,

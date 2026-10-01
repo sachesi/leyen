@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-09-29 00:04+0300\n"
+"POT-Creation-Date: 2026-10-01 10:46+0300\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -94,13 +94,13 @@ msgid "Removed from tracking."
 msgstr "Вилучено з відстеження."
 
 #: crates/leyen-core/src/deps/engine.rs:1309
-#: crates/leyen-core/src/launch.rs:1712
+#: crates/leyen-core/src/launch.rs:1708
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher усе ще завантажується, зачекайте…"
 
 #: crates/leyen-core/src/deps/engine.rs:1321
-#: crates/leyen-core/src/launch.rs:1725 crates/leyen-core/src/prefix_tool.rs:79
+#: crates/leyen-core/src/launch.rs:1721 crates/leyen-core/src/prefix_tool.rs:79
 #: crates/leyen-gtk/src/prefix_tools.rs:22
 #, no-c-format
 msgid ""
@@ -125,48 +125,62 @@ msgstr "Завантаження winetricks…"
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не вдалося завантажити winetricks. Перевірте з'єднання з інтернетом."
 
-#: crates/leyen-core/src/launch.rs:1736
+#: crates/leyen-core/src/launch.rs:1732
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr "Для запуску ігор потрібен користувацький сеанс systemd."
 
-#: crates/leyen-core/src/launch.rs:1760
+#: crates/leyen-core/src/launch.rs:1756
 #, no-c-format
 msgid "Set this game's folder in its settings"
 msgstr "Вкажіть теку цієї гри в її параметрах"
 
-#: crates/leyen-core/src/launch.rs:1765 crates/leyen-core/src/launch.rs:1776
-#: crates/leyen-core/src/launch.rs:2152
+#: crates/leyen-core/src/launch.rs:1761 crates/leyen-core/src/launch.rs:1772
+#: crates/leyen-core/src/launch.rs:2168
 #, no-c-format
 msgid "This game is already running"
 msgstr "Ця гра вже запущена"
 
-#: crates/leyen-core/src/launch.rs:1769
+#: crates/leyen-core/src/launch.rs:1765
 #, no-c-format
 msgid "A program is running in this game's prefix; close it first."
 msgstr "У префіксі цієї гри виконується програма; спершу закрийте її."
 
-#: crates/leyen-core/src/launch.rs:1791
+#: crates/leyen-core/src/launch.rs:1787
 #, no-c-format
 msgid "Game executable was not found"
 msgstr "Виконуваний файл гри не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1817
+#: crates/leyen-core/src/launch.rs:1813
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr "Вибрану версію Proton не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1920
+#: crates/leyen-core/src/launch.rs:1837
+#, no-c-format
+msgid "A game with another Proton is running in this prefix; close it first."
+msgstr "У цьому префіксі виконується гра з іншим Proton; спершу закрийте її."
+
+#: crates/leyen-core/src/launch.rs:1852
+#, no-c-format
+msgid ""
+"The game running in this prefix cannot reach this game's folder; close it "
+"first or share the folder with it."
+msgstr ""
+"Гра, що виконується в цьому префіксі, не бачить теки цієї гри; спершу "
+"закрийте її або надайте їй доступ до теки."
+
+#: crates/leyen-core/src/launch.rs:1943
 #, no-c-format
 msgid "The executable is outside the game folder"
 msgstr "Виконуваний файл лежить поза текою гри"
 
-#: crates/leyen-core/src/launch.rs:2094
+#: crates/leyen-core/src/launch.rs:2117
 #, no-c-format
 msgid "Failed to get child PID"
 msgstr "Не вдалося отримати PID дочірнього процесу"
 
-#: crates/leyen-core/src/launch.rs:2218
+#: crates/leyen-core/src/launch.rs:2234
 #, no-c-format
 msgid "Launching {}..."
 msgstr "Запуск {}..."

@@ -149,6 +149,42 @@ pub async fn release(prefix: &str) {
     .await;
 }
 
+/// Whether every program running on `prefix` sees `path`. The prefix's
+/// wineserver opens a program's executable by its path in the sandbox it runs
+/// in, the one of the game that started it, so a game whose folder that sandbox
+/// lacks cannot start there. True when nothing runs on the prefix, or a sandbox
+/// cannot be looked into.
+pub fn reachable_in_prefix(prefix: &str, path: &Path) -> bool {
+    let Some(holder) = holder_pid(&unit_name(prefix)) else {
+        return true;
+    };
+    let process = |pid: &str, link: &str| fs::read_link(format!("/proc/{pid}/ns/{link}")).ok();
+    let holder = holder.to_string();
+    let (Some(namespace), holder_mounts) = (process(&holder, "pid"), process(&holder, "mnt"))
+    else {
+        return true;
+    };
+    let relative = path.strip_prefix("/").unwrap_or(path);
+    let mut looked = std::collections::HashSet::new();
+    for entry in fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let pid = entry.file_name().to_string_lossy().into_owned();
+        if process(&pid, "pid").as_ref() != Some(&namespace) {
+            continue;
+        }
+        // The holder sees the whole system; each sandbox is looked into once.
+        let Some(mounts) = process(&pid, "mnt") else {
+            continue;
+        };
+        if Some(&mounts) == holder_mounts.as_ref() || !looked.insert(mounts) {
+            continue;
+        }
+        if entry.path().join("root").join(relative).try_exists().ok() == Some(false) {
+            return false;
+        }
+    }
+    true
+}
+
 /// `nsenter` into the holder, in front of the sandbox's own `bwrap`.
 pub(super) fn enter(nsenter: &Path, holder: u32) -> AsyncCommand {
     let mut command = AsyncCommand::new(nsenter);

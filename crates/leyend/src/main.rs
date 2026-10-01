@@ -680,8 +680,11 @@ async fn run() -> anyhow::Result<()> {
 
     install_listeners(&connection);
 
-    // Crash recovery: re-adopt live scopes, then start the one monitor.
+    // Crash recovery: re-adopt live scopes and programs in prefixes, stop the
+    // dependency jobs nobody follows any more, then start the one monitor.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;
+    leyen_core::prefix_tool::adopt_running().await;
+    let _ = tokio::task::spawn_blocking(leyen_core::deps::stop_orphaned_jobs).await;
     leyen_core::launch::start_running_sessions_monitor();
 
     // Runtime install off the request path; emit readiness as it changes.

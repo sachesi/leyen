@@ -157,6 +157,7 @@ pub(super) async fn run_umu_command(
 
     let settings = crate::config::load_settings().await;
     let unit = format!("leyen-dep-{}.scope", uuid::Uuid::new_v4());
+    let own_unit = OwnUnit::new(&unit);
     let shares =
         tokio::task::spawn_blocking(move || dependency_shares(&settings.global_sandbox_folders))
             .await
@@ -177,11 +178,52 @@ pub(super) async fn run_umu_command(
         lease.spawned();
         let output = run_umu_command_inner(scoped, unit, label, cancel).await;
         crate::sandbox::release_namespace(&sandbox.prefix_path).await;
+        drop(own_unit);
         output
     })
     .await
     .map_err(|e| format!("Command task panicked: {e}"))
     .and_then(|r| r)
+}
+
+/// The scopes of the dependency jobs this daemon runs, which
+/// [`stop_orphaned_jobs`] leaves alone: the call that starts the daemon can be
+/// one that starts a job.
+fn own_units() -> std::sync::MutexGuard<'static, HashSet<String>> {
+    static UNITS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    UNITS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// A scope in [`own_units`] until dropped, on every way out of the job.
+struct OwnUnit(String);
+
+impl OwnUnit {
+    fn new(unit: &str) -> Self {
+        own_units().insert(unit.to_string());
+        Self(unit.to_string())
+    }
+}
+
+impl Drop for OwnUnit {
+    fn drop(&mut self) {
+        own_units().remove(&self.0);
+    }
+}
+
+/// Stops what a dependency job left running when the daemon running it died:
+/// nobody follows it any more or records what it installed, and it would change
+/// its prefix under whatever starts there next. Run once at startup.
+pub fn stop_orphaned_jobs() {
+    for unit in crate::launch::active_units("leyen-dep-*").unwrap_or_default() {
+        if own_units().contains(&unit) {
+            continue;
+        }
+        warn!("[dep] Stopping '{unit}', left running by an earlier daemon");
+        crate::launch::stop_scope_verified(&unit);
+    }
 }
 
 /// The sandbox a dependency install runs in. The prefix and the Proton are on

@@ -813,7 +813,14 @@ fn get_running_sessions_cache() -> &'static RwLock<Vec<RunningGameSnapshot>> {
 pub fn start_running_sessions_monitor() {
     tokio::spawn(async move {
         let mut consecutive_errors: u32 = 0;
+        let mut ticks: u32 = 0;
         loop {
+            // About every half minute, and first at startup, for holders a
+            // crashed daemon or a lingering launcher left behind.
+            if ticks.is_multiple_of(15) {
+                crate::sandbox::release_idle_namespaces().await;
+            }
+            ticks = ticks.wrapping_add(1);
             match synchronize_running_sessions_seq().await {
                 Ok((sessions, seq)) => {
                     publish_sessions_seq(&sessions, seq);
@@ -2235,7 +2242,7 @@ async fn finish_launch(
             return Err(e);
         }
     };
-    lease.spawned();
+    lease.spawned(Some(child_pid));
     let session = RunningGameSession {
         game_id: game.id.clone(),
         pid: child_pid,

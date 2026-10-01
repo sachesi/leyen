@@ -163,7 +163,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
                 .replacen("{}", &e.to_string(), 1));
         }
     };
-    lease.spawned();
+    lease.spawned(child.id());
 
     // Also what keeps the daemon from exiting while the program runs. Recorded,
     // so a daemon started after this one dies keeps the prefix in use too.

@@ -56,6 +56,12 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.10.3" date="2026-10-01">
+      <description>
+        <p>Games that share a prefix no longer take each other down: stopping one, the one started first included, ends that game alone, and a game closed from inside while others run in its prefix stops counting as running at once, where it went on as running, playtime and all, until the last of them closed. A game that cannot run next to the ones already in its prefix is refused with the reason: one with another Proton, which waited unseen for them to close, or one whose folder the first game's sandbox does not have, which never started.</p>
+        <p>A program run in a prefix keeps the prefix in use when the daemon restarts, and a dependency install a daemon left behind is stopped. A game that ends with an error is recorded as such rather than as completed, and a prefix's process namespace no longer stays behind once nothing runs in it.</p>
+      </description>
+    </release>
     <release version="0.10.2" date="2026-09-29">
       <description>
         <p>umu-launcher keeps the Steam Linux Runtime it downloads: an update to it was fetched again on every launch, as the sandbox held the runtime's folder where umu could not replace it, and a first download went with the sandbox when umu's folders did not exist yet. A umu-launcher that Leyen installed is brought to the release this version pins instead of being kept as it is, without holding launches back while the new one downloads.</p>

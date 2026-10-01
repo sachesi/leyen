@@ -100,12 +100,6 @@ link the build there.
 Reset umu Runtime in the preferences deletes umu-launcher's Steam Linux Runtimes, which it
 downloads again when next needed.
 
-## Stopping one game takes down the others on its prefix
-
-Games on one prefix share a wineserver, as Wine requires, and it runs with the game that
-started first. Stopping that game from Leyen stops the wineserver too. Close it from inside
-the game instead, and the others keep running.
-
 ## The prefix tools say a game is running
 
 Nothing changes a prefix while a game runs, whichever prefix it uses: close the games first,

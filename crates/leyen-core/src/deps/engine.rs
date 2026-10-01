@@ -175,8 +175,16 @@ pub(super) async fn run_umu_command(
     // Run on the Tokio runtime (not the GTK/glib executor) so the process and
     // timer drivers advance while the main loop stays responsive for Cancel.
     tokio::spawn(async move {
-        lease.spawned();
-        let output = run_umu_command_inner(scoped, unit, label, cancel).await;
+        let output = match scoped.spawn() {
+            Ok(child) => {
+                lease.spawned(child.id());
+                run_umu_command_inner(child, unit, label, cancel).await
+            }
+            Err(e) => {
+                drop(lease);
+                Err(format!("Failed to launch {}: {}", label, e))
+            }
+        };
         crate::sandbox::release_namespace(&sandbox.prefix_path).await;
         drop(own_unit);
         output
@@ -266,14 +274,11 @@ fn dependency_shares(shared_folders: &[leyen_model::models::SandboxFolder]) -> V
 }
 
 async fn run_umu_command_inner(
-    mut cmd: AsyncCommand,
+    child: tokio::process::Child,
     unit: String,
     label: String,
     cancel: Arc<AtomicBool>,
 ) -> Result<std::process::Output, String> {
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to launch {}: {}", label, e))?;
     // Until systemd-run has registered the scope, the command is only reachable
     // as this child.
     let pidfd = child

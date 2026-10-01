@@ -35,7 +35,10 @@ use leyen_model::paths::{get_config_dir, get_data_dir};
 use log::info;
 use tokio::process::Command as AsyncCommand;
 
-pub use pidns::{Lease, reachable_in_prefix, release as release_namespace};
+pub use pidns::{
+    Lease, reachable_in_prefix, release as release_namespace,
+    release_idle as release_idle_namespaces,
+};
 use seccomp::{SECCOMP_FD, SeccompFilter};
 
 /// What one sandboxed program reaches on top of the fixed layout.

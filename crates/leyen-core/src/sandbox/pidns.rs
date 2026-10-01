@@ -18,16 +18,30 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use super::{runtime_dir, tools};
 use crate::launch::{in_scope, stop_scope_verified, systemctl_show_property, unit_is_active};
 
-/// Held from looking the holder up until the program that enters it is spawned,
-/// so [`release`] cannot stop a holder someone is about to enter.
-pub struct Lease(#[allow(dead_code)] OwnedMutexGuard<()>);
+/// Held from looking the holder up until the program that enters it has, so
+/// [`release`] cannot stop a holder someone is about to enter.
+pub struct Lease {
+    _gate: OwnedMutexGuard<()>,
+    /// The holder's PID namespace.
+    namespace: Option<PathBuf>,
+}
 
 impl Lease {
-    /// Call once the program is spawned. It has not entered the holder yet at
-    /// that point, so the lease is kept a moment longer.
-    pub fn spawned(self) {
+    /// Call once `pid`, the program that enters the holder, is spawned. What
+    /// runs first is `systemd-run`, which waits for its scope before it becomes
+    /// `nsenter`, so the lease is kept until the namespace its children are
+    /// started in is the holder's, or it is gone.
+    pub fn spawned(self, pid: Option<u32>) {
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            if let (Some(pid), Some(namespace)) = (pid, &self.namespace) {
+                let entering = format!("/proc/{pid}/ns/pid_for_children");
+                while fs::read_link(&entering).is_ok_and(|entered| entered != *namespace)
+                    && tokio::time::Instant::now() < deadline
+                {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }
             drop(self);
         });
     }
@@ -74,11 +88,15 @@ fn holder_pid(unit: &str) -> Option<u32> {
 /// The holder for `prefix`, started if there is none, and the lease to keep
 /// until the program entering it has been spawned.
 pub(super) async fn holder(prefix: &str) -> Result<(u32, Lease), String> {
-    let lease = Lease(gate().lock_owned().await);
+    let gate = gate().lock_owned().await;
     let prefix = prefix.to_string();
     let pid = tokio::task::spawn_blocking(move || start_holder(&unit_name(&prefix)))
         .await
         .map_err(|e| e.to_string())??;
+    let lease = Lease {
+        _gate: gate,
+        namespace: fs::read_link(format!("/proc/{pid}/ns/pid")).ok(),
+    };
     Ok((pid, lease))
 }
 
@@ -125,28 +143,41 @@ fn start_holder(unit: &str) -> Result<u32, String> {
 pub async fn release(prefix: &str) {
     let _lease = gate().lock_owned().await;
     let prefix = prefix.to_string();
-    let _ = tokio::task::spawn_blocking(move || {
-        let unit = unit_name(&prefix);
-        let Some(pid) = holder_pid(&unit) else {
-            return;
-        };
-        let Ok(namespace) = fs::read_link(format!("/proc/{pid}/ns/pid")) else {
-            return;
-        };
-        let members = fs::read_dir("/proc")
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|entry| {
-                fs::read_link(entry.path().join("ns/pid")).is_ok_and(|link| link == namespace)
-            })
-            .count();
-        // bwrap as the namespace's init, and the sleep it runs.
-        if members <= 2 {
-            stop_scope_verified(&unit);
+    let _ = tokio::task::spawn_blocking(move || stop_if_idle(&unit_name(&prefix))).await;
+}
+
+/// Stops every holder that nothing but itself is left in. What ends on a prefix
+/// releases its holder, but a game's launcher can outlive the game, and a daemon
+/// can die before it releases one.
+pub async fn release_idle() {
+    let _lease = gate().lock_owned().await;
+    let _ = tokio::task::spawn_blocking(|| {
+        for unit in crate::launch::active_units("leyen-prefix-*").unwrap_or_default() {
+            stop_if_idle(&unit);
         }
     })
     .await;
+}
+
+fn stop_if_idle(unit: &str) {
+    let Some(pid) = holder_pid(unit) else {
+        return;
+    };
+    let Ok(namespace) = fs::read_link(format!("/proc/{pid}/ns/pid")) else {
+        return;
+    };
+    let members = fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            fs::read_link(entry.path().join("ns/pid")).is_ok_and(|link| link == namespace)
+        })
+        .count();
+    // bwrap as the namespace's init, and the sleep it runs.
+    if members <= 2 {
+        stop_scope_verified(unit);
+    }
 }
 
 /// Whether every program running on `prefix` sees `path`. The prefix's

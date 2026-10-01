@@ -11,10 +11,13 @@ use std::time::Duration;
 
 use leyen_model::i18n::gettext;
 use leyen_model::models::SandboxFolder;
-use log::info;
+use log::{info, warn};
 use tokio::process::Command as AsyncCommand;
 
-use crate::launch::{for_each_output_line, systemd_user_available, unit_is_active};
+use crate::launch::{
+    PrefixProgram, for_each_output_line, forget_prefix_program, prefix_programs,
+    record_prefix_program, systemd_user_available, unit_is_active,
+};
 use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
 use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
 
@@ -162,8 +165,20 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     };
     lease.spawned();
 
-    // Also what keeps the daemon from exiting while the program runs.
+    // Also what keeps the daemon from exiting while the program runs. Recorded,
+    // so a daemon started after this one dies keeps the prefix in use too.
     running().insert(unit.clone(), prefix.clone());
+    let program = PrefixProgram {
+        unit: unit.clone(),
+        prefix: prefix.clone(),
+    };
+    if let Err(e) = tokio::task::spawn_blocking(move || record_prefix_program(program))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|recorded| recorded.map_err(|e| e.to_string()))
+    {
+        warn!("Could not record '{label}' as running in '{prefix}': {e}");
+    }
     info!("Launched '{label}' inside prefix '{prefix}'");
 
     if let Some(stdout) = child.stdout.take() {
@@ -175,25 +190,51 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
 
     tokio::spawn(async move {
         let _ = child.wait().await;
-        // The program itself has ended, but what it started (wineserver, an
-        // installer's own processes) can live on in its scope; the prefix is free
-        // once systemd says the scope is gone.
-        loop {
-            let probe = unit.clone();
-            let active = tokio::task::spawn_blocking(move || unit_is_active(&probe))
-                .await
-                .ok()
-                .flatten();
-            if active == Some(false) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-        running().remove(&unit);
-        crate::sandbox::release_namespace(&prefix).await;
-        info!("'{label}' in prefix '{prefix}' has ended");
+        watch(unit, prefix, label).await;
     });
     Ok(())
+}
+
+/// Takes over the programs a daemon before this one left running in a prefix, so
+/// their prefixes stay in use until they end. Run once at startup.
+pub async fn adopt_running() {
+    let programs = match tokio::task::spawn_blocking(prefix_programs).await {
+        Ok(Ok(programs)) => programs,
+        Ok(Err(e)) => return warn!("Could not read the programs running in prefixes: {e}"),
+        Err(e) => return warn!("Could not read the programs running in prefixes: {e}"),
+    };
+    for PrefixProgram { unit, prefix } in programs {
+        // The call that started the daemon may have started this one.
+        if running().insert(unit.clone(), prefix.clone()).is_some() {
+            continue;
+        }
+        let label = unit.clone();
+        tokio::spawn(watch(unit, prefix, label));
+    }
+}
+
+/// Frees `prefix` once the scope `unit` is gone. The program itself may have
+/// ended already, but what it started (wineserver, an installer's own
+/// processes) can live on in its scope.
+async fn watch(unit: String, prefix: String, label: String) {
+    loop {
+        let probe = unit.clone();
+        let active = tokio::task::spawn_blocking(move || unit_is_active(&probe))
+            .await
+            .ok()
+            .flatten();
+        if active == Some(false) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    running().remove(&unit);
+    let ended = unit.clone();
+    if let Ok(Err(e)) = tokio::task::spawn_blocking(move || forget_prefix_program(&ended)).await {
+        warn!("Could not record that '{label}' has ended: {e}");
+    }
+    crate::sandbox::release_namespace(&prefix).await;
+    info!("'{label}' in prefix '{prefix}' has ended");
 }
 
 /// Logs each line of a program's `stream` as it comes.

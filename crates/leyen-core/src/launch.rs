@@ -35,6 +35,39 @@ pub struct LaunchReport {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 struct RunningGamesRegistry {
     sessions: Vec<RunningGameSession>,
+    /// Programs run in a prefix outside the library, which keep it in use.
+    #[serde(default)]
+    programs: Vec<PrefixProgram>,
+}
+
+/// A program run in a prefix, by the scope it runs in.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct PrefixProgram {
+    pub unit: String,
+    pub prefix: String,
+}
+
+/// Records `program` as running, so a daemon started after this one dies still
+/// knows its prefix is in use.
+pub(crate) fn record_prefix_program(program: PrefixProgram) -> Result<(), LaunchError> {
+    with_running_registry(|registry| {
+        registry.programs.push(program);
+        ((), true)
+    })
+}
+
+/// Forgets the program running in the scope `unit`.
+pub(crate) fn forget_prefix_program(unit: &str) -> Result<(), LaunchError> {
+    with_running_registry(|registry| {
+        let before = registry.programs.len();
+        registry.programs.retain(|program| program.unit != unit);
+        ((), registry.programs.len() != before)
+    })
+}
+
+/// The programs recorded as running in a prefix.
+pub(crate) fn prefix_programs() -> Result<Vec<PrefixProgram>, LaunchError> {
+    with_running_registry(|registry| (registry.programs.clone(), false))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -1128,6 +1161,36 @@ pub(crate) fn systemctl_show_property(unit: &str, property: &str) -> Option<Stri
     child.stdout.take()?.read_to_string(&mut out).ok()?;
     let value = out.trim().to_string();
     (!value.is_empty()).then_some(value)
+}
+
+/// The active units of the user manager whose names match `pattern`, or `None`
+/// when it gave no answer.
+pub(crate) fn active_units(pattern: &str) -> Option<Vec<String>> {
+    let mut child = StdCommand::new("systemctl")
+        .args([
+            "--user",
+            "list-units",
+            "--plain",
+            "--no-legend",
+            "--state=active",
+        ])
+        .arg(pattern)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    if !wait_with_timeout(&mut child, SYSTEMCTL_TIMEOUT)?.success() {
+        return None;
+    }
+    let mut out = String::new();
+    child.stdout.take()?.read_to_string(&mut out).ok()?;
+    Some(
+        out.lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .map(str::to_string)
+            .collect(),
+    )
 }
 
 /// Cached result of the systemd user-manager probe: 0 = unknown, 1 = available.

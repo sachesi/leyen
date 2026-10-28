@@ -373,6 +373,8 @@ impl StepChanges {
 #[derive(Default)]
 struct PrefixSnapshot {
     files: BTreeMap<String, FileFingerprint>,
+    /// Files Proton put in the prefix and keeps up to date itself.
+    proton_files: HashSet<String>,
 }
 
 /// File signature: (len, mtime). May miss same-size+same-mtime in-place edits.
@@ -1526,7 +1528,10 @@ fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
         return Ok(PrefixSnapshot::default());
     }
 
-    let mut snapshot = PrefixSnapshot::default();
+    let mut snapshot = PrefixSnapshot {
+        proton_files: proton_files(root),
+        ..PrefixSnapshot::default()
+    };
     collect_snapshot(root, root, &mut snapshot)?;
     info!(
         "[dep] Snapshot: {} files in {}",
@@ -1534,6 +1539,29 @@ fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
         prefix_path
     );
     Ok(snapshot)
+}
+
+/// What Proton owns in the prefix: the files its `tracked_files` lists, and its
+/// own bookkeeping at the top. Proton rewrites some of them on every run, the
+/// DXVK and VKD3D libraries among them, and puts them back on an upgrade.
+fn proton_files(root: &Path) -> HashSet<String> {
+    let mut files: HashSet<String> = fs::read_to_string(root.join("tracked_files"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.is_empty() && !line.ends_with('/'))
+        .map(str::to_string)
+        .collect();
+    files.extend(
+        [
+            "tracked_files",
+            "version",
+            "config_info",
+            "pfx.lock",
+            "creation_sync_guard",
+        ]
+        .map(str::to_string),
+    );
+    files
 }
 
 fn collect_snapshot(
@@ -1634,8 +1662,14 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
     let mut changes = StepChanges::default();
 
     for (path, fingerprint) in &after.files {
+        let proton = before.proton_files.contains(path) || after.proton_files.contains(path);
         match before.files.get(path) {
+            // Removing one of Proton's files would break the prefix.
+            None if proton => {}
             None => changes.created_files.push(path.clone()),
+            // Proton copies its files again with every run; a component that
+            // replaced one changed its size.
+            Some(previous) if proton && previous.len == fingerprint.len => {}
             Some(previous) if previous != fingerprint => changes.touched_existing_files = true,
             _ => {}
         }
@@ -1644,7 +1678,7 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
     if before
         .files
         .keys()
-        .any(|path| !after.files.contains_key(path))
+        .any(|path| !after.files.contains_key(path) && !before.proton_files.contains(path))
     {
         changes.touched_existing_files = true;
     }
@@ -1919,11 +1953,49 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::{
-        forget_winetricks_verb, overrides_to_remove, remove_created_files, stderr_tail,
-        winetricks_known_dll_overrides,
+        FileFingerprint, PrefixSnapshot, diff_snapshots, forget_winetricks_verb,
+        overrides_to_remove, remove_created_files, stderr_tail, winetricks_known_dll_overrides,
     };
     use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn proton_copying_its_own_files_again_is_not_a_change() {
+        let snapshot = |files: &[(&str, u64, u64)]| PrefixSnapshot {
+            files: files
+                .iter()
+                .map(|&(path, len, modified_epoch_seconds)| {
+                    let fingerprint = FileFingerprint {
+                        len,
+                        modified_epoch_seconds,
+                    };
+                    (path.to_string(), fingerprint)
+                })
+                .collect(),
+            proton_files: ["drive_c/windows/system32/d3d11.dll", "version"]
+                .map(str::to_string)
+                .into(),
+        };
+        let before = snapshot(&[
+            ("drive_c/windows/system32/d3d11.dll", 100, 1),
+            ("version", 15, 1),
+        ]);
+
+        let recopied = snapshot(&[
+            ("drive_c/windows/system32/d3d11.dll", 100, 2),
+            ("version", 15, 2),
+            ("drive_c/windows/Fonts/tahoma.ttf", 50, 2),
+        ]);
+        let changes = diff_snapshots(&before, &recopied);
+        assert_eq!(changes.created_files, ["drive_c/windows/Fonts/tahoma.ttf"]);
+        assert!(!changes.touched_existing_files);
+
+        let replaced = snapshot(&[
+            ("drive_c/windows/system32/d3d11.dll", 120, 2),
+            ("version", 15, 2),
+        ]);
+        assert!(diff_snapshots(&before, &replaced).touched_existing_files);
+    }
 
     #[test]
     fn an_override_another_component_set_too_is_kept() {

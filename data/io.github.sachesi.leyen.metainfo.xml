@@ -56,6 +56,13 @@
     <control>keyboard</control>
   </supports>
   <releases>
+    <release version="0.11.0" date="2026-10-28">
+      <description>
+        <p>Running Games lists the programs running in a prefix, such as Wine Configuration, the Registry Editor or a program started from the prefix tools, and stops them, so an installer that hangs can be ended from there. A game or program that ignores the request to close is ended after three seconds, where a launcher that did could not be stopped at all.</p>
+        <p>Removing a Visual C++ runtime uninstalls it, so installing it again works, and removing any component takes back all the DLL overrides it added, where many stayed behind. A removal no longer warns that existing files were changed only because Proton refreshed its own files, and an install that Proton never ran fails with the reason instead of being listed as installed. Manage Dependencies says when a prefix's component list is damaged, shows an install still running when it is opened again, and says when Proton is being downloaded. An install the daemon was killed during is rolled back when it next starts, and Wine Mono and Wine Gecko are no longer offered, as Proton brings both.</p>
+        <p>A second game started on a prefix while the first one is still starting joins it, a game that ends in its first seconds stops counting as running at once, and a second game is no longer refused at random as unable to reach its folder. A umu-launcher update waits for launches being set up, a second daemon is refused instead of taking over, and following the log keeps going after the daemon restarts.</p>
+      </description>
+    </release>
     <release version="0.10.3" date="2026-10-01">
       <description>
         <p>Games that share a prefix no longer take each other down: stopping one, the one started first included, ends that game alone, and a game closed from inside while others run in its prefix stops counting as running at once, where it went on as running, playtime and all, until the last of them closed. A game that cannot run next to the ones already in its prefix is refused with the reason: one with another Proton, which waited unseen for them to close, or one whose folder the first game's sandbox does not have, which never started.</p>

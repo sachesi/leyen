@@ -291,6 +291,13 @@ async fn stream_logs(follow: bool) -> Result<()> {
 
     // Subscribe before the initial pull so nothing is missed between them.
     let mut appended = proxy.receive_logs_appended().await?;
+    // A daemon started after this one is followed from its first line: its
+    // offsets start over, and by the first pull its lines can outnumber the
+    // offset reached in the one before.
+    let mut owners = zbus::fdo::DBusProxy::new(proxy.inner().connection())
+        .await?
+        .receive_name_owner_changed_with_args(&[(0, leyen_ipc::BUS_NAME)])
+        .await?;
 
     let mut offset = 0u64;
     offset = print_logs_since(&proxy, offset).await?;
@@ -299,8 +306,22 @@ async fn stream_logs(follow: bool) -> Result<()> {
         return Ok(());
     }
 
-    while appended.next().await.is_some() {
-        offset = print_logs_since(&proxy, offset).await?;
+    loop {
+        // The bus announces a new owner before that daemon can append a line.
+        tokio::select! {
+            biased;
+            Some(change) = owners.next() => {
+                if change.args().is_ok_and(|args| args.new_owner().is_some()) {
+                    offset = print_logs_since(&proxy, 0).await?;
+                }
+            }
+            signal = appended.next() => {
+                if signal.is_none() {
+                    break;
+                }
+                offset = print_logs_since(&proxy, offset).await?;
+            }
+        }
     }
     // The signal stream only ends when our own bus connection is gone (it
     // survives daemon restarts) — report it instead of pretending completion.

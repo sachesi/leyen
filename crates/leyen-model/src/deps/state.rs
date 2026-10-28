@@ -45,6 +45,9 @@ pub struct InstalledDependency {
     pub dll_overrides: Vec<String>,
     #[serde(default)]
     pub registered_dlls: Vec<String>,
+    /// The winetricks verbs its install added to `winetricks.log`.
+    #[serde(default)]
+    pub winetricks_verbs: Vec<String>,
 }
 
 impl InstalledDependency {

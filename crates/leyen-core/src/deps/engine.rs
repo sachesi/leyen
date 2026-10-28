@@ -349,6 +349,7 @@ pub struct StepChanges {
     pub touched_existing_files: bool,
     pub dll_overrides: Vec<String>,
     pub registered_dlls: Vec<String>,
+    pub winetricks_verbs: Vec<String>,
 }
 
 impl StepChanges {
@@ -357,6 +358,8 @@ impl StepChanges {
         self.touched_existing_files |= other.touched_existing_files;
         self.dll_overrides = merge_unique_strings(&self.dll_overrides, &other.dll_overrides);
         self.registered_dlls = merge_unique_strings(&self.registered_dlls, &other.registered_dlls);
+        self.winetricks_verbs =
+            merge_unique_strings(&self.winetricks_verbs, &other.winetricks_verbs);
     }
 
     fn into_dependency_record(self) -> InstalledDependency {
@@ -365,6 +368,7 @@ impl StepChanges {
             touched_existing_files: self.touched_existing_files,
             dll_overrides: self.dll_overrides,
             registered_dlls: self.registered_dlls,
+            winetricks_verbs: self.winetricks_verbs,
             ..InstalledDependency::default()
         }
     }
@@ -375,6 +379,9 @@ struct PrefixSnapshot {
     files: BTreeMap<String, FileFingerprint>,
     /// Files Proton put in the prefix and keeps up to date itself.
     proton_files: HashSet<String>,
+    /// What the registry and winetricks keep outside the files above.
+    dll_overrides: BTreeSet<String>,
+    winetricks_verbs: BTreeSet<String>,
 }
 
 /// File signature: (len, mtime). May miss same-size+same-mtime in-place edits.
@@ -729,20 +736,7 @@ pub async fn execute_dep_step(
                 ));
             }
             info!("[dep] winetricks {} completed", verb);
-
-            // Winetricks verbs may set registry DLL overrides invisible to file
-            // snapshots; record the known ones so uninstall can revert them.
-            let mut changes = StepChanges::default();
-            let known = winetricks_known_dll_overrides(verb);
-            if !known.is_empty() {
-                info!(
-                    "[dep] Recording {} known DLL overrides for winetricks {}",
-                    known.len(),
-                    verb
-                );
-                changes.dll_overrides = known;
-            }
-            Ok(changes)
+            Ok(StepChanges::default())
         }
 
         DepStepAction::Verify {
@@ -796,6 +790,36 @@ fn stderr_tail(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let lines: Vec<&str> = text.trim().lines().collect();
     lines[lines.len().saturating_sub(STDERR_TAIL_LINES)..].join("\n")
+}
+
+/// The DLL overrides set in the prefix's registry, by name as Wine stores them.
+fn dll_overrides(prefix_path: &str) -> BTreeSet<String> {
+    let text = fs::read_to_string(Path::new(prefix_path).join("user.reg")).unwrap_or_default();
+    let mut in_section = false;
+    let mut names = BTreeSet::new();
+    for line in text.lines() {
+        if line.starts_with('[') {
+            in_section = line.starts_with("[Software\\\\Wine\\\\DllOverrides]");
+        } else if in_section
+            && let Some((name, _)) = line
+                .strip_prefix('"')
+                .and_then(|rest| rest.split_once("\"="))
+        {
+            names.insert(name.to_string());
+        }
+    }
+    names
+}
+
+/// The verbs `$WINEPREFIX/winetricks.log` lists.
+fn winetricks_verbs(prefix_path: &str) -> BTreeSet<String> {
+    fs::read_to_string(Path::new(prefix_path).join("winetricks.log"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Drops `verb` from `$WINEPREFIX/winetricks.log`. umu consults that file
@@ -1316,6 +1340,22 @@ pub async fn uninstall_dep(
     }
 
     {
+        // A verb winetricks.log still lists counts as installed for winetricks
+        // and for umu, which skip it.
+        let forget_prefix = prefix_path.clone();
+        let verbs = verbs_to_forget(&state, &dep_id);
+        tokio::task::spawn_blocking(move || {
+            verbs
+                .iter()
+                .try_for_each(|verb| forget_winetricks_verb(&forget_prefix, verb))
+        })
+        .await
+        .map_err(join_err)
+        .and_then(|r| r)
+        .inspect_err(|error| error!("[dep:{}] removal failed: {}", dep_id, error))?;
+    }
+
+    {
         let remove_prefix = prefix_path.clone();
         let remove_id = dep_id.clone();
         tokio::task::spawn_blocking(move || remove_installed_dep(&remove_prefix, &remove_id))
@@ -1530,6 +1570,8 @@ fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
 
     let mut snapshot = PrefixSnapshot {
         proton_files: proton_files(root),
+        dll_overrides: dll_overrides(prefix_path),
+        winetricks_verbs: winetricks_verbs(prefix_path),
         ..PrefixSnapshot::default()
     };
     collect_snapshot(root, root, &mut snapshot)?;
@@ -1685,6 +1727,17 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
 
     changes.created_files.sort();
     changes.created_files.dedup();
+    // An override that was there before stays: it is not this component's.
+    changes.dll_overrides = after
+        .dll_overrides
+        .difference(&before.dll_overrides)
+        .cloned()
+        .collect();
+    changes.winetricks_verbs = after
+        .winetricks_verbs
+        .difference(&before.winetricks_verbs)
+        .cloned()
+        .collect();
     info!(
         "[dep] Diff: {} files created, touched_existing={}",
         changes.created_files.len(),
@@ -1741,23 +1794,50 @@ fn overrides_to_remove(
         .collect()
 }
 
-/// The overrides `dep_id` set. Those of a winetricks component come from what
-/// its verbs set: earlier records name them without winetricks' `*`, and with
-/// verbs that set others' too.
+/// The overrides `dep_id` set. A winetricks component recorded before its
+/// verbs were recorded has its overrides named without winetricks' `*`, and
+/// with verbs that set others' too, so they come from what its verbs set.
 fn set_overrides(dep_id: &str, installed: &InstalledDependency) -> Vec<String> {
-    let verbs: Vec<String> = get_dep_steps(dep_id)
-        .into_iter()
-        .filter_map(|step| match step.action {
-            DepStepAction::RunWinetricks { verb } => Some(verb),
-            _ => None,
-        })
-        .collect();
-    if verbs.is_empty() {
+    let verbs = recipe_verbs(dep_id);
+    if verbs.is_empty() || !installed.winetricks_verbs.is_empty() {
         return installed.dll_overrides.clone();
     }
     verbs
         .iter()
         .flat_map(|verb| winetricks_known_dll_overrides(verb))
+        .collect()
+}
+
+/// The winetricks verbs the steps of `dep_id` run.
+fn recipe_verbs(dep_id: &str) -> Vec<String> {
+    get_dep_steps(dep_id)
+        .into_iter()
+        .filter_map(|step| match step.action {
+            DepStepAction::RunWinetricks { verb } => Some(verb),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The verbs to drop from winetricks.log with `dep_id`: those its install
+/// logged, and its own, unless another installed component has them too.
+fn verbs_to_forget(state: &leyen_model::deps::PrefixDependencyState, dep_id: &str) -> Vec<String> {
+    let verbs = |id: &str, installed: &InstalledDependency| -> BTreeSet<String> {
+        let mut verbs: BTreeSet<String> = installed.winetricks_verbs.iter().cloned().collect();
+        verbs.extend(recipe_verbs(id));
+        verbs
+    };
+    let Some(installed) = state.installed.get(dep_id) else {
+        return Vec::new();
+    };
+    verbs(dep_id, installed)
+        .into_iter()
+        .filter(|verb| {
+            !state
+                .installed
+                .iter()
+                .any(|(id, other)| id != dep_id && verbs(id, other).contains(verb))
+        })
         .collect()
 }
 
@@ -1953,8 +2033,9 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::{
-        FileFingerprint, PrefixSnapshot, diff_snapshots, forget_winetricks_verb,
-        overrides_to_remove, remove_created_files, stderr_tail, winetricks_known_dll_overrides,
+        FileFingerprint, PrefixSnapshot, diff_snapshots, dll_overrides, forget_winetricks_verb,
+        overrides_to_remove, remove_created_files, stderr_tail, verbs_to_forget,
+        winetricks_known_dll_overrides,
     };
     use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
     use std::collections::BTreeMap;
@@ -1975,6 +2056,7 @@ mod tests {
             proton_files: ["drive_c/windows/system32/d3d11.dll", "version"]
                 .map(str::to_string)
                 .into(),
+            ..PrefixSnapshot::default()
         };
         let before = snapshot(&[
             ("drive_c/windows/system32/d3d11.dll", 100, 1),
@@ -1995,6 +2077,44 @@ mod tests {
             ("version", 15, 2),
         ]);
         assert!(diff_snapshots(&before, &replaced).touched_existing_files);
+    }
+
+    #[test]
+    fn overrides_are_read_from_their_own_registry_key() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("user.reg"),
+            "[Software\\\\Wine\\\\Direct3D] 1\n\"renderer\"=\"vulkan\"\n\n\
+             [Software\\\\Wine\\\\DllOverrides] 2\n#time=1\n\"*vcruntime140\"=\"native,builtin\"\n\
+             \"d3d11\"=\"native\"\n\n[Software\\\\Wine\\\\Fonts] 3\n\"x\"=\"y\"\n",
+        )
+        .unwrap();
+        let names: Vec<String> = dll_overrides(dir.path().to_str().unwrap())
+            .into_iter()
+            .collect();
+        assert_eq!(names, ["*vcruntime140", "d3d11"]);
+    }
+
+    #[test]
+    fn a_verb_another_component_logged_too_stays_in_the_log() {
+        let with = |verbs: &[&str]| InstalledDependency {
+            winetricks_verbs: verbs.iter().map(|verb| verb.to_string()).collect(),
+            ..InstalledDependency::default()
+        };
+        let state = PrefixDependencyState {
+            installed: BTreeMap::from([
+                (
+                    "vcredist2019".to_string(),
+                    with(&["ucrtbase2019", "vcrun2019"]),
+                ),
+                (
+                    "vcredist2015".to_string(),
+                    with(&["ucrtbase2019", "vcrun2015"]),
+                ),
+            ]),
+            ..PrefixDependencyState::default()
+        };
+        assert_eq!(verbs_to_forget(&state, "vcredist2019"), ["vcrun2019"]);
     }
 
     #[test]

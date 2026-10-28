@@ -62,6 +62,17 @@ pub struct RuntimeReadiness {
     pub winetricks_ready: bool,
 }
 
+/// A program run in a prefix outside the library: Wine Configuration, the
+/// Registry Editor or a file picked by hand. Wire signature `(sss)`. `unit` is
+/// its scope, the handle for `StopPrefixProgram`; `label` is what it was started
+/// as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PrefixProgram {
+    pub unit: String,
+    pub prefix: String,
+    pub label: String,
+}
+
 /// Installed-dependency ids tracked for a prefix. Wire signature `(as)`.
 /// Convenience for non-local clients; the local GTK dialog reads prefix state
 /// files directly.
@@ -131,9 +142,20 @@ pub trait Leyen {
     /// Installed dependencies tracked for `prefix`.
     fn get_dep_status(&self, prefix: &str) -> zbus::Result<DepStatus>;
 
+    /// The programs running in a prefix, as `RunInPrefix` started them.
+    fn get_prefix_programs(&self) -> zbus::Result<Vec<PrefixProgram>>;
+
+    /// Stop the program running in the scope `unit` and everything it started.
+    /// Returns whether it was running.
+    fn stop_prefix_program(&self, unit: &str) -> zbus::Result<bool>;
+
     /// Emitted whenever the running-game set changes.
     #[zbus(signal)]
     fn sessions_changed(&self, sessions: Vec<RunningGameSnapshot>) -> zbus::Result<()>;
+
+    /// Emitted whenever a program starts or ends running in a prefix.
+    #[zbus(signal)]
+    fn prefix_programs_changed(&self, programs: Vec<PrefixProgram>) -> zbus::Result<()>;
 
     /// Emitted (coalesced) when new log lines are available; pull with `GetLogs`.
     #[zbus(signal)]

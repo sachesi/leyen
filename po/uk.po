@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-10-01 11:28+0300\n"
+"POT-Creation-Date: 2026-10-28 10:13+0200\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -14,15 +14,15 @@ msgstr ""
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
 #: crates/leyen-core/src/deps/engine.rs:122
-#: crates/leyen-core/src/deps/engine.rs:300
-#: crates/leyen-core/src/deps/engine.rs:494
-#: crates/leyen-core/src/deps/engine.rs:562
-#: crates/leyen-core/src/deps/engine.rs:1031
-#: crates/leyen-core/src/deps/engine.rs:1032
-#: crates/leyen-core/src/deps/engine.rs:1041
-#: crates/leyen-core/src/deps/engine.rs:1062
-#: crates/leyen-core/src/deps/engine.rs:1266
-#: crates/leyen-core/src/deps/engine.rs:1413
+#: crates/leyen-core/src/deps/engine.rs:268
+#: crates/leyen-core/src/deps/engine.rs:462
+#: crates/leyen-core/src/deps/engine.rs:530
+#: crates/leyen-core/src/deps/engine.rs:999
+#: crates/leyen-core/src/deps/engine.rs:1000
+#: crates/leyen-core/src/deps/engine.rs:1009
+#: crates/leyen-core/src/deps/engine.rs:1030
+#: crates/leyen-core/src/deps/engine.rs:1234
+#: crates/leyen-core/src/deps/engine.rs:1381
 #, no-c-format
 msgid "Cancelled."
 msgstr "Скасовано."
@@ -34,44 +34,44 @@ msgstr ""
 "Для встановлення й вилучення залежностей потрібен користувацький сеанс "
 "systemd."
 
-#: crates/leyen-core/src/deps/engine.rs:886
-#: crates/leyen-core/src/deps/engine.rs:1214
+#: crates/leyen-core/src/deps/engine.rs:854
+#: crates/leyen-core/src/deps/engine.rs:1182
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr "Інша операція із залежностями вже виконується для цього префікса."
 
-#: crates/leyen-core/src/deps/engine.rs:897
+#: crates/leyen-core/src/deps/engine.rs:865
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr "Не вдалося записати до теки кешу залежностей: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:917
-#: crates/leyen-core/src/deps/engine.rs:1227
+#: crates/leyen-core/src/deps/engine.rs:885
+#: crates/leyen-core/src/deps/engine.rs:1195
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr "Файл стану залежностей пошкоджено: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:923
+#: crates/leyen-core/src/deps/engine.rs:891
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr "Залежність уже встановлено."
 
-#: crates/leyen-core/src/deps/engine.rs:1184
+#: crates/leyen-core/src/deps/engine.rs:1152
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr "Встановлено передумови: {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1233
+#: crates/leyen-core/src/deps/engine.rs:1201
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr "Залежність більше не відстежується."
 
-#: crates/leyen-core/src/deps/engine.rs:1237
+#: crates/leyen-core/src/deps/engine.rs:1205
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr "Неможливо вилучити «{}»: усе ще потрібно для {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1336
+#: crates/leyen-core/src/deps/engine.rs:1304
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
@@ -79,7 +79,7 @@ msgid ""
 msgstr ""
 "Деякі наявні файли префікса було змінено під час встановлення і не повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1339
+#: crates/leyen-core/src/deps/engine.rs:1307
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
@@ -88,19 +88,20 @@ msgstr ""
 "Вилучено з відстеження. Наявні файли префікса, змінені під час встановлення, "
 "не було повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1341
+#: crates/leyen-core/src/deps/engine.rs:1309
 #, no-c-format
 msgid "Removed from tracking."
 msgstr "Вилучено з відстеження."
 
-#: crates/leyen-core/src/deps/engine.rs:1356
-#: crates/leyen-core/src/launch.rs:1816
+#: crates/leyen-core/src/deps/engine.rs:1324
+#: crates/leyen-core/src/launch.rs:1865
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1368
-#: crates/leyen-core/src/launch.rs:1829 crates/leyen-core/src/prefix_tool.rs:82
+#: crates/leyen-core/src/deps/engine.rs:1336
+#: crates/leyen-core/src/launch.rs:1878
+#: crates/leyen-core/src/prefix_tool.rs:121
 #: crates/leyen-gtk/src/prefix_tools.rs:22
 #, no-c-format
 msgid ""
@@ -110,58 +111,58 @@ msgstr ""
 "umu-launcher не встановлено. Перевірте з'єднання з інтернетом і "
 "перезапустіть."
 
-#: crates/leyen-core/src/deps/engine.rs:1376
+#: crates/leyen-core/src/deps/engine.rs:1344
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr "winetricks усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1387 crates/leyen-gtk/src/window.rs:474
+#: crates/leyen-core/src/deps/engine.rs:1355 crates/leyen-gtk/src/window.rs:474
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr "Завантаження winetricks…"
 
-#: crates/leyen-core/src/deps/engine.rs:1403
+#: crates/leyen-core/src/deps/engine.rs:1371
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не вдалося завантажити winetricks. Перевірте з'єднання з інтернетом."
 
-#: crates/leyen-core/src/launch.rs:1840
+#: crates/leyen-core/src/launch.rs:1889
 #, no-c-format
 msgid "A systemd user session is required to launch games."
 msgstr "Для запуску ігор потрібен користувацький сеанс systemd."
 
-#: crates/leyen-core/src/launch.rs:1864
+#: crates/leyen-core/src/launch.rs:1913
 #, no-c-format
 msgid "Set this game's folder in its settings"
 msgstr "Вкажіть теку цієї гри в її параметрах"
 
-#: crates/leyen-core/src/launch.rs:1869 crates/leyen-core/src/launch.rs:1880
-#: crates/leyen-core/src/launch.rs:2276
+#: crates/leyen-core/src/launch.rs:1918 crates/leyen-core/src/launch.rs:1924
+#: crates/leyen-core/src/launch.rs:2330
 #, no-c-format
 msgid "This game is already running"
 msgstr "Ця гра вже запущена"
 
-#: crates/leyen-core/src/launch.rs:1873
+#: crates/leyen-core/src/launch.rs:1933
 #, no-c-format
 msgid "A program is running in this game's prefix; close it first."
 msgstr "У префіксі цієї гри виконується програма; спершу закрийте її."
 
-#: crates/leyen-core/src/launch.rs:1895
+#: crates/leyen-core/src/launch.rs:1949
 #, no-c-format
 msgid "Game executable was not found"
 msgstr "Виконуваний файл гри не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1921
+#: crates/leyen-core/src/launch.rs:1975
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr "Вибрану версію Proton не знайдено"
 
-#: crates/leyen-core/src/launch.rs:1945
+#: crates/leyen-core/src/launch.rs:1999
 #, no-c-format
 msgid "A game with another Proton is running in this prefix; close it first."
 msgstr "У цьому префіксі виконується гра з іншим Proton; спершу закрийте її."
 
-#: crates/leyen-core/src/launch.rs:1960
+#: crates/leyen-core/src/launch.rs:2014
 #, no-c-format
 msgid ""
 "The game running in this prefix cannot reach this game's folder; close it "
@@ -170,39 +171,39 @@ msgstr ""
 "Гра, що виконується в цьому префіксі, не бачить теки цієї гри; спершу "
 "закрийте її або надайте їй доступ до теки."
 
-#: crates/leyen-core/src/launch.rs:2051
+#: crates/leyen-core/src/launch.rs:2105
 #, no-c-format
 msgid "The executable is outside the game folder"
 msgstr "Виконуваний файл лежить поза текою гри"
 
-#: crates/leyen-core/src/launch.rs:2225
+#: crates/leyen-core/src/launch.rs:2279
 #, no-c-format
 msgid "Failed to get child PID"
 msgstr "Не вдалося отримати PID дочірнього процесу"
 
-#: crates/leyen-core/src/launch.rs:2346
+#: crates/leyen-core/src/launch.rs:2400
 #, no-c-format
 msgid "Launching {}..."
 msgstr "Запуск {}..."
 
-#: crates/leyen-core/src/prefix_tool.rs:53
+#: crates/leyen-core/src/prefix_tool.rs:91
 #: crates/leyen-core/src/sandbox/mod.rs:681
 #: crates/leyen-gtk/src/prefix_tools.rs:26
 #, no-c-format
 msgid "Prefix path is required"
 msgstr "Потрібно вказати шлях префікса"
 
-#: crates/leyen-core/src/prefix_tool.rs:64
+#: crates/leyen-core/src/prefix_tool.rs:102
 #, no-c-format
 msgid "“{}” is not a file"
 msgstr "«{}» не є файлом"
 
-#: crates/leyen-core/src/prefix_tool.rs:90
+#: crates/leyen-core/src/prefix_tool.rs:129
 #, no-c-format
 msgid "A systemd user session is required to run programs in a prefix."
 msgstr "Для запуску програм у префіксі потрібен користувацький сеанс systemd."
 
-#: crates/leyen-core/src/prefix_tool.rs:161
+#: crates/leyen-core/src/prefix_tool.rs:201
 #: crates/leyen-gtk/src/prefix_tools.rs:65
 #, no-c-format
 msgid "Failed to run {}: {}"
@@ -297,17 +298,17 @@ msgstr "Запуск ігор для Windows через Proton"
 msgid "translator-credits"
 msgstr "sachesi <xsachesi@pm.me>"
 
-#: crates/leyen-gtk/src/daemon.rs:121
+#: crates/leyen-gtk/src/daemon.rs:125
 #, no-c-format
 msgid "Leyen's daemon is not running and could not be started"
 msgstr "Фонова служба Leyen не працює, і її не вдалося запустити"
 
-#: crates/leyen-gtk/src/daemon.rs:125
+#: crates/leyen-gtk/src/daemon.rs:129
 #, no-c-format
 msgid "Leyen's daemon did not answer in time"
 msgstr "Фонова служба Leyen не відповіла вчасно"
 
-#: crates/leyen-gtk/src/daemon.rs:197
+#: crates/leyen-gtk/src/daemon.rs:201
 #, no-c-format
 msgid ""
 "Cannot reach the session bus; daemon features unavailable until it returns"
@@ -315,7 +316,7 @@ msgstr ""
 "Немає зв’язку із сеансовою шиною; можливості фонової служби недоступні, доки "
 "її не буде відновлено"
 
-#: crates/leyen-gtk/src/daemon.rs:583
+#: crates/leyen-gtk/src/daemon.rs:628
 #, no-c-format
 msgid ""
 "Lost the daemon's {} updates; restart Leyen if the view stops refreshing"
@@ -323,7 +324,7 @@ msgstr ""
 "Втрачено оновлення {} від фонової служби; перезапустіть Leyen, якщо вигляд "
 "перестане оновлюватися"
 
-#: crates/leyen-gtk/src/daemon.rs:613 crates/leyen-gtk/src/desktop.rs:25
+#: crates/leyen-gtk/src/daemon.rs:658 crates/leyen-gtk/src/desktop.rs:25
 #: crates/leyen-gtk/src/desktop.rs:40 crates/leyen-gtk/src/desktop.rs:58
 #: crates/leyen-gtk/src/desktop.rs:100 crates/leyen-gtk/src/desktop.rs:121
 #: crates/leyen-gtk/src/dialogs/mod.rs:190
@@ -974,7 +975,7 @@ msgstr "Запущено в префіксі"
 msgid "Failed to run in prefix: {}"
 msgstr "Не вдалося запустити в префіксі: {}"
 
-#: crates/leyen-gtk/src/running_games.rs:79
+#: crates/leyen-gtk/src/running_games.rs:80
 #, no-c-format
 msgid "{} process"
 msgid_plural "{} processes"
@@ -982,10 +983,15 @@ msgstr[0] "{} процес"
 msgstr[1] "{} процеси"
 msgstr[2] "{} процесів"
 
-#: crates/leyen-gtk/src/running_games.rs:81
+#: crates/leyen-gtk/src/running_games.rs:82
 #, no-c-format
 msgid "PID {} | tracking {}"
 msgstr "PID {} | відстеження {}"
+
+#: crates/leyen-gtk/src/running_games.rs:349
+#, no-c-format
+msgid "Stop Program"
+msgstr "Зупинити програму"
 
 #: crates/leyen-gtk/src/window.rs:469
 #, no-c-format
@@ -1780,6 +1786,10 @@ msgstr "Немає запущених ігор"
 #: ui/running_games_window.ui:32
 msgid "Games you launch through Leyen will appear here while they are active."
 msgstr "Ігри, запущені через Leyen, з'являтимуться тут, поки вони активні."
+
+#: ui/running_games_window.ui:70
+msgid "Programs in Prefixes"
+msgstr "Програми в префіксах"
 
 #: ui/sandbox_folders_row.ui:10
 msgid "Extra Folders"

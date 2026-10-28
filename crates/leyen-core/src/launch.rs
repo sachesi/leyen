@@ -44,9 +44,12 @@ struct RunningGamesRegistry {
 
 /// A program run in a prefix, by the scope it runs in.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct PrefixProgram {
+pub struct PrefixProgram {
     pub unit: String,
     pub prefix: String,
+    /// What it was started as; empty in a record from before it was kept.
+    #[serde(default)]
+    pub label: String,
 }
 
 /// Records `program` as running, so a daemon started after this one dies still

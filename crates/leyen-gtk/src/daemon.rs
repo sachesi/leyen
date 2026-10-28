@@ -14,7 +14,7 @@ use futures_util::StreamExt;
 use gtk4::glib;
 use zbus::Connection;
 
-use leyen_ipc::{LeyenProxy, LogEntry, RunningGameSnapshot, RuntimeReadiness};
+use leyen_ipc::{LeyenProxy, LogEntry, PrefixProgram, RunningGameSnapshot, RuntimeReadiness};
 use leyen_model::i18n::gettext;
 use leyen_model::library::read_library_from_disk;
 use leyen_model::models::{GlobalSettings, LibraryItem};
@@ -52,6 +52,8 @@ enum DaemonCommand {
         program: String,
         reply: Reply<Result<(), String>>,
     },
+    GetPrograms(Reply<Result<Vec<PrefixProgram>, String>>),
+    StopProgram(String, Reply<Result<bool, String>>),
 }
 
 /// Daemon signals forwarded to the glib loop. Some fields mirror the D-Bus
@@ -80,6 +82,8 @@ pub enum DaemonEvent {
         winetricks_ready: bool,
     },
     LibraryChanged,
+    /// The programs running in prefixes.
+    PrefixProgramsChanged(Vec<PrefixProgram>),
     /// A fresh daemon instance took over the bus name (idle-exit restart or
     /// crash recovery): client-side state (library version, running set,
     /// runtime status, log offsets) must resync.
@@ -378,6 +382,24 @@ async fn handle_command(
             .await;
             let _ = reply.send(result).await;
         }
+        DaemonCommand::GetPrograms(reply) => {
+            let result = bounded(
+                "GetPrefixPrograms",
+                QUERY_TIMEOUT,
+                proxy.get_prefix_programs(),
+            )
+            .await;
+            let _ = reply.send(result).await;
+        }
+        DaemonCommand::StopProgram(unit, reply) => {
+            let result = bounded(
+                "StopPrefixProgram",
+                ACTION_TIMEOUT,
+                proxy.stop_prefix_program(&unit),
+            )
+            .await;
+            let _ = reply.send(result).await;
+        }
     }
 }
 
@@ -546,6 +568,29 @@ fn spawn_signal_forwarders(
             }
         });
     }
+    // PrefixProgramsChanged
+    {
+        let proxy = proxy.clone();
+        let tx = evt_tx.clone();
+        tokio::spawn(async move {
+            let Some(mut stream) = subscribed(
+                "PrefixProgramsChanged",
+                proxy.receive_prefix_programs_changed().await,
+                &tx,
+            )
+            .await
+            else {
+                return;
+            };
+            while let Some(sig) = stream.next().await {
+                if let Ok(args) = sig.args() {
+                    let _ = tx
+                        .send(DaemonEvent::PrefixProgramsChanged(args.programs))
+                        .await;
+                }
+            }
+        });
+    }
     // LibraryChanged
     {
         let proxy = proxy.clone();
@@ -647,6 +692,20 @@ pub async fn save_library(items: Vec<LibraryItem>) -> Result<(), String> {
 
 pub async fn launch_game(leyen_id: &str) -> Result<(), String> {
     call(|tx| DaemonCommand::Launch(leyen_id.to_string(), tx))
+        .await
+        .unwrap_or_else(|| Err(bridge_down_message()))
+}
+
+/// The programs running in prefixes; empty when the daemon does not answer.
+pub async fn prefix_programs() -> Vec<PrefixProgram> {
+    call(DaemonCommand::GetPrograms)
+        .await
+        .and_then(Result::ok)
+        .unwrap_or_default()
+}
+
+pub async fn stop_prefix_program(unit: &str) -> Result<bool, String> {
+    call(|tx| DaemonCommand::StopProgram(unit.to_string(), tx))
         .await
         .unwrap_or_else(|| Err(bridge_down_message()))
 }

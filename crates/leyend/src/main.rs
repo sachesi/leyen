@@ -142,6 +142,17 @@ async fn map_snapshots(
         .collect()
 }
 
+fn map_programs(programs: Vec<leyen_core::launch::PrefixProgram>) -> Vec<leyen_ipc::PrefixProgram> {
+    programs
+        .into_iter()
+        .map(|program| leyen_ipc::PrefixProgram {
+            unit: program.unit,
+            prefix: program.prefix,
+            label: program.label,
+        })
+        .collect()
+}
+
 async fn current_runtime_readiness() -> RuntimeReadiness {
     let umu = tokio::task::spawn_blocking(leyen_core::runtime::umu::is_umu_run_available)
         .await
@@ -477,10 +488,30 @@ impl Manager {
         leyen_ipc::DepStatus { installed }
     }
 
+    async fn get_prefix_programs(&self) -> Vec<leyen_ipc::PrefixProgram> {
+        let _work = ActivityGuard::new();
+        self.touch();
+        self.wait_recovered().await;
+        map_programs(leyen_core::prefix_tool::programs())
+    }
+
+    async fn stop_prefix_program(&self, unit: &str) -> bool {
+        let _work = ActivityGuard::new();
+        self.touch();
+        self.wait_recovered().await;
+        leyen_core::prefix_tool::stop_program(unit).await
+    }
+
     #[zbus(signal)]
     async fn sessions_changed(
         emitter: &zbus::object_server::SignalEmitter<'_>,
         sessions: Vec<leyen_ipc::RunningGameSnapshot>,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn prefix_programs_changed(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        programs: Vec<leyen_ipc::PrefixProgram>,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
@@ -861,6 +892,29 @@ fn install_listeners(connection: &Connection) {
                 .await
             {
                 warn!("leyend: failed to emit SessionsChanged: {e}");
+            }
+        }
+    });
+
+    let (programs_tx, mut programs_rx) =
+        tokio::sync::mpsc::unbounded_channel::<Vec<leyen_core::launch::PrefixProgram>>();
+    leyen_core::prefix_tool::set_programs_listener(move |programs| {
+        let _ = programs_tx.send(programs);
+    });
+    let conn = connection.clone();
+    spawn_supervised("programs-relay", async move {
+        while let Some(programs) = programs_rx.recv().await {
+            if let Err(e) = conn
+                .emit_signal(
+                    Option::<&str>::None,
+                    OBJECT_PATH,
+                    INTERFACE,
+                    "PrefixProgramsChanged",
+                    &(map_programs(programs),),
+                )
+                .await
+            {
+                warn!("leyend: failed to emit PrefixProgramsChanged: {e}");
             }
         }
     });

@@ -129,6 +129,9 @@ folder and not its own.
 
 Running Games in the main menu lists what the daemon is tracking: the process it started,
 how many processes belong to the game, how long it has run, its log and a stop button.
+Below the games are the programs running in a prefix, Wine Configuration, the Registry
+Editor or a program run by hand, with the prefix each runs in. Stopping one ends it and
+everything it started, without letting it save.
 
 Logs shows what games print and what Leyen itself does, for every game or one, following new
 lines as they arrive. The daemon keeps the last thousand lines; the log is also written to

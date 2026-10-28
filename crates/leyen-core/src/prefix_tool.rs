@@ -16,26 +16,63 @@ use tokio::process::Command as AsyncCommand;
 
 use crate::launch::{
     PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_folder,
-    prefix_programs, read_cgroup_populated, record_prefix_program, systemctl_show_property,
-    systemd_user_available, unit_is_active,
+    prefix_programs, read_cgroup_populated, record_prefix_program, stop_scope_verified,
+    systemctl_show_property, systemd_user_available, unit_is_active,
 };
 use crate::runtime::umu::{UmuReservation, get_umu_run_path, is_umu_run_available};
 use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
 
-/// Scope unit → prefix, for every program running in a prefix.
-fn running() -> MutexGuard<'static, HashMap<String, String>> {
-    static RUNNING: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+/// Every program running in a prefix, by the scope unit it runs in.
+fn running() -> MutexGuard<'static, HashMap<String, PrefixProgram>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, PrefixProgram>>> = OnceLock::new();
     RUNNING
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|e| e.into_inner())
 }
 
+/// Notified with the programs running in prefixes whenever one starts or ends.
+/// The daemon installs an emitter here to drive `PrefixProgramsChanged`.
+static PROGRAMS_LISTENER: OnceLock<Box<dyn Fn(Vec<PrefixProgram>) + Send + Sync>> = OnceLock::new();
+
+/// Installs the listener. No-op if called more than once.
+pub fn set_programs_listener(listener: impl Fn(Vec<PrefixProgram>) + Send + Sync + 'static) {
+    let _ = PROGRAMS_LISTENER.set(Box::new(listener));
+}
+
+/// The programs running in prefixes, by label.
+pub fn programs() -> Vec<PrefixProgram> {
+    let mut programs: Vec<PrefixProgram> = running().values().cloned().collect();
+    programs.sort_by(|a, b| a.label.cmp(&b.label).then_with(|| a.unit.cmp(&b.unit)));
+    programs
+}
+
+fn publish() {
+    if let Some(listener) = PROGRAMS_LISTENER.get() {
+        listener(programs());
+    }
+}
+
 /// Whether a program is running in `prefix`, however either is spelled: through
 /// a symlink they are one prefix with one wineserver.
 pub fn is_running_in(prefix: &str) -> bool {
     let prefix = prefix_folder(prefix);
-    running().values().any(|p| prefix_folder(p) == prefix)
+    running()
+        .values()
+        .any(|program| prefix_folder(&program.prefix) == prefix)
+}
+
+/// Stops the program running in the scope `unit`, and everything it started:
+/// SIGTERM, then SIGKILL for what is left after a few seconds. Returns whether
+/// it was running. Its prefix is freed once the scope has emptied.
+pub async fn stop_program(unit: &str) -> bool {
+    if !running().contains_key(unit) {
+        return false;
+    }
+    let unit = unit.to_string();
+    info!("Stopping '{unit}'");
+    let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
+    true
 }
 
 /// Whether a program is running in any prefix. The daemon does not exit while one does.
@@ -170,13 +207,15 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
 
     // Also what keeps the daemon from exiting while the program runs. Recorded,
     // so a daemon started after this one dies keeps the prefix in use too.
-    running().insert(unit.clone(), prefix.clone());
-    drop(prefix_claim);
-    drop(umu);
     let program = PrefixProgram {
         unit: unit.clone(),
         prefix: prefix.clone(),
+        label: label.clone(),
     };
+    running().insert(unit.clone(), program.clone());
+    drop(prefix_claim);
+    drop(umu);
+    publish();
     if let Err(e) = tokio::task::spawn_blocking(move || record_prefix_program(program))
         .await
         .map_err(|e| e.to_string())
@@ -208,11 +247,14 @@ pub async fn adopt_running() {
         Ok(Err(e)) => return warn!("Could not read the programs running in prefixes: {e}"),
         Err(e) => return warn!("Could not read the programs running in prefixes: {e}"),
     };
-    for PrefixProgram { unit, prefix } in programs {
-        running().insert(unit.clone(), prefix.clone());
-        let label = unit.clone();
-        tokio::spawn(watch(unit, prefix, label));
+    for mut program in programs {
+        if program.label.is_empty() {
+            program.label = program.unit.clone();
+        }
+        running().insert(program.unit.clone(), program.clone());
+        tokio::spawn(watch(program.unit, program.prefix, program.label));
     }
+    publish();
 }
 
 /// Frees `prefix` once the scope `unit` is gone. The program itself may have
@@ -244,6 +286,7 @@ async fn watch(unit: String, prefix: String, label: String) {
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
     running().remove(&unit);
+    publish();
     let ended = unit.clone();
     if let Ok(Err(e)) = tokio::task::spawn_blocking(move || forget_prefix_program(&ended)).await {
         warn!("Could not record that '{label}' has ended: {e}");
@@ -266,7 +309,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{is_running_in, running};
+    use super::{PrefixProgram, is_running_in, running};
 
     #[test]
     fn a_prefix_is_in_use_however_its_path_is_spelled() {
@@ -276,7 +319,14 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&prefix, &link).unwrap();
         let unit = "leyen-tool-spelling.scope";
-        running().insert(unit.to_string(), link.to_string_lossy().into_owned());
+        running().insert(
+            unit.to_string(),
+            PrefixProgram {
+                unit: unit.to_string(),
+                prefix: link.to_string_lossy().into_owned(),
+                label: "winecfg".to_string(),
+            },
+        );
 
         let in_use = is_running_in(&prefix.to_string_lossy());
         let with_slash = is_running_in(&format!("{}/", prefix.display()));

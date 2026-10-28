@@ -2,6 +2,7 @@ use log::{info, warn};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
@@ -23,6 +24,28 @@ pub static UMU_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 /// `true` while another release of umu-launcher downloads next to the one in
 /// use, which launches keep using meanwhile.
 static UMU_UPDATING: AtomicBool = AtomicBool::new(false);
+
+/// Launches and programs in a prefix from their umu-launcher check until they
+/// are registered as running, where an update looks for what uses it.
+static SETTING_UP: Mutex<usize> = Mutex::new(0);
+
+/// Holds umu-launcher in place for a launch or a program in a prefix that is
+/// being set up, until dropped.
+pub struct UmuReservation(());
+
+impl UmuReservation {
+    /// Waits out an update swapping the install, if one is.
+    pub fn reserve() -> Self {
+        *SETTING_UP.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        Self(())
+    }
+}
+
+impl Drop for UmuReservation {
+    fn drop(&mut self) {
+        *SETTING_UP.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+    }
+}
 
 pub static WINETRICKS_DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -378,21 +401,18 @@ fn download_and_install_umu(dest_dir: &str, replacing: bool) -> Result<(), UmuEr
 /// otherwise: a running copy reads its modules from the zipapp by path, and
 /// would read them from the new one. Launches wait for the swap and no longer.
 fn replace_while_unused(staged: &Path, installed: &Path) -> Result<(), UmuError> {
-    UMU_DOWNLOADING.store(true, Ordering::SeqCst);
-    let in_use = crate::launch::is_any_game_running()
+    let setting_up = SETTING_UP.lock().unwrap_or_else(|e| e.into_inner());
+    let in_use = *setting_up > 0
+        || crate::launch::is_any_game_running()
         || crate::prefix_tool::any_running()
         || crate::deps::engine::any_in_progress();
-    let result = if in_use {
-        Err(UmuError::Extraction(
+    if in_use {
+        return Err(UmuError::Extraction(
             "umu-launcher is in use; the update waits for the next start".to_string(),
-        ))
-    } else {
-        exchange(staged, installed).map_err(|e| {
-            UmuError::Extraction(format!("Failed to move extracted umu into place: {e}"))
-        })
-    };
-    UMU_DOWNLOADING.store(false, Ordering::SeqCst);
-    result
+        ));
+    }
+    exchange(staged, installed)
+        .map_err(|e| UmuError::Extraction(format!("Failed to move extracted umu into place: {e}")))
 }
 
 /// Swaps two paths in one step, so there is no moment with neither in place.
@@ -419,7 +439,7 @@ fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{exchange, keep_if_sha256};
+    use super::{UmuReservation, exchange, keep_if_sha256, replace_while_unused};
 
     #[test]
     fn an_update_swaps_the_install_in_one_step() {
@@ -440,6 +460,23 @@ mod tests {
             std::fs::read_to_string(staged.join("umu-run")).unwrap(),
             "old"
         );
+    }
+
+    #[test]
+    fn an_update_waits_for_a_launch_being_set_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("staged");
+        let installed = dir.path().join("umu");
+        std::fs::create_dir(&staged).unwrap();
+        std::fs::create_dir(&installed).unwrap();
+        std::fs::write(installed.join("umu-run"), "old").unwrap();
+
+        let launch = UmuReservation::reserve();
+        assert!(replace_while_unused(&staged, &installed).is_err());
+        assert!(installed.join("umu-run").exists(), "the install stays");
+        drop(launch);
+        replace_while_unused(&staged, &installed).unwrap();
+        assert!(staged.join("umu-run").exists(), "swapped once it is free");
     }
 
     #[test]

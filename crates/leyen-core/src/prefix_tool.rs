@@ -18,7 +18,7 @@ use crate::launch::{
     PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_folder,
     prefix_programs, record_prefix_program, systemd_user_available, unit_is_active,
 };
-use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{UmuReservation, get_umu_run_path, is_umu_run_available};
 use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
 
 /// Scope unit → prefix, for every program running in a prefix.
@@ -74,6 +74,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
             )
         }
     };
+    let umu = UmuReservation::reserve();
     if !tokio::task::spawn_blocking(is_umu_run_available)
         .await
         .unwrap_or(false)
@@ -170,6 +171,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     // so a daemon started after this one dies keeps the prefix in use too.
     running().insert(unit.clone(), prefix.clone());
     drop(prefix_claim);
+    drop(umu);
     let program = PrefixProgram {
         unit: unit.clone(),
         prefix: prefix.clone(),

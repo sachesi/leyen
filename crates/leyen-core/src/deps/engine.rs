@@ -710,7 +710,16 @@ pub async fn execute_dep_step(
                 ]);
                 run_umu_command(cmd, format!("winetricks {}", verb), cancel.clone()).await?
             };
-            if !output.status.success() {
+            // umu-run exits 0 when it fails before running winetricks; winetricks
+            // logs a verb once it has installed it.
+            let logged = {
+                let prefix = prefix_path.to_string();
+                let verb = verb.clone();
+                tokio::task::spawn_blocking(move || winetricks_logged(&prefix, &verb))
+                    .await
+                    .map_err(join_err)?
+            };
+            if !output.status.success() || !logged {
                 return Err(format!(
                     "winetricks '{}' failed: {}",
                     verb,
@@ -806,6 +815,32 @@ fn forget_winetricks_verb(prefix_path: &str, verb: &str) -> Result<(), String> {
     }
     leyen_model::paths::atomic_write(&path, &out)
         .map_err(|err| format!("Failed to update winetricks.log: {err}"))
+}
+
+/// Whether `$WINEPREFIX/winetricks.log` lists `verb`.
+fn winetricks_logged(prefix_path: &str, verb: &str) -> bool {
+    fs::read_to_string(Path::new(prefix_path).join("winetricks.log"))
+        .is_ok_and(|text| text.lines().any(|line| line.trim() == verb))
+}
+
+/// Refuses a Proton umu-run cannot use: it exits 0 then, having run nothing.
+/// An empty path is umu-launcher's own Proton.
+async fn check_proton(proton_path: &str) -> Result<(), String> {
+    if proton_path.is_empty() {
+        return Ok(());
+    }
+    let dir = PathBuf::from(proton_path);
+    let usable = tokio::task::spawn_blocking(move || {
+        dir.join("proton").is_file() && dir.join("toolmanifest.vdf").is_file()
+    })
+    .await
+    .map_err(join_err)?;
+    if usable {
+        Ok(())
+    } else {
+        warn!("[dep] Proton '{proton_path}' has no proton script or toolmanifest.vdf");
+        Err(gettext("Selected Proton version was not found"))
+    }
 }
 
 pub(super) fn configure_umu_command_async(
@@ -912,13 +947,26 @@ pub async fn install_dep(
     // the first command it runs. Done inside a component's snapshot, its whole
     // Wine install would be recorded as that component's files, and removed
     // with it.
+    check_proton(&proton_path).await?;
     on_progress(0, total_steps, "Preparing the prefix…".to_string());
     {
         let mut cmd = AsyncCommand::new(get_umu_run_path());
         configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
         cmd.arg("createprefix");
-        // Proton then runs no program and exits 1 even though the prefix is ready.
-        run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
+        // Proton then runs no program and exits 1 even though the prefix is ready,
+        // so whether it is ready is read from the prefix.
+        let output = run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
+        let registry = Path::new(&prefix_path).join("system.reg");
+        if !tokio::task::spawn_blocking(move || registry.is_file())
+            .await
+            .map_err(join_err)?
+        {
+            return Err(gettext("Proton could not prepare the prefix: {}").replacen(
+                "{}",
+                &stderr_tail(&output.stderr),
+                1,
+            ));
+        }
     }
 
     let mut completed_steps = 0usize;
@@ -1221,6 +1269,7 @@ pub async fn uninstall_dep(
     });
     if requires_umu {
         ensure_umu_ready(false, &on_progress, &cancel).await?;
+        check_proton(&proton_path).await?;
     }
 
     info!(

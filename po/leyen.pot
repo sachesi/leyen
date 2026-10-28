@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen 0.10.3\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-10-28 11:36+0200\n"
+"POT-Creation-Date: 2026-10-28 12:12+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,12 +22,12 @@ msgstr ""
 #: crates/leyen-core/src/deps/engine.rs:269
 #: crates/leyen-core/src/deps/engine.rs:463
 #: crates/leyen-core/src/deps/engine.rs:531
-#: crates/leyen-core/src/deps/engine.rs:1000
-#: crates/leyen-core/src/deps/engine.rs:1001
-#: crates/leyen-core/src/deps/engine.rs:1010
-#: crates/leyen-core/src/deps/engine.rs:1031
-#: crates/leyen-core/src/deps/engine.rs:1235
-#: crates/leyen-core/src/deps/engine.rs:1382
+#: crates/leyen-core/src/deps/engine.rs:1048
+#: crates/leyen-core/src/deps/engine.rs:1049
+#: crates/leyen-core/src/deps/engine.rs:1058
+#: crates/leyen-core/src/deps/engine.rs:1079
+#: crates/leyen-core/src/deps/engine.rs:1284
+#: crates/leyen-core/src/deps/engine.rs:1431
 #, no-c-format
 msgid "Cancelled."
 msgstr ""
@@ -37,69 +37,80 @@ msgstr ""
 msgid "A systemd user session is required to install or remove dependencies."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:855
-#: crates/leyen-core/src/deps/engine.rs:1183
+#: crates/leyen-core/src/deps/engine.rs:842
+#: crates/leyen-core/src/launch.rs:1988
+#, no-c-format
+msgid "Selected Proton version was not found"
+msgstr ""
+
+#: crates/leyen-core/src/deps/engine.rs:890
+#: crates/leyen-core/src/deps/engine.rs:1231
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:866
+#: crates/leyen-core/src/deps/engine.rs:901
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:886
-#: crates/leyen-core/src/deps/engine.rs:1196
+#: crates/leyen-core/src/deps/engine.rs:921
+#: crates/leyen-core/src/deps/engine.rs:1244
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:892
+#: crates/leyen-core/src/deps/engine.rs:927
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1153
+#: crates/leyen-core/src/deps/engine.rs:964
+#, no-c-format
+msgid "Proton could not prepare the prefix: {}"
+msgstr ""
+
+#: crates/leyen-core/src/deps/engine.rs:1201
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1202
+#: crates/leyen-core/src/deps/engine.rs:1250
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1206
+#: crates/leyen-core/src/deps/engine.rs:1254
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1305
+#: crates/leyen-core/src/deps/engine.rs:1354
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
 "reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1308
+#: crates/leyen-core/src/deps/engine.rs:1357
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
 "were not reverted."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1310
+#: crates/leyen-core/src/deps/engine.rs:1359
 #, no-c-format
 msgid "Removed from tracking."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1325
+#: crates/leyen-core/src/deps/engine.rs:1374
 #: crates/leyen-core/src/launch.rs:1878
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1337
+#: crates/leyen-core/src/deps/engine.rs:1386
 #: crates/leyen-core/src/launch.rs:1891
 #: crates/leyen-core/src/prefix_tool.rs:128
 #: crates/leyen-gtk/src/prefix_tools.rs:22
@@ -109,17 +120,17 @@ msgid ""
 "restart."
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1345
+#: crates/leyen-core/src/deps/engine.rs:1394
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1356 crates/leyen-gtk/src/window.rs:474
+#: crates/leyen-core/src/deps/engine.rs:1405 crates/leyen-gtk/src/window.rs:474
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr ""
 
-#: crates/leyen-core/src/deps/engine.rs:1372
+#: crates/leyen-core/src/deps/engine.rs:1421
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr ""
@@ -148,11 +159,6 @@ msgstr ""
 #: crates/leyen-core/src/launch.rs:1962
 #, no-c-format
 msgid "Game executable was not found"
-msgstr ""
-
-#: crates/leyen-core/src/launch.rs:1988
-#, no-c-format
-msgid "Selected Proton version was not found"
 msgstr ""
 
 #: crates/leyen-core/src/launch.rs:2012

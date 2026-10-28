@@ -128,7 +128,12 @@ fn start_holder(unit: &str) -> Result<u32, String> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    scoped.into_std().spawn().map_err(|_| failed())?;
+    let mut holder = scoped.spawn().map_err(|_| failed())?;
+    // systemd-run execs bwrap, which stays this process's child until the
+    // holder is stopped; waiting on it is what clears it from the process table.
+    tokio::spawn(async move {
+        let _ = holder.wait().await;
+    });
 
     for _ in 0..50 {
         if let Some(pid) = holder_pid(unit) {

@@ -1,6 +1,7 @@
 //! The dependency manager of a prefix: winetricks components by category, the
 //! installed ones first. A page pushed over the dialog that opened it, never a
-//! second dialog. One operation runs at a time; leaving the page does not stop it.
+//! second dialog. One operation runs at a time; leaving the page does not stop it,
+//! and the page follows it again when opened.
 
 use std::cell::RefCell;
 
@@ -8,6 +9,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use futures_util::future::{Either, select};
 use gtk4::glib;
+use leyen_ipc::DepJob;
 use leyen_model::deps::{
     DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
     get_installed_dep, read_prefix_dep_state_checked,
@@ -174,8 +176,54 @@ impl DependenciesPage {
         });
         imp.rows
             .replace(profiles.into_iter().map(DependencyRow::new).collect());
+        // Subscribed first, so that a job ending while the page opens is seen.
+        let events = daemon::subscribe_events();
+        let running = page.running_job().await;
         page.refresh().await?;
+        if let Some(job) = running {
+            glib::spawn_future_local(glib::clone!(
+                #[weak]
+                page,
+                async move { page.resume_job(events, job).await }
+            ));
+        }
         Ok(page)
+    }
+
+    /// The job running on this page's prefix, started here earlier or by anyone
+    /// else; the daemon runs one at a time per prefix.
+    async fn running_job(&self) -> Option<DepJob> {
+        let prefix = self.imp().prefix.borrow().clone();
+        let jobs = daemon::dep_jobs().await;
+        gio_blocking(move || {
+            let canonical = |path: &str| std::fs::canonicalize(path).ok();
+            let own = canonical(&prefix)?;
+            jobs.into_iter()
+                .find(|job| canonical(&job.prefix).as_ref() == Some(&own))
+        })
+        .await
+        .flatten()
+    }
+
+    /// Follows a job the page did not start, as if it had.
+    async fn resume_job(&self, events: async_channel::Receiver<DaemonEvent>, job: DepJob) {
+        let Some(row) = self.row(&job.dep_id) else {
+            return;
+        };
+        let operation = match (job.install, row.is_installed()) {
+            (false, _) => Operation::Remove,
+            (true, true) => Operation::Reinstall,
+            (true, false) => Operation::Install,
+        };
+        // Its row may be anywhere in the list, and the search is locked while
+        // a job runs: show it alone.
+        self.imp().search_entry.set_text(row.profile().name);
+        self.set_busy(true);
+        row.set_working(job.install);
+        self.imp().job.replace(Some(job.job_id.clone()));
+        let (success, note) = self.follow_job(events, &job.job_id, &row).await;
+        self.finish_job(operation, row.profile().name, success, note)
+            .await;
     }
 
     /// Reads what the prefix has installed and shows it, or says why it cannot.
@@ -318,13 +366,24 @@ impl DependenciesPage {
         self.set_busy(true);
         row.set_working(operation != Operation::Remove);
         let (success, note) = self.run_job(operation, profile.id, &row).await;
+        self.finish_job(operation, profile.name, success, note)
+            .await;
+    }
+
+    /// Shows the outcome of a job the page followed and what is installed now.
+    async fn finish_job(
+        &self,
+        operation: Operation,
+        name: &str,
+        success: bool,
+        note: Option<String>,
+    ) {
         self.imp().job.replace(None);
         if let Err(reason) = self.refresh().await {
             self.toast(&reason);
         }
         self.set_busy(false);
 
-        let name = profile.name;
         let message = match (operation, success, note) {
             (Operation::Install, true, Some(note)) => gettext("'{}' installed successfully. {}")
                 .replacen("{}", name, 1)
@@ -400,7 +459,17 @@ impl DependenciesPage {
             Err(reason) => return (false, Some(reason)),
         };
         imp.job.replace(Some(job_id.clone()));
+        self.follow_job(events, &job_id, row).await
+    }
 
+    /// Shows the progress of the job `job_id` on `row` until it ends. Returns
+    /// whether it succeeded and the daemon's note or reason.
+    async fn follow_job(
+        &self,
+        events: async_channel::Receiver<DaemonEvent>,
+        job_id: &str,
+        row: &DependencyRow,
+    ) -> (bool, Option<String>) {
         let mut deadline = std::time::Instant::now() + DEP_JOB_TIMEOUT;
         loop {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());

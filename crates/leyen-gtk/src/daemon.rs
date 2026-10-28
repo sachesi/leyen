@@ -14,7 +14,9 @@ use futures_util::StreamExt;
 use gtk4::glib;
 use zbus::Connection;
 
-use leyen_ipc::{LeyenProxy, LogEntry, PrefixProgram, RunningGameSnapshot, RuntimeReadiness};
+use leyen_ipc::{
+    DepJob, LeyenProxy, LogEntry, PrefixProgram, RunningGameSnapshot, RuntimeReadiness,
+};
 use leyen_model::i18n::gettext;
 use leyen_model::library::read_library_from_disk;
 use leyen_model::models::{GlobalSettings, LibraryItem};
@@ -53,6 +55,7 @@ enum DaemonCommand {
         reply: Reply<Result<(), String>>,
     },
     GetPrograms(Reply<Result<Vec<PrefixProgram>, String>>),
+    GetDepJobs(Reply<Result<Vec<DepJob>, String>>),
     StopProgram(String, Reply<Result<bool, String>>),
 }
 
@@ -389,6 +392,10 @@ async fn handle_command(
                 proxy.get_prefix_programs(),
             )
             .await;
+            let _ = reply.send(result).await;
+        }
+        DaemonCommand::GetDepJobs(reply) => {
+            let result = bounded("GetDepJobs", QUERY_TIMEOUT, proxy.get_dep_jobs()).await;
             let _ = reply.send(result).await;
         }
         DaemonCommand::StopProgram(unit, reply) => {
@@ -760,6 +767,14 @@ pub async fn uninstall_dep(prefix: &str, dep_id: &str, proton: &str) -> Result<S
     })
     .await
     .unwrap_or_else(|| Err(bridge_down_message()))
+}
+
+/// The dependency jobs in progress; empty when the daemon does not answer.
+pub async fn dep_jobs() -> Vec<DepJob> {
+    call(DaemonCommand::GetDepJobs)
+        .await
+        .and_then(Result::ok)
+        .unwrap_or_default()
 }
 
 pub async fn cancel_dep(job_id: &str) -> bool {

@@ -17,7 +17,9 @@ use thiserror::Error;
 use crate::config::{
     add_game_playtime, load_library, record_game_launch_result, record_game_launch_start,
 };
-use crate::runtime::umu::{UMU_DOWNLOADING, get_umu_run_path, is_umu_run_available};
+use crate::runtime::umu::{
+    UMU_DOWNLOADING, UmuReservation, get_umu_run_path, is_umu_run_available,
+};
 use crate::sandbox::SandboxRequest;
 use crate::tools::{join_err, mangohud_available};
 use leyen_model::library::{effective_game_id, find_game_and_group};
@@ -1836,6 +1838,7 @@ async fn launch_game_managed(
 ) -> Result<LaunchReport, LaunchError> {
     let mut notices = Vec::new();
 
+    let _umu = UmuReservation::reserve();
     // Block launch while umu-launcher is being downloaded.
     if UMU_DOWNLOADING.load(Ordering::Relaxed) {
         return Err(LaunchError::Other(gettext(

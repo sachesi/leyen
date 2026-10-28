@@ -82,7 +82,15 @@ fn poisoned_lock_error() -> leyen_ipc::Error {
     leyen_ipc::Error::Failed("Internal state lock poisoned; restart the daemon".to_string())
 }
 
-type DepJobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
+/// A dependency job in progress, by its id.
+struct DepJob {
+    cancel: Arc<AtomicBool>,
+    prefix: String,
+    dep_id: String,
+    install: bool,
+}
+
+type DepJobs = Arc<Mutex<HashMap<String, DepJob>>>;
 
 #[derive(Clone)]
 struct Manager {
@@ -371,7 +379,15 @@ impl Manager {
                     format!("Too many dependency operations in progress (max {MAX_DEP_JOBS})"),
                 ));
             }
-            jobs.insert(job_id.clone(), cancel.clone());
+            jobs.insert(
+                job_id.clone(),
+                DepJob {
+                    cancel: cancel.clone(),
+                    prefix: prefix.to_string(),
+                    dep_id: dep_id.to_string(),
+                    install: true,
+                },
+            );
         }
         self.spawn_dep_job(
             conn,
@@ -427,7 +443,15 @@ impl Manager {
                     format!("Too many dependency operations in progress (max {MAX_DEP_JOBS})"),
                 ));
             }
-            jobs.insert(job_id.clone(), cancel.clone());
+            jobs.insert(
+                job_id.clone(),
+                DepJob {
+                    cancel: cancel.clone(),
+                    prefix: prefix.to_string(),
+                    dep_id: dep_id.to_string(),
+                    install: false,
+                },
+            );
         }
         self.spawn_dep_job(
             conn,
@@ -445,12 +469,30 @@ impl Manager {
         let _work = ActivityGuard::new();
         self.touch();
         if let Ok(jobs) = self.dep_jobs.lock()
-            && let Some(cancel) = jobs.get(job_id)
+            && let Some(job) = jobs.get(job_id)
         {
-            cancel.store(true, Ordering::Relaxed);
+            job.cancel.store(true, Ordering::Relaxed);
             return true;
         }
         false
+    }
+
+    async fn get_dep_jobs(&self) -> Vec<leyen_ipc::DepJob> {
+        let _work = ActivityGuard::new();
+        self.touch();
+        self.dep_jobs
+            .lock()
+            .map(|jobs| {
+                jobs.iter()
+                    .map(|(job_id, job)| leyen_ipc::DepJob {
+                        job_id: job_id.clone(),
+                        prefix: job.prefix.clone(),
+                        dep_id: job.dep_id.clone(),
+                        install: job.install,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     async fn run_in_prefix(
@@ -804,8 +846,8 @@ async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
     let cancelled = dep_jobs
         .lock()
         .map(|jobs| {
-            for cancel in jobs.values() {
-                cancel.store(true, Ordering::Relaxed);
+            for job in jobs.values() {
+                job.cancel.store(true, Ordering::Relaxed);
             }
             jobs.len()
         })

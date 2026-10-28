@@ -73,6 +73,15 @@ pub struct PrefixProgram {
     pub label: String,
 }
 
+/// A dependency install or removal in progress. Wire signature `(sssb)`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DepJob {
+    pub job_id: String,
+    pub prefix: String,
+    pub dep_id: String,
+    pub install: bool,
+}
+
 /// Installed-dependency ids tracked for a prefix. Wire signature `(as)`.
 /// Convenience for non-local clients; the local GTK dialog reads prefix state
 /// files directly.
@@ -132,6 +141,9 @@ pub trait Leyen {
 
     /// Request cancellation of an in-flight dependency job.
     fn cancel_dep(&self, job_id: &str) -> zbus::Result<bool>;
+
+    /// The dependency jobs in progress, whoever started them.
+    fn get_dep_jobs(&self) -> zbus::Result<Vec<DepJob>>;
 
     /// Start `program` (`winecfg`, `regedit` or the absolute path of a file) in
     /// `prefix` with `proton_path`, in a scope of its own. While it or anything

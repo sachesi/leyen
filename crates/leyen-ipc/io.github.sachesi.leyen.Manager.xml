@@ -48,6 +48,9 @@
       <arg name="job_id" type="s" direction="in"/>
       <arg type="b" direction="out"/>
     </method>
+    <method name="GetDepJobs">
+      <arg type="a(sssb)" direction="out"/>
+    </method>
     <method name="RunInPrefix">
       <arg name="prefix" type="s" direction="in"/>
       <arg name="proton_path" type="s" direction="in"/>

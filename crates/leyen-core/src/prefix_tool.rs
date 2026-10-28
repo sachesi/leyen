@@ -204,10 +204,7 @@ pub async fn adopt_running() {
         Err(e) => return warn!("Could not read the programs running in prefixes: {e}"),
     };
     for PrefixProgram { unit, prefix } in programs {
-        // The call that started the daemon may have started this one.
-        if running().insert(unit.clone(), prefix.clone()).is_some() {
-            continue;
-        }
+        running().insert(unit.clone(), prefix.clone());
         let label = unit.clone();
         tokio::spawn(watch(unit, prefix, label));
     }

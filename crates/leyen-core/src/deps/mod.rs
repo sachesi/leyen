@@ -9,6 +9,9 @@ pub mod state;
 mod tests;
 pub mod verify;
 
-pub use engine::{execute_dep_step, install_dep, stop_orphaned_jobs, uninstall_dep};
+pub use engine::{
+    execute_dep_step, install_dep, roll_back_interrupted_installs, stop_orphaned_jobs,
+    uninstall_dep,
+};
 pub use recipes::get_dep_steps;
 pub use state::{remove_installed_dep, save_prefix_dep_state, upsert_installed_dep};

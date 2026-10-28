@@ -203,6 +203,75 @@ pub fn stop_orphaned_jobs() {
     }
 }
 
+/// An install whose steps are running, kept on disk until it is recorded or
+/// rolled back, so that a daemon that dies meanwhile is followed by one that
+/// can take its files back out of the prefix.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PendingInstall {
+    prefix: String,
+    dep_id: String,
+    files_before: BTreeMap<String, FileFingerprint>,
+}
+
+fn pending_installs_dir() -> PathBuf {
+    leyen_model::paths::get_config_dir().join("pending-deps")
+}
+
+/// Writes down an install about to run its steps, and returns the file to
+/// delete once it is recorded or rolled back. A daemon stopped in between,
+/// even cleanly, leaves the file to the next one.
+fn record_pending(prefix: &str, dep_id: &str, before: &PrefixSnapshot) -> Result<PathBuf, String> {
+    let pending = PendingInstall {
+        prefix: prefix.to_string(),
+        dep_id: dep_id.to_string(),
+        files_before: before.files.clone(),
+    };
+    let dir = pending_installs_dir();
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create '{}': {e}", dir.display()))?;
+    let path = dir.join(format!("{}.json", uuid::Uuid::new_v4()));
+    let json = serde_json::to_string(&pending)
+        .map_err(|e| format!("Failed to serialize the pending install: {e}"))?;
+    leyen_model::paths::atomic_write(&path, &json)
+        .map_err(|e| format!("Failed to write '{}': {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Takes the files of installs an earlier daemon left unfinished back out of
+/// their prefixes, as a failed install's are. Run once at startup, after
+/// [`stop_orphaned_jobs`] has stopped what was still running.
+pub fn roll_back_interrupted_installs() {
+    let Ok(entries) = fs::read_dir(pending_installs_dir()) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        let pending = fs::read_to_string(&path)
+            .ok()
+            .and_then(|json| serde_json::from_str::<PendingInstall>(&json).ok());
+        if let Some(pending) = pending {
+            let before = PrefixSnapshot {
+                files: pending.files_before,
+                ..PrefixSnapshot::default()
+            };
+            match snapshot_prefix(&pending.prefix) {
+                Ok(after) => {
+                    let created = diff_snapshots(&before, &after).created_files;
+                    warn!(
+                        "[dep:{}] rolling back {} files of an install an earlier daemon left unfinished in '{}'",
+                        pending.dep_id,
+                        created.len(),
+                        pending.prefix
+                    );
+                    if let Err(e) = remove_created_files(&pending.prefix, &created) {
+                        warn!("[dep:{}] rollback failed: {e}", pending.dep_id);
+                    }
+                }
+                Err(e) => warn!("[dep:{}] rollback failed: {e}", pending.dep_id),
+            }
+        }
+        let _ = fs::remove_file(&path);
+    }
+}
+
 /// The sandbox a dependency install runs in. The prefix and the Proton are on
 /// the command as environment variables already, so they are read back from
 /// there rather than threaded through every caller.
@@ -399,7 +468,7 @@ struct UninstallEntry {
 }
 
 /// File signature: (len, mtime). May miss same-size+same-mtime in-place edits.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct FileFingerprint {
     len: u64,
     modified_epoch_seconds: u64,
@@ -1113,6 +1182,16 @@ pub async fn install_dep(
                 .map_err(join_err)
                 .and_then(|r| r)?
         };
+        let (pending, snapshot_before) = {
+            let (prefix, dep_id) = (prefix_path.clone(), profile.id.to_string());
+            tokio::task::spawn_blocking(move || {
+                record_pending(&prefix, &dep_id, &snapshot_before)
+                    .map(|path| (path, snapshot_before))
+            })
+            .await
+            .map_err(join_err)
+            .and_then(|r| r)?
+        };
 
         let mut step_error: Option<String> = None;
         for step in &execution_steps {
@@ -1187,6 +1266,7 @@ pub async fn install_dep(
                     );
                 }
             }
+            let _ = tokio::fs::remove_file(&pending).await;
             return Err(error);
         }
 
@@ -1209,6 +1289,7 @@ pub async fn install_dep(
             .map_err(join_err)
             .and_then(|r| r)?;
         }
+        let _ = tokio::fs::remove_file(&pending).await;
 
         for provided_id in profile.provides {
             let stub_prefix = prefix_path.clone();

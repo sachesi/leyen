@@ -15,8 +15,8 @@ use log::{info, warn};
 use tokio::process::Command as AsyncCommand;
 
 use crate::launch::{
-    PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_programs,
-    record_prefix_program, systemd_user_available, unit_is_active,
+    PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_folder,
+    prefix_programs, record_prefix_program, systemd_user_available, unit_is_active,
 };
 use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
 use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
@@ -30,11 +30,11 @@ fn running() -> MutexGuard<'static, HashMap<String, String>> {
         .unwrap_or_else(|e| e.into_inner())
 }
 
-/// Whether a program is running in `prefix`. Paths compare by component, so
-/// `/x/pfx/` and `/x/pfx` are one prefix.
+/// Whether a program is running in `prefix`, however either is spelled: through
+/// a symlink they are one prefix with one wineserver.
 pub fn is_running_in(prefix: &str) -> bool {
-    let prefix = Path::new(prefix.trim());
-    running().values().any(|p| Path::new(p) == prefix)
+    let prefix = prefix_folder(prefix);
+    running().values().any(|p| prefix_folder(p) == prefix)
 }
 
 /// Whether a program is running in any prefix. The daemon does not exit while one does.
@@ -246,4 +246,29 @@ where
             info!("[{label}:{stream}] {line}");
         }
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_running_in, running};
+
+    #[test]
+    fn a_prefix_is_in_use_however_its_path_is_spelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("pfx");
+        std::fs::create_dir(&prefix).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&prefix, &link).unwrap();
+        let unit = "leyen-tool-spelling.scope";
+        running().insert(unit.to_string(), link.to_string_lossy().into_owned());
+
+        let in_use = is_running_in(&prefix.to_string_lossy());
+        let with_slash = is_running_in(&format!("{}/", prefix.display()));
+        let other = is_running_in(&dir.path().to_string_lossy());
+        running().remove(unit);
+
+        assert!(in_use);
+        assert!(with_slash);
+        assert!(!other);
+    }
 }

@@ -90,6 +90,43 @@ pub fn get_prefix_deps_state_path(prefix_path: &str) -> PathBuf {
     get_prefix_deps_dir(prefix_path).join("state.toml")
 }
 
+/// Reads dependency state, distinguishing "absent" (defaults) from "present but
+/// corrupt" (error). Mutating callers must use this — silently defaulting on a
+/// parse error would erase all tracked dependencies on the next write. Install
+/// and uninstall planning also route through this: their decisions gate a
+/// later mutation, so the same corrupt-state-as-empty trap applies (e.g. an
+/// uninstall would silently no-op on a dependency that's actually still
+/// tracked).
+pub fn read_prefix_dep_state_checked(prefix_path: &str) -> Result<PrefixDependencyState, String> {
+    let path = get_prefix_deps_state_path(prefix_path);
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            let state = toml::from_str::<PrefixDependencyState>(&content).map_err(|err| {
+                format!(
+                    "Failed to parse dependency state '{}': {err}",
+                    path.display()
+                )
+            })?;
+            if state.version > DEP_STATE_VERSION {
+                return Err(format!(
+                    "Dependency state '{}' was written by a newer version of leyen (file version {}, this build supports {})",
+                    path.display(),
+                    state.version,
+                    DEP_STATE_VERSION
+                ));
+            }
+            Ok(state)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Ok(PrefixDependencyState::default())
+        }
+        Err(err) => Err(format!(
+            "Failed to read dependency state '{}': {err}",
+            path.display()
+        )),
+    }
+}
+
 pub fn read_prefix_dep_state(prefix_path: &str) -> PrefixDependencyState {
     let path = get_prefix_deps_state_path(prefix_path);
     let state: PrefixDependencyState = fs::read_to_string(&path)
@@ -110,13 +147,6 @@ pub fn read_prefix_dep_state(prefix_path: &str) -> PrefixDependencyState {
     }
 
     state
-}
-
-pub fn read_installed_deps(prefix_path: &str) -> BTreeSet<String> {
-    read_prefix_dep_state(prefix_path)
-        .installed
-        .into_keys()
-        .collect()
 }
 
 pub fn get_installed_dep(prefix_path: &str, dep_id: &str) -> Option<InstalledDependency> {

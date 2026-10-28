@@ -10,7 +10,7 @@ use futures_util::future::{Either, select};
 use gtk4::glib;
 use leyen_model::deps::{
     DEP_CATEGORY_ORDER, DEP_PROFILES, find_installed_dependents, get_dep_profile,
-    get_installed_dep, read_prefix_dep_state,
+    get_installed_dep, read_prefix_dep_state_checked,
 };
 use leyen_model::i18n::{gettext, ngettext};
 use leyen_model::paths::get_data_dir;
@@ -174,17 +174,21 @@ impl DependenciesPage {
         });
         imp.rows
             .replace(profiles.into_iter().map(DependencyRow::new).collect());
-        page.refresh().await;
+        page.refresh().await?;
         Ok(page)
     }
 
-    /// Reads what the prefix has installed and shows it.
-    async fn refresh(&self) {
+    /// Reads what the prefix has installed and shows it, or says why it cannot.
+    async fn refresh(&self) -> Result<(), String> {
         let imp = self.imp();
         let prefix = imp.prefix.borrow().clone();
-        let state = gio_blocking(move || read_prefix_dep_state(&prefix))
+        let state = gio_blocking(move || read_prefix_dep_state_checked(&prefix))
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|| Err("the read was interrupted".to_string()))
+            .map_err(|e| {
+                log::warn!("dependency state of the prefix cannot be read: {e}");
+                gettext("This prefix's component list is damaged")
+            })?;
         let installed = state.installed.len();
         imp.window_title.set_subtitle(&if installed == 0 {
             gettext("No components installed")
@@ -214,6 +218,7 @@ impl DependenciesPage {
             );
         }
         self.arrange();
+        Ok(())
     }
 
     /// Puts every row in its group: Installed first, then the categories.
@@ -314,7 +319,9 @@ impl DependenciesPage {
         row.set_working(operation != Operation::Remove);
         let (success, note) = self.run_job(operation, profile.id, &row).await;
         self.imp().job.replace(None);
-        self.refresh().await;
+        if let Err(reason) = self.refresh().await {
+            self.toast(&reason);
+        }
         self.set_busy(false);
 
         let name = profile.name;

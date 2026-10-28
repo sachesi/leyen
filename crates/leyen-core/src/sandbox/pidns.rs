@@ -195,7 +195,8 @@ pub fn reachable_in_prefix(prefix: &str, path: &Path) -> bool {
     else {
         return true;
     };
-    let relative = path.strip_prefix("/").unwrap_or(path);
+    let relative = |path: &Path| path.strip_prefix("/").unwrap_or(path).to_path_buf();
+    let (folder, prefix) = (relative(path), relative(Path::new(prefix)));
     let mut looked = std::collections::HashSet::new();
     for entry in fs::read_dir("/proc").into_iter().flatten().flatten() {
         let pid = entry.file_name().to_string_lossy().into_owned();
@@ -206,10 +207,18 @@ pub fn reachable_in_prefix(prefix: &str, path: &Path) -> bool {
         let Some(mounts) = process(&pid, "mnt") else {
             continue;
         };
-        if Some(&mounts) == holder_mounts.as_ref() || !looked.insert(mounts) {
+        if Some(&mounts) == holder_mounts.as_ref() || looked.contains(&mounts) {
             continue;
         }
-        if entry.path().join("root").join(relative).try_exists().ok() == Some(false) {
+        // A sandbox still being built, and the runtime's own helper containers,
+        // see neither the prefix nor the folder for a moment; no program on the
+        // prefix runs in them.
+        let root = entry.path().join("root");
+        if !root.join(&prefix).try_exists().unwrap_or(false) {
+            continue;
+        }
+        looked.insert(mounts);
+        if root.join(&folder).try_exists().ok() == Some(false) {
             return false;
         }
     }

@@ -145,9 +145,10 @@ pub enum LaunchError {
     Other(String),
 }
 
-/// Grace period after launch during which a session with an empty/unqueryable
-/// scope is still treated as running. Covers the brief window between spawning
-/// `systemd-run` and the transient scope becoming visible to the user manager.
+/// Grace period after launch during which a session whose scope the user manager
+/// does not know yet is still treated as running. Covers the brief window between
+/// spawning `systemd-run` and the transient scope becoming visible. A scope found
+/// empty has ended, however young.
 const LAUNCH_GRACE_SECONDS: u64 = 8;
 
 fn current_epoch_seconds() -> u64 {
@@ -434,8 +435,9 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
                 signal_pids(&session_game_pids(&session, &universe), &all, libc::SIGKILL);
             }
             let key = (session.game_id.clone(), session.started_at_epoch_seconds);
-            if alive || now.saturating_sub(session.started_at_epoch_seconds) < LAUNCH_GRACE_SECONDS
-            {
+            let starting = session.cgroup_dir.is_none()
+                && now.saturating_sub(session.started_at_epoch_seconds) < LAUNCH_GRACE_SECONDS;
+            if alive || starting {
                 updates.insert(
                     key,
                     (

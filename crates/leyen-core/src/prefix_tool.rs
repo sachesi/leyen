@@ -15,7 +15,7 @@ use log::{info, warn};
 use tokio::process::Command as AsyncCommand;
 
 use crate::launch::{
-    PrefixProgram, for_each_output_line, forget_prefix_program, prefix_programs,
+    PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_programs,
     record_prefix_program, systemd_user_available, unit_is_active,
 };
 use crate::runtime::umu::{get_umu_run_path, is_umu_run_available};
@@ -135,6 +135,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
         cmd.current_dir(dir);
     }
     let unit = format!("leyen-tool-{}.scope", uuid::Uuid::new_v4());
+    let prefix_claim = claim_prefix(&prefix).await;
     let sandbox = SandboxRequest {
         prefix_path: prefix.clone(),
         proton_path: proton_path.to_string(),
@@ -168,6 +169,7 @@ pub async fn run_in_prefix(program: &str, prefix: &str, proton_path: &str) -> Re
     // Also what keeps the daemon from exiting while the program runs. Recorded,
     // so a daemon started after this one dies keeps the prefix in use too.
     running().insert(unit.clone(), prefix.clone());
+    drop(prefix_claim);
     let program = PrefixProgram {
         unit: unit.clone(),
         prefix: prefix.clone(),

@@ -70,7 +70,7 @@ async fn proxy() -> Result<LeyenProxy<'static>> {
     // separately — a wedged broker would otherwise hang before any call.
     let connection = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        zbus::connection::Builder::session()?
+        zbus::connection::Builder::session()
             .method_timeout(std::time::Duration::from_secs(30))
             .build(),
     )

@@ -670,9 +670,9 @@ async fn run() -> anyhow::Result<()> {
 
     // Bus-name ownership is the singleton guarantee: build() fails if another
     // daemon already holds the name.
-    let connection = Builder::session()?
-        .name(leyen_ipc::BUS_NAME)?
-        .serve_at(OBJECT_PATH, manager)?
+    let connection = Builder::session()
+        .name(leyen_ipc::BUS_NAME)
+        .serve_at(OBJECT_PATH, manager)
         .build()
         .await?;
     let _ = conn_holder.set(connection.clone());

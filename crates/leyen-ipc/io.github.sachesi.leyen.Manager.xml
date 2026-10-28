@@ -60,8 +60,18 @@
       <arg name="prefix" type="s" direction="in"/>
       <arg type="(as)" direction="out"/>
     </method>
+    <method name="GetPrefixPrograms">
+      <arg type="a(sss)" direction="out"/>
+    </method>
+    <method name="StopPrefixProgram">
+      <arg name="unit" type="s" direction="in"/>
+      <arg type="b" direction="out"/>
+    </method>
     <signal name="SessionsChanged">
       <arg name="sessions" type="a(ssttt)"/>
+    </signal>
+    <signal name="PrefixProgramsChanged">
+      <arg name="programs" type="a(sss)"/>
     </signal>
     <signal name="LogsAppended">
       <arg name="total_offset" type="t"/>

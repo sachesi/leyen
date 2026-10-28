@@ -401,12 +401,22 @@ fn download_and_install_umu(dest_dir: &str, replacing: bool) -> Result<(), UmuEr
 /// otherwise: a running copy reads its modules from the zipapp by path, and
 /// would read them from the new one. Launches wait for the swap and no longer.
 fn replace_while_unused(staged: &Path, installed: &Path) -> Result<(), UmuError> {
+    replace_unless_used(staged, installed, || {
+        crate::launch::is_any_game_running()
+            || crate::prefix_tool::any_running()
+            || crate::deps::engine::any_in_progress()
+    })
+}
+
+/// [`replace_while_unused`], with what runs besides the launches being set up
+/// asked of `running`.
+fn replace_unless_used(
+    staged: &Path,
+    installed: &Path,
+    running: impl FnOnce() -> bool,
+) -> Result<(), UmuError> {
     let setting_up = SETTING_UP.lock().unwrap_or_else(|e| e.into_inner());
-    let in_use = *setting_up > 0
-        || crate::launch::is_any_game_running()
-        || crate::prefix_tool::any_running()
-        || crate::deps::engine::any_in_progress();
-    if in_use {
+    if *setting_up > 0 || running() {
         return Err(UmuError::Extraction(
             "umu-launcher is in use; the update waits for the next start".to_string(),
         ));
@@ -439,7 +449,7 @@ fn exchange(a: &Path, b: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{UmuReservation, exchange, keep_if_sha256, replace_while_unused};
+    use super::{UmuReservation, exchange, keep_if_sha256, replace_unless_used};
 
     #[test]
     fn an_update_swaps_the_install_in_one_step() {
@@ -471,11 +481,12 @@ mod tests {
         std::fs::create_dir(&installed).unwrap();
         std::fs::write(installed.join("umu-run"), "old").unwrap();
 
+        // Programs and games other tests register are not this test's.
         let launch = UmuReservation::reserve();
-        assert!(replace_while_unused(&staged, &installed).is_err());
+        assert!(replace_unless_used(&staged, &installed, || false).is_err());
         assert!(installed.join("umu-run").exists(), "the install stays");
         drop(launch);
-        replace_while_unused(&staged, &installed).unwrap();
+        replace_unless_used(&staged, &installed, || false).unwrap();
         assert!(staged.join("umu-run").exists(), "swapped once it is free");
     }
 

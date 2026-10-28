@@ -1214,19 +1214,32 @@ pub(crate) fn in_scope(cmd: &tokio::process::Command, unit: &str) -> tokio::proc
     scoped
 }
 
-/// Stops a scope and verifies it actually wound down, escalating to SIGKILL if
-/// it lingers. `systemctl stop` can return before the cgroup is empty (or fail
-/// outright on a half-started unit), which would leak the scope and its
-/// processes.
+/// Stops a scope and waits until its cgroup is empty: SIGTERM to every process
+/// in it, and SIGKILL to what is left after three seconds. Not `systemctl stop`:
+/// that leaves the scope `deactivating` until its stop timeout, a minute and a
+/// half, for a program that ignores SIGTERM, while `is-active` already says it
+/// is not active.
 pub(crate) fn stop_scope_verified(unit: &str) {
-    let _ = systemctl(&["stop", unit]);
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while systemctl(&["is-active", "--quiet", unit]) {
-        if std::time::Instant::now() >= deadline {
-            systemctl(&["kill", "--signal=SIGKILL", unit]);
-            return;
-        }
-        sleep(Duration::from_millis(200));
+    let cgroup = systemctl_show_property(unit, "ControlGroup")
+        .map(|group| PathBuf::from(format!("/sys/fs/cgroup{group}")));
+    let gone = || match &cgroup {
+        Some(dir) => read_cgroup_populated(dir) != Some(true),
+        None => unit_is_active(unit) == Some(false),
+    };
+    systemctl(&["kill", "--signal=SIGTERM", unit]);
+    if wait_until(15, gone) {
+        return;
+    }
+    let killed = cgroup
+        .as_ref()
+        .is_some_and(|dir| fs::write(dir.join("cgroup.kill"), "1").is_ok());
+    if !killed {
+        systemctl(&["kill", "--signal=SIGKILL", unit]);
+    }
+    if !wait_until(25, gone) {
+        warn!(
+            "Processes of {unit} still alive after SIGKILL; they clear once the kernel reaps them"
+        );
     }
 }
 

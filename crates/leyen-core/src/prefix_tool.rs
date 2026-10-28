@@ -72,7 +72,14 @@ pub async fn stop_program(unit: &str) -> bool {
     let unit = unit.to_string();
     info!("Stopping '{unit}'");
     let _ = tokio::task::spawn_blocking(move || stop_scope_verified(&unit)).await;
+    stopped().notify_waiters();
     true
+}
+
+/// Woken when a program was stopped, so its watcher looks at once.
+fn stopped() -> &'static tokio::sync::Notify {
+    static STOPPED: OnceLock<tokio::sync::Notify> = OnceLock::new();
+    STOPPED.get_or_init(tokio::sync::Notify::new)
 }
 
 /// Whether a program is running in any prefix. The daemon does not exit while one does.
@@ -265,6 +272,9 @@ async fn watch(unit: String, prefix: String, label: String) {
     // while the cgroup is not there.
     let mut cgroup: Option<PathBuf> = None;
     loop {
+        let woken = stopped().notified();
+        tokio::pin!(woken);
+        woken.as_mut().enable();
         let probe = unit.clone();
         let (found, active) = tokio::task::spawn_blocking(move || {
             let found = cgroup.or_else(|| {
@@ -283,7 +293,10 @@ async fn watch(unit: String, prefix: String, label: String) {
             break;
         }
         cgroup = found;
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::select! {
+            () = tokio::time::sleep(Duration::from_secs(2)) => {}
+            () = woken => {}
+        }
     }
     running().remove(&unit);
     publish();

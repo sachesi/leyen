@@ -1040,8 +1040,30 @@ async fn prefix_occupant(prefix: &str, proton: &str) -> PrefixOccupant {
     })
 }
 
+/// Waits for, and holds, the claim on the prefix at `path`. A launch holds it
+/// from looking at what runs on the prefix until it is registered running, and a
+/// program run in the prefix until it is recorded: neither is visible to the
+/// other before that, so two of them started together would each find the
+/// prefix free.
+pub(crate) async fn claim_prefix(path: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    type Claims = HashMap<PathBuf, std::sync::Arc<tokio::sync::Mutex<()>>>;
+    static CLAIMS: OnceLock<std::sync::Mutex<Claims>> = OnceLock::new();
+    let path = path.to_string();
+    let folder = tokio::task::spawn_blocking(move || prefix_folder(&path))
+        .await
+        .unwrap_or_default();
+    let claim = CLAIMS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(folder)
+        .or_default()
+        .clone();
+    claim.lock_owned().await
+}
+
 /// The folder a prefix names, as its holder is found: however it is spelled.
-fn prefix_folder(path: &str) -> PathBuf {
+pub(crate) fn prefix_folder(path: &str) -> PathBuf {
     let path = Path::new(path.trim());
     fs::canonicalize(path).unwrap_or_else(|_| path.components().collect())
 }
@@ -1870,17 +1892,22 @@ async fn launch_game_managed(
     if is_game_running(&game.id) {
         return Err(LaunchError::Other(gettext("This game is already running")));
     }
-    if crate::prefix_tool::is_running_in(&prefix_path) {
-        return Err(LaunchError::Other(gettext(
-            "A program is running in this game's prefix; close it first.",
-        )));
-    }
 
     // Held until the session is registered (or the launch fails); covers the
     // whole pre-registration window the running check above can't see.
     let Some(_launch_claim) = LaunchClaim::try_claim(&game.id) else {
         return Err(LaunchError::Other(gettext("This game is already running")));
     };
+    let _prefix_claim = if prefix_path.is_empty() {
+        None
+    } else {
+        Some(claim_prefix(&prefix_path).await)
+    };
+    if crate::prefix_tool::is_running_in(&prefix_path) {
+        return Err(LaunchError::Other(gettext(
+            "A program is running in this game's prefix; close it first.",
+        )));
+    }
 
     // Fail fast on a missing executable: without this, umu/wine only surface it
     // minutes of log noise later as a cryptic exit status.

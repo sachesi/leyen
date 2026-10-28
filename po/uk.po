@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: leyen\n"
 "Report-Msgid-Bugs-To: https://github.com/sachesi/leyen/issues\n"
-"POT-Creation-Date: 2026-10-28 12:12+0200\n"
+"POT-Creation-Date: 2026-10-28 12:13+0200\n"
 "PO-Revision-Date: 2026-05-29\n"
 "Last-Translator: sachesi <xsachesi@pm.me>\n"
 "Language-Team: Ukrainian\n"
@@ -14,75 +14,80 @@ msgstr ""
 "n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
 #: crates/leyen-core/src/deps/engine.rs:123
-#: crates/leyen-core/src/deps/engine.rs:269
-#: crates/leyen-core/src/deps/engine.rs:463
-#: crates/leyen-core/src/deps/engine.rs:531
-#: crates/leyen-core/src/deps/engine.rs:1048
-#: crates/leyen-core/src/deps/engine.rs:1049
-#: crates/leyen-core/src/deps/engine.rs:1058
-#: crates/leyen-core/src/deps/engine.rs:1079
-#: crates/leyen-core/src/deps/engine.rs:1284
-#: crates/leyen-core/src/deps/engine.rs:1431
+#: crates/leyen-core/src/deps/engine.rs:379
+#: crates/leyen-core/src/deps/engine.rs:595
+#: crates/leyen-core/src/deps/engine.rs:663
+#: crates/leyen-core/src/deps/engine.rs:1214
+#: crates/leyen-core/src/deps/engine.rs:1215
+#: crates/leyen-core/src/deps/engine.rs:1224
+#: crates/leyen-core/src/deps/engine.rs:1255
+#: crates/leyen-core/src/deps/engine.rs:1474
+#: crates/leyen-core/src/deps/engine.rs:1640
 #, no-c-format
 msgid "Cancelled."
 msgstr "Скасовано."
 
-#: crates/leyen-core/src/deps/engine.rs:151
+#: crates/leyen-core/src/deps/engine.rs:165
 #, no-c-format
 msgid "A systemd user session is required to install or remove dependencies."
 msgstr ""
 "Для встановлення й вилучення залежностей потрібен користувацький сеанс "
 "systemd."
 
-#: crates/leyen-core/src/deps/engine.rs:842
+#: crates/leyen-core/src/deps/engine.rs:991
 #: crates/leyen-core/src/launch.rs:1988
 #, no-c-format
 msgid "Selected Proton version was not found"
 msgstr "Вибрану версію Proton не знайдено"
 
-#: crates/leyen-core/src/deps/engine.rs:890
-#: crates/leyen-core/src/deps/engine.rs:1231
+#: crates/leyen-core/src/deps/engine.rs:1040
+#: crates/leyen-core/src/deps/engine.rs:1409
 #, no-c-format
 msgid "Another dependency operation is already running for this prefix."
 msgstr "Інша операція із залежностями вже виконується для цього префікса."
 
-#: crates/leyen-core/src/deps/engine.rs:901
+#: crates/leyen-core/src/deps/engine.rs:1051
 #, no-c-format
 msgid "Cannot write to the dependency cache directory: {}"
 msgstr "Не вдалося записати до теки кешу залежностей: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:921
-#: crates/leyen-core/src/deps/engine.rs:1244
+#: crates/leyen-core/src/deps/engine.rs:1071
+#: crates/leyen-core/src/deps/engine.rs:1422
 #, no-c-format
 msgid "Dependency state file is corrupt: {}"
 msgstr "Файл стану залежностей пошкоджено: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:927
+#: crates/leyen-core/src/deps/engine.rs:1077
 #, no-c-format
 msgid "Dependency is already installed."
 msgstr "Залежність уже встановлено."
 
-#: crates/leyen-core/src/deps/engine.rs:964
+#: crates/leyen-core/src/deps/engine.rs:1112
+#, no-c-format
+msgid "Downloading Proton…"
+msgstr "Завантаження Proton…"
+
+#: crates/leyen-core/src/deps/engine.rs:1130
 #, no-c-format
 msgid "Proton could not prepare the prefix: {}"
 msgstr "Proton не зміг підготувати префікс: {}"
 
-#: crates/leyen-core/src/deps/engine.rs:1201
+#: crates/leyen-core/src/deps/engine.rs:1379
 #, no-c-format
 msgid "Installed prerequisites: {}."
 msgstr "Встановлено передумови: {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1250
+#: crates/leyen-core/src/deps/engine.rs:1428
 #, no-c-format
 msgid "Dependency is no longer tracked."
 msgstr "Залежність більше не відстежується."
 
-#: crates/leyen-core/src/deps/engine.rs:1254
+#: crates/leyen-core/src/deps/engine.rs:1432
 #, no-c-format
 msgid "Cannot remove '{}': still required by {}."
 msgstr "Неможливо вилучити «{}»: усе ще потрібно для {}."
 
-#: crates/leyen-core/src/deps/engine.rs:1354
+#: crates/leyen-core/src/deps/engine.rs:1563
 #, no-c-format
 msgid ""
 "Some existing prefix files were changed during installation and were not "
@@ -90,7 +95,7 @@ msgid ""
 msgstr ""
 "Деякі наявні файли префікса було змінено під час встановлення і не повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1357
+#: crates/leyen-core/src/deps/engine.rs:1566
 #, no-c-format
 msgid ""
 "Removed from tracking. Existing prefix files changed during installation "
@@ -99,18 +104,18 @@ msgstr ""
 "Вилучено з відстеження. Наявні файли префікса, змінені під час встановлення, "
 "не було повернуто."
 
-#: crates/leyen-core/src/deps/engine.rs:1359
+#: crates/leyen-core/src/deps/engine.rs:1568
 #, no-c-format
 msgid "Removed from tracking."
 msgstr "Вилучено з відстеження."
 
-#: crates/leyen-core/src/deps/engine.rs:1374
+#: crates/leyen-core/src/deps/engine.rs:1583
 #: crates/leyen-core/src/launch.rs:1878
 #, no-c-format
 msgid "umu-launcher is still downloading, please wait…"
 msgstr "umu-launcher усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1386
+#: crates/leyen-core/src/deps/engine.rs:1595
 #: crates/leyen-core/src/launch.rs:1891
 #: crates/leyen-core/src/prefix_tool.rs:128
 #: crates/leyen-gtk/src/prefix_tools.rs:22
@@ -122,17 +127,17 @@ msgstr ""
 "umu-launcher не встановлено. Перевірте з'єднання з інтернетом і "
 "перезапустіть."
 
-#: crates/leyen-core/src/deps/engine.rs:1394
+#: crates/leyen-core/src/deps/engine.rs:1603
 #, no-c-format
 msgid "winetricks is still downloading, please wait…"
 msgstr "winetricks усе ще завантажується, зачекайте…"
 
-#: crates/leyen-core/src/deps/engine.rs:1405 crates/leyen-gtk/src/window.rs:474
+#: crates/leyen-core/src/deps/engine.rs:1614 crates/leyen-gtk/src/window.rs:474
 #, no-c-format
 msgid "Downloading winetricks…"
 msgstr "Завантаження winetricks…"
 
-#: crates/leyen-core/src/deps/engine.rs:1421
+#: crates/leyen-core/src/deps/engine.rs:1630
 #, no-c-format
 msgid "Failed to download winetricks. Check your internet connection."
 msgstr "Не вдалося завантажити winetricks. Перевірте з'єднання з інтернетом."
@@ -304,17 +309,17 @@ msgstr "Запуск ігор для Windows через Proton"
 msgid "translator-credits"
 msgstr "sachesi <xsachesi@pm.me>"
 
-#: crates/leyen-gtk/src/daemon.rs:125
+#: crates/leyen-gtk/src/daemon.rs:128
 #, no-c-format
 msgid "Leyen's daemon is not running and could not be started"
 msgstr "Фонова служба Leyen не працює, і її не вдалося запустити"
 
-#: crates/leyen-gtk/src/daemon.rs:129
+#: crates/leyen-gtk/src/daemon.rs:132
 #, no-c-format
 msgid "Leyen's daemon did not answer in time"
 msgstr "Фонова служба Leyen не відповіла вчасно"
 
-#: crates/leyen-gtk/src/daemon.rs:201
+#: crates/leyen-gtk/src/daemon.rs:204
 #, no-c-format
 msgid ""
 "Cannot reach the session bus; daemon features unavailable until it returns"
@@ -322,7 +327,7 @@ msgstr ""
 "Немає зв’язку із сеансовою шиною; можливості фонової служби недоступні, доки "
 "її не буде відновлено"
 
-#: crates/leyen-gtk/src/daemon.rs:628
+#: crates/leyen-gtk/src/daemon.rs:635
 #, no-c-format
 msgid ""
 "Lost the daemon's {} updates; restart Leyen if the view stops refreshing"
@@ -330,7 +335,7 @@ msgstr ""
 "Втрачено оновлення {} від фонової служби; перезапустіть Leyen, якщо вигляд "
 "перестане оновлюватися"
 
-#: crates/leyen-gtk/src/daemon.rs:658 crates/leyen-gtk/src/desktop.rs:25
+#: crates/leyen-gtk/src/daemon.rs:665 crates/leyen-gtk/src/desktop.rs:25
 #: crates/leyen-gtk/src/desktop.rs:40 crates/leyen-gtk/src/desktop.rs:58
 #: crates/leyen-gtk/src/desktop.rs:100 crates/leyen-gtk/src/desktop.rs:121
 #: crates/leyen-gtk/src/dialogs/mod.rs:190
@@ -339,7 +344,7 @@ msgstr ""
 msgid "Internal error: background task failed"
 msgstr "Внутрішня помилка: фонове завдання завершилося збоєм"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:146
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:148
 #, no-c-format
 msgid ""
 "Dependency manager is blocked while games are running. Close all games first."
@@ -347,17 +352,17 @@ msgstr ""
 "Менеджер залежностей заблоковано, поки запущені ігри. Спершу закрийте всі "
 "ігри."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:190
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:238
 #, no-c-format
 msgid "This prefix's component list is damaged"
 msgstr "Список компонентів цього префікса пошкоджено"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:194
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:242
 #, no-c-format
 msgid "No components installed"
 msgstr "Жодного компонента не встановлено"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:197
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:245
 #, no-c-format
 msgid "{} component installed"
 msgid_plural "{} components installed"
@@ -365,74 +370,74 @@ msgstr[0] "Встановлено {} компонент"
 msgstr[1] "Встановлено {} компоненти"
 msgstr[2] "Встановлено {} компонентів"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:239
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:287
 #, no-c-format
 msgid "Installed"
 msgstr "Встановлені"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:310
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:358
 #: crates/leyen-gtk/src/dialogs/dependency_row.rs:121
 #, no-c-format
 msgid "Required by: {}"
 msgstr "Потрібно для: {}"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:329
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:388
 #, no-c-format
 msgid "'{}' installed successfully. {}"
 msgstr "«{}» успішно встановлено. {}"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:333
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:392
 #, no-c-format
 msgid "'{}' installed successfully."
 msgstr "«{}» успішно встановлено."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:336
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:395
 #, no-c-format
 msgid "'{}' reinstalled successfully. {}"
 msgstr "«{}» успішно перевстановлено. {}"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:341
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:400
 #, no-c-format
 msgid "'{}' reinstalled successfully."
 msgstr "«{}» успішно перевстановлено."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:343
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:402
 #, no-c-format
 msgid "'{}' removed successfully. {}"
 msgstr "«{}» успішно вилучено. {}"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:347
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:406
 #, no-c-format
 msgid "'{}' removed successfully."
 msgstr "«{}» успішно вилучено."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:350
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:409
 #, no-c-format
 msgid "Installation failed."
 msgstr "Не вдалося встановити."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:351
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:410
 #, no-c-format
 msgid "Reinstall failed."
 msgstr "Не вдалося перевстановити."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:352
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:411
 #, no-c-format
 msgid "Remove failed."
 msgstr "Не вдалося вилучити."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:364
-#: crates/leyen-model/src/deps/state.rs:72
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:423
+#: crates/leyen-model/src/deps/state.rs:80
 #, no-c-format
 msgid "This removes the dependency from Leyen's tracking."
 msgstr "Це вилучає залежність із відстеження Leyen."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:367
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:426
 #, no-c-format
 msgid "Remove '{}'?"
 msgstr "Вилучити «{}»?"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:371
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:430
 #: crates/leyen-gtk/src/dialogs/preferences.rs:210
 #: crates/leyen-gtk/src/window.rs:729 ui/dependency_row.ui:41
 #: ui/game_dialog.ui:28 ui/group_dialog.ui:28
@@ -440,18 +445,18 @@ msgstr "Вилучити «{}»?"
 msgid "Cancel"
 msgstr "Скасувати"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:372 ui/dependency_row.ui:75
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:431 ui/dependency_row.ui:75
 #, no-c-format
 msgid "Remove"
 msgstr "Вилучити"
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:408
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:418
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:477
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:487
 #, no-c-format
 msgid "Timed out waiting for the daemon."
 msgstr "Час очікування фонової служби вичерпано."
 
-#: crates/leyen-gtk/src/dialogs/dependencies.rs:440
+#: crates/leyen-gtk/src/dialogs/dependencies.rs:509
 #, no-c-format
 msgid "The daemon restarted; the operation's outcome is unknown."
 msgstr "Фонову службу перезапущено; результат операції невідомий."
@@ -1092,7 +1097,7 @@ msgstr "«{}» успішно видалено. {}"
 msgid "'{}' deleted successfully"
 msgstr "«{}» успішно видалено"
 
-#: crates/leyen-model/src/deps/state.rs:64
+#: crates/leyen-model/src/deps/state.rs:72
 #, no-c-format
 msgid ""
 "This will remove Leyen-tracked files and overrides from the prefix. Some "
@@ -1101,12 +1106,12 @@ msgstr ""
 "Буде вилучено з префікса файли й перевизначення, які відстежує Leyen. Деякі "
 "наявні файли префікса змінено під час встановлення, вони можуть залишитися."
 
-#: crates/leyen-model/src/deps/state.rs:67
+#: crates/leyen-model/src/deps/state.rs:75
 #, no-c-format
 msgid "This will remove Leyen-tracked files and overrides from the prefix."
 msgstr "Буде вилучено з префікса файли й перевизначення, які відстежує Leyen."
 
-#: crates/leyen-model/src/deps/state.rs:70
+#: crates/leyen-model/src/deps/state.rs:78
 #, no-c-format
 msgid ""
 "Leyen can remove this dependency from tracking, but it cannot undo registry "

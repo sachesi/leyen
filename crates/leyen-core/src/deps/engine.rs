@@ -143,6 +143,20 @@ pub(super) async fn run_umu_command(
     label: String,
     cancel: Arc<AtomicBool>,
 ) -> Result<std::process::Output, String> {
+    run_umu_command_watched(cmd, label, cancel, None).await
+}
+
+/// Calls `on_line` with each line of a umu command's error output as it comes.
+type LineWatcher = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// [`run_umu_command`], with each line the command writes to its error output
+/// passed to `on_line` while it runs.
+async fn run_umu_command_watched(
+    cmd: AsyncCommand,
+    label: String,
+    cancel: Arc<AtomicBool>,
+    on_line: Option<LineWatcher>,
+) -> Result<std::process::Output, String> {
     if !tokio::task::spawn_blocking(crate::launch::systemd_user_available)
         .await
         .unwrap_or(false)
@@ -178,7 +192,7 @@ pub(super) async fn run_umu_command(
         let output = match scoped.spawn() {
             Ok(child) => {
                 lease.spawned(child.id());
-                run_umu_command_inner(child, unit, label, cancel).await
+                run_umu_command_inner(child, unit, label, cancel, on_line).await
             }
             Err(e) => {
                 drop(lease);
@@ -312,17 +326,44 @@ fn dependency_shares(shared_folders: &[leyen_model::models::SandboxFolder]) -> V
 }
 
 async fn run_umu_command_inner(
-    child: tokio::process::Child,
+    mut child: tokio::process::Child,
     unit: String,
     label: String,
     cancel: Arc<AtomicBool>,
+    on_line: Option<LineWatcher>,
 ) -> Result<std::process::Output, String> {
     // Until systemd-run has registered the scope, the command is only reachable
     // as this child.
     let pidfd = child
         .id()
         .and_then(|pid| crate::launch::pidfd_open(pid).ok());
-    let wait_fut = child.wait_with_output();
+    let stderr = child.stderr.take();
+    let wait_fut = async move {
+        let collect = async {
+            let mut collected = Vec::new();
+            let Some(stderr) = stderr else {
+                return collected;
+            };
+            let mut lines =
+                tokio::io::AsyncBufReadExt::split(tokio::io::BufReader::new(stderr), b'\n');
+            while let Ok(Some(line)) = lines.next_segment().await {
+                if let Some(on_line) = &on_line {
+                    on_line(&String::from_utf8_lossy(&line));
+                }
+                collected.extend_from_slice(&line);
+                collected.push(b'\n');
+            }
+            collected
+        };
+        // The output ends once every holder of the pipe is gone, which is every
+        // process in the scope.
+        let (status, stderr) = tokio::join!(child.wait(), collect);
+        status.map(|status| std::process::Output {
+            status,
+            stdout: Vec::new(),
+            stderr,
+        })
+    };
     tokio::pin!(wait_fut);
 
     let start = tokio::time::Instant::now();
@@ -342,8 +383,6 @@ async fn run_umu_command_inner(
                 } else {
                     continue;
                 };
-                // The wait ends once every holder of the stderr pipe is gone,
-                // which is every process in the scope.
                 signal_scope(&unit, pidfd.as_ref(), libc::SIGTERM).await;
                 if tokio::time::timeout(POST_KILL_WAIT, &mut wait_fut).await.is_err() {
                     signal_scope(&unit, pidfd.as_ref(), libc::SIGKILL).await;
@@ -979,8 +1018,9 @@ pub async fn install_dep(
     prefix_path: &str,
     proton_path: &str,
     cancel: Arc<AtomicBool>,
-    on_progress: impl Fn(usize, usize, String) + Send + 'static,
+    on_progress: impl Fn(usize, usize, String) + Send + Sync + 'static,
 ) -> Result<Option<String>, String> {
+    let on_progress = Arc::new(on_progress);
     let profile = get_dep_profile(dep_id);
     let needs_winetricks = profile
         .map(|p| {
@@ -1016,7 +1056,7 @@ pub async fn install_dep(
             })
         })?;
 
-    ensure_umu_ready(needs_winetricks, &on_progress, &cancel).await?;
+    ensure_umu_ready(needs_winetricks, &*on_progress, &cancel).await?;
 
     let prefix_path_for_state = prefix_path.clone();
     let state = match tokio::task::spawn_blocking(move || {
@@ -1063,9 +1103,25 @@ pub async fn install_dep(
         let mut cmd = AsyncCommand::new(get_umu_run_path());
         configure_umu_command_async(&mut cmd, &prefix_path, &proton_path);
         cmd.arg("createprefix");
+        // umu-launcher fetches its own Proton here when none is chosen, the first
+        // time several hundred megabytes, and says so as it starts.
+        let on_line: LineWatcher = {
+            let on_progress = on_progress.clone();
+            Arc::new(move |line: &str| {
+                if line.contains("Downloading ") {
+                    on_progress(0, total_steps, gettext("Downloading Proton…"));
+                }
+            })
+        };
         // Proton then runs no program and exits 1 even though the prefix is ready,
         // so whether it is ready is read from the prefix.
-        let output = run_umu_command(cmd, "createprefix".to_string(), cancel.clone()).await?;
+        let output = run_umu_command_watched(
+            cmd,
+            "createprefix".to_string(),
+            cancel.clone(),
+            Some(on_line),
+        )
+        .await?;
         let registry = Path::new(&prefix_path).join("system.reg");
         if !tokio::task::spawn_blocking(move || registry.is_file())
             .await

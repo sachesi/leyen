@@ -512,8 +512,10 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
         // that see an already-finalized session still fall through to the
         // removal below, so a transiently failed removal is retried.
         if claim_session_finalize(&key) {
+            FINALIZING.fetch_add(1, Ordering::SeqCst);
             finalize_finished_session(session).await;
             mark_session_finalized(&key);
+            FINALIZING.fetch_sub(1, Ordering::SeqCst);
         } else if !session_finalize_done(&key) {
             continue;
         }
@@ -539,6 +541,21 @@ async fn synchronize_running_sessions_seq() -> Result<(Vec<RunningGameSession>, 
     }
 
     Ok((active_sessions, seq))
+}
+
+/// Sessions whose playtime is being recorded right now.
+static FINALIZING: AtomicUsize = AtomicUsize::new(0);
+
+/// Records the playtime of the sessions that have ended, and waits for those
+/// another pass is recording, for a daemon about to exit: a session it leaves
+/// registered is dropped unrecorded by the next one.
+pub async fn finish_ended_sessions() {
+    if let Err(e) = synchronize_running_sessions().await {
+        warn!("Could not record the games that ended: {e}");
+    }
+    while FINALIZING.load(Ordering::SeqCst) > 0 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Claims `(game_id, started_at)` for finalization; `false` if already claimed.
@@ -685,7 +702,7 @@ fn mark_running_session_termination_requested(game_id: &str) -> Result<bool, Lau
     })
 }
 
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 static RUNNING_SESSIONS_CACHE: OnceLock<RwLock<Vec<RunningGameSnapshot>>> = OnceLock::new();

@@ -117,6 +117,7 @@ pub fn upsert_installed_dep(
     entry.touched_existing_files |= delta.touched_existing_files;
     entry.dll_overrides = merge_unique_strings(&entry.dll_overrides, &delta.dll_overrides);
     entry.registered_dlls = merge_unique_strings(&entry.registered_dlls, &delta.registered_dlls);
+    entry.winetricks_verbs = merge_unique_strings(&entry.winetricks_verbs, &delta.winetricks_verbs);
 
     save_prefix_dep_state(prefix_path, &state)
 }

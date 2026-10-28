@@ -492,18 +492,19 @@ impl Manager {
             })
     }
 
-    async fn get_dep_status(&self, prefix: &str) -> leyen_ipc::DepStatus {
+    async fn get_dep_status(&self, prefix: &str) -> Result<leyen_ipc::DepStatus, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
         let prefix = prefix.to_string();
-        let installed = tokio::task::spawn_blocking(move || {
-            leyen_model::deps::read_installed_deps(&prefix)
-                .into_iter()
-                .collect::<Vec<_>>()
+        let state = tokio::task::spawn_blocking(move || {
+            leyen_model::deps::read_prefix_dep_state_checked(&prefix)
         })
         .await
-        .unwrap_or_default();
-        leyen_ipc::DepStatus { installed }
+        .map_err(|e| leyen_ipc::Error::Failed(e.to_string()))?
+        .map_err(leyen_ipc::Error::Failed)?;
+        Ok(leyen_ipc::DepStatus {
+            installed: state.installed.into_keys().collect(),
+        })
     }
 
     async fn get_prefix_programs(&self) -> Vec<leyen_ipc::PrefixProgram> {

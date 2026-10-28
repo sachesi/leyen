@@ -22,9 +22,10 @@ use crate::runtime::umu::{
 use crate::sandbox::{Confined, SandboxRequest, Share, confine_in_scope, is_available};
 
 use super::recipes::get_dep_steps;
-use super::state::{read_prefix_dep_state_checked, remove_installed_dep, upsert_installed_dep};
+use super::state::{remove_installed_dep, upsert_installed_dep};
 use leyen_model::deps::{
-    DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile, get_deps_cache_dir,
+    DepProfile, InstalledDependency, find_installed_dependents, get_dep_profile,
+    get_deps_cache_dir, read_prefix_dep_state_checked,
 };
 
 const COMMAND_TIMEOUT_SECS: u64 = 600;

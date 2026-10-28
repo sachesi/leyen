@@ -100,6 +100,13 @@ link the build there.
 Reset umu Runtime in the preferences deletes umu-launcher's Steam Linux Runtimes, which it
 downloads again when next needed.
 
+## Manage Dependencies says the prefix's component list is damaged
+
+Leyen keeps what it installed into a prefix in `.leyen/deps/state.toml` inside the prefix.
+When that file cannot be read, nothing is installed or removed there, so that no record is
+lost. Repair the file, or delete it to have Leyen forget what it installed: the components
+stay in the prefix, and removing one later is no longer possible.
+
 ## A game says the game running in its prefix cannot reach its folder
 
 Games on one prefix share a wineserver, as Wine requires, and it runs in the sandbox of the

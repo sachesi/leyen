@@ -38,8 +38,6 @@ macro_rules! dep {
 }
 
 pub const DEP_PROFILES: &[DepProfile] = &[
-    dep!("mono", "Wine mono", "Wine"),
-    dep!("gecko", "Wine gecko", "Wine"),
     dep!(
         "vbrun6",
         "Microsoft Visual Basic 6 Runtime SP6",
@@ -344,7 +342,6 @@ pub const DEP_PROFILES: &[DepProfile] = &[
 ];
 
 pub const DEP_CATEGORY_ORDER: &[&str] = &[
-    "Wine",
     "Redistributables",
     ".NET",
     "Generic",

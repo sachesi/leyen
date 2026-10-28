@@ -720,9 +720,13 @@ async fn run() -> anyhow::Result<()> {
     let dep_jobs = manager.dep_jobs.clone();
 
     // Bus-name ownership is the singleton guarantee: build() fails if another
-    // daemon already holds the name.
+    // daemon already holds the name. zbus asks to take a name over, and to let it
+    // be taken, unless told otherwise; a second daemon would then serve the bus
+    // while the first went on tracking the same games.
     let connection = Builder::session()
         .name(leyen_ipc::BUS_NAME)
+        .allow_name_replacements(false)
+        .replace_existing_names(false)
         .serve_at(OBJECT_PATH, manager)
         .build()
         .await?;

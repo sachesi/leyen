@@ -89,6 +89,10 @@ struct Manager {
     /// Serializes `SaveLibrary` bodies so the version check, the write and the
     /// version bump are atomic against concurrent saves.
     save_lock: Arc<tokio::sync::Mutex<()>>,
+    /// True once the games, programs and dependency jobs an earlier daemon left
+    /// running have been taken over. The name is owned and calls arrive before
+    /// that; until then nothing knows a game is running.
+    recovered: tokio::sync::watch::Receiver<bool>,
 }
 
 impl Manager {
@@ -100,6 +104,14 @@ impl Manager {
 
     fn connection(&self) -> Option<Connection> {
         self.conn.get().cloned()
+    }
+
+    async fn wait_recovered(&self) {
+        let _ = self
+            .recovered
+            .clone()
+            .wait_for(|recovered| *recovered)
+            .await;
     }
 }
 
@@ -148,6 +160,7 @@ impl Manager {
     async fn launch_game(&self, leyen_id: &str) -> Result<(), leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         // Dependency jobs mutate prefixes (wineserver, registry); launching a
         // game mid-install would corrupt both. `install_dep` refuses while a
         // game runs or launches — this is the same exclusion in the other
@@ -188,6 +201,7 @@ impl Manager {
     async fn stop_game(&self, leyen_id: &str) -> Result<bool, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         let library = leyen_core::config::load_library().await.map_err(|e| {
             log::error!("StopGame: failed to read the library: {e}");
             leyen_ipc::Error::Failed(format!("Failed to read the game library: {e}"))
@@ -204,6 +218,7 @@ impl Manager {
     async fn get_running_games(&self) -> Vec<leyen_ipc::RunningGameSnapshot> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         map_snapshots(leyen_core::launch::running_games_snapshot().await).await
     }
 
@@ -303,6 +318,7 @@ impl Manager {
     ) -> Result<String, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         let Some(conn) = self.connection() else {
             return Err(leyen_ipc::Error::Failed(
                 "The daemon is still starting; try again shortly".to_string(),
@@ -354,6 +370,7 @@ impl Manager {
     ) -> Result<String, leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         let Some(conn) = self.connection() else {
             return Err(leyen_ipc::Error::Failed(
                 "The daemon is still starting; try again shortly".to_string(),
@@ -415,6 +432,7 @@ impl Manager {
     ) -> Result<(), leyen_ipc::Error> {
         let _work = ActivityGuard::new();
         self.touch();
+        self.wait_recovered().await;
         // Same exclusion as a launch: no dependency job may be changing the
         // prefix, and none may start until the program is registered.
         let _launch = {
@@ -657,12 +675,14 @@ async fn run() -> anyhow::Result<()> {
     let settings = leyen_core::config::load_settings().await;
     leyen_core::logging::apply_log_settings(&settings);
 
+    let (recovered_tx, recovered) = tokio::sync::watch::channel(false);
     let manager = Manager {
         conn: Arc::new(OnceLock::new()),
         dep_jobs: Arc::new(Mutex::new(HashMap::new())),
         last_activity: Arc::new(Mutex::new(Instant::now())),
         library_version: Arc::new(AtomicU64::new(1)),
         save_lock: Arc::new(tokio::sync::Mutex::new(())),
+        recovered,
     };
     let conn_holder = manager.conn.clone();
     let last_activity = manager.last_activity.clone();
@@ -681,10 +701,12 @@ async fn run() -> anyhow::Result<()> {
     install_listeners(&connection);
 
     // Crash recovery: re-adopt live scopes and programs in prefixes, stop the
-    // dependency jobs nobody follows any more, then start the one monitor.
+    // dependency jobs nobody follows any more, then start the one monitor. The
+    // calls about games and prefixes wait for it.
     leyen_core::launch::reconcile_stale_sessions_on_startup().await;
     leyen_core::prefix_tool::adopt_running().await;
     let _ = tokio::task::spawn_blocking(leyen_core::deps::stop_orphaned_jobs).await;
+    recovered_tx.send_replace(true);
     leyen_core::launch::start_running_sessions_monitor();
 
     // Runtime install off the request path; emit readiness as it changes.

@@ -48,6 +48,10 @@ pub struct InstalledDependency {
     /// The winetricks verbs its install added to `winetricks.log`.
     #[serde(default)]
     pub winetricks_verbs: Vec<String>,
+    /// The programs its install registered for removal, as their keys under
+    /// `HKEY_LOCAL_MACHINE`.
+    #[serde(default)]
+    pub uninstall_entries: Vec<String>,
 }
 
 impl InstalledDependency {
@@ -55,6 +59,7 @@ impl InstalledDependency {
         !self.created_files.is_empty()
             || !self.dll_overrides.is_empty()
             || !self.registered_dlls.is_empty()
+            || !self.uninstall_entries.is_empty()
     }
 
     pub fn is_prefix_integration(&self) -> bool {

@@ -1,5 +1,6 @@
 //! Running Games: what the daemon is tracking, how long each game has run and how
-//! many processes it has, with its log and a stop button.
+//! many processes it has, with its log and a stop button, and the programs run
+//! in a prefix, which can be stopped too.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -7,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk4::glib;
-use leyen_ipc::RunningGameSnapshot;
+use leyen_ipc::{PrefixProgram, RunningGameSnapshot};
 use leyen_model::i18n::{gettext, ngettext};
 use leyen_model::icons::game_icon_path;
 use leyen_model::library::flatten_games;
@@ -109,8 +110,14 @@ mod imp {
         pub stack: TemplateChild<gtk4::Stack>,
         #[template_child]
         pub list: TemplateChild<gtk4::ListBox>,
+        #[template_child]
+        pub programs_box: TemplateChild<gtk4::Box>,
+        #[template_child]
+        pub programs_list: TemplateChild<gtk4::ListBox>,
         /// Rows by game id.
         pub rows: RefCell<HashMap<String, RunningGameRow>>,
+        /// Program rows by scope unit.
+        pub program_rows: RefCell<HashMap<String, adw::ActionRow>>,
         /// Game titles by game id, read again only when the library changes.
         pub titles: RefCell<HashMap<String, String>>,
         /// The running set shown now, redrawn with new titles.
@@ -144,6 +151,21 @@ mod imp {
                         return;
                     };
                     if let Some(message) = playback::stop(&leyen_id).await {
+                        window
+                            .imp()
+                            .toast_overlay
+                            .add_toast(adw::Toast::new(&message));
+                    }
+                },
+            );
+            klass.install_action_async(
+                "running.stop-program",
+                Some(glib::VariantTy::STRING),
+                |window, _, param| async move {
+                    let Some(unit) = param.and_then(|param| param.get::<String>()) else {
+                        return;
+                    };
+                    if let Err(message) = daemon::stop_prefix_program(&unit).await {
                         window
                             .imp()
                             .toast_overlay
@@ -222,6 +244,7 @@ impl RunningGamesWindow {
             async move {
                 window.load_titles().await;
                 window.show(daemon::running_games_snapshot().await);
+                window.show_programs(&daemon::prefix_programs().await);
                 // SessionsChanged carries the set and comes whenever a process count
                 // moves, so it is drawn as it is, without asking the daemon again.
                 while let Ok(event) = events.recv().await {
@@ -232,9 +255,13 @@ impl RunningGamesWindow {
                             let sessions = window.imp().sessions.take();
                             window.show(sessions);
                         }
+                        DaemonEvent::PrefixProgramsChanged(programs) => {
+                            window.show_programs(&programs);
+                        }
                         DaemonEvent::DaemonRestarted => {
                             window.load_titles().await;
                             window.show(daemon::running_games_snapshot().await);
+                            window.show_programs(&daemon::prefix_programs().await);
                         }
                         _ => {}
                     }
@@ -303,8 +330,53 @@ impl RunningGamesWindow {
             }
         }
         imp.list.invalidate_sort();
-        imp.stack
-            .set_visible_child_name(if rows.is_empty() { "empty" } else { "list" });
+        imp.list.set_visible(!rows.is_empty());
+        drop(rows);
+        drop(titles);
         imp.sessions.replace(snapshots);
+        self.update_stack();
+    }
+
+    fn show_programs(&self, programs: &[PrefixProgram]) {
+        let imp = self.imp();
+        let mut rows = imp.program_rows.borrow_mut();
+        let mut stale: HashSet<String> = rows.keys().cloned().collect();
+        for program in programs {
+            stale.remove(&program.unit);
+            let row = rows.entry(program.unit.clone()).or_insert_with(|| {
+                let stop = gtk4::Button::builder()
+                    .icon_name("media-playback-stop-symbolic")
+                    .tooltip_text(gettext("Stop Program"))
+                    .action_name("running.stop-program")
+                    .action_target(&program.unit.to_variant())
+                    .valign(gtk4::Align::Center)
+                    .css_classes(["destructive-action", "circular"])
+                    .build();
+                let row = adw::ActionRow::builder()
+                    .use_markup(false)
+                    .activatable(false)
+                    .build();
+                row.add_suffix(&stop);
+                imp.programs_list.append(&row);
+                row
+            });
+            row.set_title(&program.label);
+            row.set_subtitle(&program.prefix);
+        }
+        for unit in stale {
+            if let Some(row) = rows.remove(&unit) {
+                imp.programs_list.remove(&row);
+            }
+        }
+        imp.programs_box.set_visible(!rows.is_empty());
+        drop(rows);
+        self.update_stack();
+    }
+
+    fn update_stack(&self) {
+        let imp = self.imp();
+        let empty = imp.rows.borrow().is_empty() && imp.program_rows.borrow().is_empty();
+        imp.stack
+            .set_visible_child_name(if empty { "empty" } else { "list" });
     }
 }

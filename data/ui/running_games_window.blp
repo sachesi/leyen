@@ -39,13 +39,41 @@ template $LeyenRunningGamesWindow: Adw.Window {
               margin-start: 12;
               margin-end: 12;
 
-              child: ListBox list {
-                selection-mode: none;
+              child: Box {
+                orientation: vertical;
+                spacing: 24;
                 valign: start;
 
-                styles [
-                  "boxed-list-separate",
-                ]
+                ListBox list {
+                  selection-mode: none;
+
+                  styles [
+                    "boxed-list-separate",
+                  ]
+                }
+
+                Box programs_box {
+                  orientation: vertical;
+                  spacing: 12;
+                  visible: false;
+
+                  Label {
+                    label: _("Programs in Prefixes");
+                    xalign: 0;
+
+                    styles [
+                      "heading",
+                    ]
+                  }
+
+                  ListBox programs_list {
+                    selection-mode: none;
+
+                    styles [
+                      "boxed-list",
+                    ]
+                  }
+                }
               };
             };
           };

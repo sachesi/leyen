@@ -121,7 +121,8 @@ or stop them from Running Games.
 
 Wine Configuration, the Registry Editor or a program run from the prefix tools is still open,
 or something it started is: an installer often leaves a helper behind for a few seconds.
-Close them and try again.
+Close them and try again. One that does not close, an installer that hangs say, can be
+stopped from Running Games, where it is listed under Programs in Prefixes.
 
 ## A game still shows the old icon or name in the applications menu
 

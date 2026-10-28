@@ -728,8 +728,8 @@ async fn run() -> anyhow::Result<()> {
 
 /// Graceful teardown: release the bus name first — a client call from here on
 /// activates a fresh daemon instead of hitting a dying one — then cancel any
-/// in-flight dependency jobs, drain in-flight work (bounded) and flush the
-/// log thread.
+/// in-flight dependency jobs, drain in-flight work (bounded), record the games
+/// that ended and flush the log thread.
 async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
     if let Err(e) = connection.release_name(leyen_ipc::BUS_NAME).await {
         warn!("leyend: failed to release bus name: {e}");
@@ -758,6 +758,17 @@ async fn graceful_shutdown(connection: &Connection, dep_jobs: &DepJobs) {
     let remaining = ACTIVE_WORK.load(Ordering::SeqCst);
     if remaining > 0 {
         warn!("leyend: exiting with {remaining} unit(s) of work still in flight");
+    }
+    // A game that ended since the last monitor pass would otherwise lose its
+    // playtime: the next daemon drops a session whose scope is gone unrecorded.
+    if tokio::time::timeout(
+        Duration::from_secs(5),
+        leyen_core::launch::finish_ended_sessions(),
+    )
+    .await
+    .is_err()
+    {
+        warn!("leyend: exiting before the games that ended were recorded");
     }
     // Last log line before the log thread is torn down — anything logged after
     // `shutdown()` is dropped.

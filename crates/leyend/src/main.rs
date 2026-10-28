@@ -72,6 +72,12 @@ impl Drop for LaunchGuard {
 
 /// Fail closed on a poisoned `dep_jobs` lock: proceeding blind could let a
 /// launch and a dependency job overlap — the corruption the lock prevents.
+/// Logs why a dependency job was not started, which the caller only shows.
+fn dep_job_refused(prefix: &str, dep_id: &str, reason: String) -> leyen_ipc::Error {
+    warn!("[dep:{dep_id}] refused for '{prefix}': {reason}");
+    leyen_ipc::Error::Failed(reason)
+}
+
 fn poisoned_lock_error() -> leyen_ipc::Error {
     leyen_ipc::Error::Failed("Internal state lock poisoned; restart the daemon".to_string())
 }
@@ -343,21 +349,27 @@ impl Manager {
             // running check and the job becoming visible.
             let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
             if leyen_core::prefix_tool::any_running() {
-                return Err(leyen_ipc::Error::Failed(
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
                     "Cannot install dependencies while a program runs in a prefix".to_string(),
                 ));
             }
             if leyen_core::launch::is_any_game_running()
                 || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
             {
-                return Err(leyen_ipc::Error::Failed(
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
                     "Cannot install dependencies while a game is running".to_string(),
                 ));
             }
             if jobs.len() >= MAX_DEP_JOBS {
-                return Err(leyen_ipc::Error::Failed(format!(
-                    "Too many dependency operations in progress (max {MAX_DEP_JOBS})"
-                )));
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
+                    format!("Too many dependency operations in progress (max {MAX_DEP_JOBS})"),
+                ));
             }
             jobs.insert(job_id.clone(), cancel.clone());
         }
@@ -393,21 +405,27 @@ impl Manager {
             // Same atomic check-and-insert as `install_dep`.
             let mut jobs = self.dep_jobs.lock().map_err(|_| poisoned_lock_error())?;
             if leyen_core::prefix_tool::any_running() {
-                return Err(leyen_ipc::Error::Failed(
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
                     "Cannot uninstall dependencies while a program runs in a prefix".to_string(),
                 ));
             }
             if leyen_core::launch::is_any_game_running()
                 || LAUNCHES_IN_FLIGHT.load(Ordering::SeqCst) > 0
             {
-                return Err(leyen_ipc::Error::Failed(
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
                     "Cannot uninstall dependencies while a game is running".to_string(),
                 ));
             }
             if jobs.len() >= MAX_DEP_JOBS {
-                return Err(leyen_ipc::Error::Failed(format!(
-                    "Too many dependency operations in progress (max {MAX_DEP_JOBS})"
-                )));
+                return Err(dep_job_refused(
+                    prefix,
+                    dep_id,
+                    format!("Too many dependency operations in progress (max {MAX_DEP_JOBS})"),
+                ));
             }
             jobs.insert(job_id.clone(), cancel.clone());
         }
@@ -646,7 +664,11 @@ impl Manager {
             drop(job_guard);
             let (success, message) = match result {
                 Ok(note) => (true, note.unwrap_or_default()),
-                Err(e) => (false, e),
+                Err(e) => {
+                    let job = if install { "install" } else { "removal" };
+                    warn!("[dep:{dep_id}] {job} in '{prefix}' failed: {e}");
+                    (false, e)
+                }
             };
             if let Err(e) = emit_dep_finished(&conn, &job_id, success, &message).await {
                 warn!("leyend: failed to emit DepFinished: {e}");

@@ -1348,7 +1348,7 @@ fn read_cgroup_pids(path: &Path) -> Vec<u32> {
 /// `cgroup.procs` (direct members only), this reflects the **whole subtree**, so
 /// it stays correct even if the game tree creates nested cgroups under the scope.
 /// `None` means the file is gone (scope collected) or unreadable.
-fn read_cgroup_populated(dir: &Path) -> Option<bool> {
+pub(crate) fn read_cgroup_populated(dir: &Path) -> Option<bool> {
     let data = fs::read_to_string(dir.join("cgroup.events")).ok()?;
     data.lines()
         .find_map(|line| line.strip_prefix("populated "))

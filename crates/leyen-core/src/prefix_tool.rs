@@ -16,7 +16,8 @@ use tokio::process::Command as AsyncCommand;
 
 use crate::launch::{
     PrefixProgram, claim_prefix, for_each_output_line, forget_prefix_program, prefix_folder,
-    prefix_programs, record_prefix_program, systemd_user_available, unit_is_active,
+    prefix_programs, read_cgroup_populated, record_prefix_program, systemctl_show_property,
+    systemd_user_available, unit_is_active,
 };
 use crate::runtime::umu::{UmuReservation, get_umu_run_path, is_umu_run_available};
 use crate::sandbox::{Confined, SandboxRequest, confine_in_scope, is_available};
@@ -218,15 +219,28 @@ pub async fn adopt_running() {
 /// ended already, but what it started (wineserver, an installer's own
 /// processes) can live on in its scope.
 async fn watch(unit: String, prefix: String, label: String) {
+    // Read from the scope's cgroup, found once; the user manager is asked only
+    // while the cgroup is not there.
+    let mut cgroup: Option<PathBuf> = None;
     loop {
         let probe = unit.clone();
-        let active = tokio::task::spawn_blocking(move || unit_is_active(&probe))
-            .await
-            .ok()
-            .flatten();
+        let (found, active) = tokio::task::spawn_blocking(move || {
+            let found = cgroup.or_else(|| {
+                systemctl_show_property(&probe, "ControlGroup")
+                    .map(|group| PathBuf::from(format!("/sys/fs/cgroup{group}")))
+            });
+            let active = found
+                .as_deref()
+                .and_then(read_cgroup_populated)
+                .or_else(|| unit_is_active(&probe));
+            (found, active)
+        })
+        .await
+        .unwrap_or_default();
         if active == Some(false) {
             break;
         }
+        cgroup = found;
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
     running().remove(&unit);

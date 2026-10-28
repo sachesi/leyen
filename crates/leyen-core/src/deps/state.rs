@@ -118,6 +118,8 @@ pub fn upsert_installed_dep(
     entry.dll_overrides = merge_unique_strings(&entry.dll_overrides, &delta.dll_overrides);
     entry.registered_dlls = merge_unique_strings(&entry.registered_dlls, &delta.registered_dlls);
     entry.winetricks_verbs = merge_unique_strings(&entry.winetricks_verbs, &delta.winetricks_verbs);
+    entry.uninstall_entries =
+        merge_unique_strings(&entry.uninstall_entries, &delta.uninstall_entries);
 
     save_prefix_dep_state(prefix_path, &state)
 }

@@ -350,6 +350,7 @@ pub struct StepChanges {
     pub dll_overrides: Vec<String>,
     pub registered_dlls: Vec<String>,
     pub winetricks_verbs: Vec<String>,
+    pub uninstall_entries: Vec<String>,
 }
 
 impl StepChanges {
@@ -360,6 +361,8 @@ impl StepChanges {
         self.registered_dlls = merge_unique_strings(&self.registered_dlls, &other.registered_dlls);
         self.winetricks_verbs =
             merge_unique_strings(&self.winetricks_verbs, &other.winetricks_verbs);
+        self.uninstall_entries =
+            merge_unique_strings(&self.uninstall_entries, &other.uninstall_entries);
     }
 
     fn into_dependency_record(self) -> InstalledDependency {
@@ -369,6 +372,7 @@ impl StepChanges {
             dll_overrides: self.dll_overrides,
             registered_dlls: self.registered_dlls,
             winetricks_verbs: self.winetricks_verbs,
+            uninstall_entries: self.uninstall_entries,
             ..InstalledDependency::default()
         }
     }
@@ -382,6 +386,16 @@ struct PrefixSnapshot {
     /// What the registry and winetricks keep outside the files above.
     dll_overrides: BTreeSet<String>,
     winetricks_verbs: BTreeSet<String>,
+    uninstall_entries: BTreeSet<String>,
+}
+
+/// A program registered for removal under `HKLM\...\Uninstall`.
+struct UninstallEntry {
+    name: String,
+    /// The command that removes it without asking, as Windows runs it.
+    quiet_command: Option<String>,
+    /// Whether Windows Installer installed it, so `msiexec /x` removes it.
+    msi: bool,
 }
 
 /// File signature: (len, mtime). May miss same-size+same-mtime in-place edits.
@@ -392,6 +406,7 @@ struct FileFingerprint {
 }
 
 enum CleanupAction {
+    RunUninstallers(Vec<String>),
     RemoveDllOverrides(Vec<String>),
     UnregisterDlls(Vec<String>),
     RemoveCreatedFiles(Vec<String>),
@@ -1282,15 +1297,27 @@ pub async fn uninstall_dep(
             .replacen("{}", &dependents.join(", "), 1));
     }
 
+    let uninstall_entries = if installed.uninstall_entries.is_empty() {
+        let prefix = prefix_path.clone();
+        let files = installed.created_files.clone();
+        tokio::task::spawn_blocking(move || bundles_among(&prefix, &files))
+            .await
+            .map_err(join_err)?
+    } else {
+        installed.uninstall_entries.clone()
+    };
     let actions = build_cleanup_actions(&InstalledDependency {
         dll_overrides: overrides_to_remove(&state, &dep_id),
+        uninstall_entries,
         ..installed.clone()
     });
 
     let requires_umu = actions.iter().any(|(_, action)| {
         matches!(
             action,
-            CleanupAction::RemoveDllOverrides(_) | CleanupAction::UnregisterDlls(_)
+            CleanupAction::RemoveDllOverrides(_)
+                | CleanupAction::UnregisterDlls(_)
+                | CleanupAction::RunUninstallers(_)
         )
     });
     if requires_umu {
@@ -1328,6 +1355,9 @@ pub async fn uninstall_dep(
             }
             CleanupAction::UnregisterDlls(dlls) => {
                 unregister_dlls(&prefix_path, &proton_path, &dlls, cancel.clone()).await
+            }
+            CleanupAction::RunUninstallers(entries) => {
+                run_uninstallers(&prefix_path, &proton_path, &entries, cancel.clone()).await
             }
             CleanupAction::RemoveCreatedFiles(files) => {
                 tokio::task::spawn_blocking(move || remove_created_files(&prefix_path, &files))
@@ -1572,6 +1602,7 @@ fn snapshot_prefix(prefix_path: &str) -> Result<PrefixSnapshot, String> {
         proton_files: proton_files(root),
         dll_overrides: dll_overrides(prefix_path),
         winetricks_verbs: winetricks_verbs(prefix_path),
+        uninstall_entries: uninstall_entries(prefix_path).into_keys().collect(),
         ..PrefixSnapshot::default()
     };
     collect_snapshot(root, root, &mut snapshot)?;
@@ -1738,6 +1769,11 @@ fn diff_snapshots(before: &PrefixSnapshot, after: &PrefixSnapshot) -> StepChange
         .difference(&before.winetricks_verbs)
         .cloned()
         .collect();
+    changes.uninstall_entries = after
+        .uninstall_entries
+        .difference(&before.uninstall_entries)
+        .cloned()
+        .collect();
     info!(
         "[dep] Diff: {} files created, touched_existing={}",
         changes.created_files.len(),
@@ -1844,6 +1880,14 @@ fn verbs_to_forget(state: &leyen_model::deps::PrefixDependencyState, dep_id: &st
 fn build_cleanup_actions(installed: &InstalledDependency) -> Vec<(String, CleanupAction)> {
     let mut actions = Vec::new();
 
+    // First, while the uninstallers it keeps among its files are still there.
+    if !installed.uninstall_entries.is_empty() {
+        actions.push((
+            "Running the uninstallers…".to_string(),
+            CleanupAction::RunUninstallers(installed.uninstall_entries.clone()),
+        ));
+    }
+
     if !installed.dll_overrides.is_empty() {
         actions.push((
             "Removing tracked DLL overrides…".to_string(),
@@ -1937,6 +1981,168 @@ async fn write_dll_overrides(
         ));
     }
     Ok(())
+}
+
+/// Removes the programs registered under `entries` the way Windows would: a
+/// program with a quiet uninstall command through it, which for an installer
+/// bundle also removes the Windows Installer packages it brought, and the rest
+/// of Windows Installer's own with `msiexec /x`. Deleting their files alone
+/// leaves them registered, and their installer then refuses to put them back.
+async fn run_uninstallers(
+    prefix_path: &str,
+    proton_path: &str,
+    entries: &[String],
+    cancel: Arc<AtomicBool>,
+) -> Result<(), String> {
+    let registered = |prefix: String| async move {
+        tokio::task::spawn_blocking(move || uninstall_entries(&prefix))
+            .await
+            .map_err(join_err)
+    };
+    for quiet in [true, false] {
+        let present = registered(prefix_path.to_string()).await?;
+        for key in entries {
+            let Some(entry) = present.get(key) else {
+                continue;
+            };
+            let mut cmd = AsyncCommand::new(get_umu_run_path());
+            configure_umu_command_async(&mut cmd, prefix_path, proton_path);
+            match (quiet, &entry.quiet_command) {
+                (true, Some(command)) => {
+                    let Some((program, args)) = windows_command(prefix_path, command) else {
+                        continue;
+                    };
+                    cmd.arg(program);
+                    cmd.args(args);
+                }
+                (false, _) if entry.msi => {
+                    let Some(code) = key.rsplit('\\').next() else {
+                        continue;
+                    };
+                    cmd.args(["msiexec.exe", "/x", code, "/qn"]);
+                }
+                _ => continue,
+            }
+            info!("[dep] Uninstalling '{}'", entry.name);
+            run_umu_command(cmd, format!("uninstall {}", entry.name), cancel.clone()).await?;
+        }
+    }
+    // Their exit status says little through umu-run; what is still registered
+    // says whether they went.
+    let present = registered(prefix_path.to_string()).await?;
+    let left: Vec<&str> = entries
+        .iter()
+        .filter_map(|key| present.get(key))
+        .map(|entry| entry.name.as_str())
+        .collect();
+    if left.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("Could not uninstall {}", left.join(", ")))
+    }
+}
+
+/// The programs registered for removal in the prefix, by their key under
+/// `HKEY_LOCAL_MACHINE`, from `system.reg`, which Wine writes once a prefix's
+/// wineserver has exited.
+fn uninstall_entries(prefix_path: &str) -> BTreeMap<String, UninstallEntry> {
+    const SUFFIX: &str = "\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\";
+    let text = fs::read(Path::new(prefix_path).join("system.reg"))
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    let mut entries = BTreeMap::new();
+    let mut current: Option<(String, UninstallEntry)> = None;
+    for line in text.lines() {
+        if let Some(header) = line.strip_prefix('[') {
+            entries.extend(current.take());
+            let Some((key, _)) = header.split_once(']') else {
+                continue;
+            };
+            let key = unescape_reg(key);
+            let Some((view, name)) = key.split_once(SUFFIX) else {
+                continue;
+            };
+            if (view == "Software" || view == "Software\\Wow6432Node") && !name.contains('\\') {
+                let entry = UninstallEntry {
+                    name: name.to_string(),
+                    quiet_command: None,
+                    msi: false,
+                };
+                current = Some((key.clone(), entry));
+            }
+        } else if let Some((_, entry)) = current.as_mut() {
+            if let Some(value) = line.strip_prefix("\"DisplayName\"=") {
+                entry.name = reg_string(value);
+            } else if let Some(value) = line.strip_prefix("\"QuietUninstallString\"=") {
+                entry.quiet_command = Some(reg_string(value));
+            } else if line == "\"WindowsInstaller\"=dword:00000001" {
+                entry.msi = true;
+            }
+        }
+    }
+    entries.extend(current);
+    entries
+}
+
+/// For a component recorded before its uninstall entries were: the programs
+/// whose quiet uninstaller is one of its files, an installer bundle in the
+/// package cache, which removes the packages it installed with it.
+fn bundles_among(prefix_path: &str, created_files: &[String]) -> Vec<String> {
+    let root = Path::new(prefix_path);
+    let files: HashSet<PathBuf> = created_files.iter().map(|file| root.join(file)).collect();
+    uninstall_entries(prefix_path)
+        .into_iter()
+        .filter(|(_, entry)| {
+            entry
+                .quiet_command
+                .as_deref()
+                .and_then(|command| windows_command(prefix_path, command))
+                .is_some_and(|(program, _)| files.contains(&program))
+        })
+        .map(|(key, _)| key)
+        .collect()
+}
+
+/// A string value as `system.reg` writes it: quoted, escaped, and after a
+/// `str(n):` type tag when it is not a plain string.
+fn reg_string(value: &str) -> String {
+    let value = value
+        .strip_prefix("str(")
+        .and_then(|rest| rest.split_once("):"))
+        .map_or(value, |(_, rest)| rest);
+    unescape_reg(value.trim_matches('"'))
+}
+
+fn unescape_reg(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A Windows command line on drive C: of the prefix, as the program's path in
+/// the prefix and its arguments.
+fn windows_command(prefix_path: &str, command: &str) -> Option<(PathBuf, Vec<String>)> {
+    let command = command.trim();
+    let (program, args) = match command.strip_prefix('"') {
+        Some(rest) => rest.split_once('"')?,
+        None => command.split_once(' ').unwrap_or((command, "")),
+    };
+    let relative = program
+        .strip_prefix("C:\\")
+        .or_else(|| program.strip_prefix("c:\\"))?;
+    let path = Path::new(prefix_path)
+        .join("drive_c")
+        .join(relative.replace('\\', "/"));
+    Some((path, args.split_whitespace().map(str::to_string).collect()))
 }
 
 async fn unregister_dlls(
@@ -2034,8 +2240,8 @@ fn prune_empty_parent_dirs(prefix_root: &Path, file_path: &Path) {
 mod tests {
     use super::{
         FileFingerprint, PrefixSnapshot, diff_snapshots, dll_overrides, forget_winetricks_verb,
-        overrides_to_remove, remove_created_files, stderr_tail, verbs_to_forget,
-        winetricks_known_dll_overrides,
+        overrides_to_remove, remove_created_files, stderr_tail, uninstall_entries, verbs_to_forget,
+        windows_command, winetricks_known_dll_overrides,
     };
     use leyen_model::deps::{InstalledDependency, PrefixDependencyState};
     use std::collections::BTreeMap;
@@ -2115,6 +2321,47 @@ mod tests {
             ..PrefixDependencyState::default()
         };
         assert_eq!(verbs_to_forget(&state, "vcredist2019"), ["vcrun2019"]);
+    }
+
+    #[test]
+    fn uninstall_entries_are_read_from_both_registry_views() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().to_str().unwrap();
+        std::fs::write(
+            dir.path().join("system.reg"),
+            concat!(
+                "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{9D36}] 1\n",
+                "\"DisplayName\"=\"Runtime x64\"\n",
+                "\"UninstallString\"=str(2):\"MsiExec.exe /I{9D36}\"\n",
+                "\"WindowsInstaller\"=dword:00000001\n\n",
+                "[Software\\\\Wow6432Node\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{a11e}] 1\n",
+                "\"DisplayName\"=\"Redistributable x86\"\n",
+                "\"QuietUninstallString\"=\"\\\"C:\\\\ProgramData\\\\Package Cache\\\\{a11e}\\\\VC_redist.x86.exe\\\" /uninstall /quiet\"\n\n",
+                "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{9D36}\\\\Sub] 1\n",
+                "\"DisplayName\"=\"not an entry\"\n",
+            ),
+        )
+        .unwrap();
+        let entries = uninstall_entries(prefix);
+        let keys: Vec<&str> = entries.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            [
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9D36}",
+                "Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{a11e}",
+            ]
+        );
+        let msi = &entries[keys[0]];
+        assert!(msi.msi && msi.quiet_command.is_none() && msi.name == "Runtime x64");
+        let bundle = &entries[keys[1]];
+        let (program, args) =
+            windows_command(prefix, bundle.quiet_command.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            program,
+            dir.path()
+                .join("drive_c/ProgramData/Package Cache/{a11e}/VC_redist.x86.exe")
+        );
+        assert_eq!(args, ["/uninstall", "/quiet"]);
     }
 
     #[test]

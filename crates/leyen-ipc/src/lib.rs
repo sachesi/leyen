@@ -1,4 +1,4 @@
-//! The D-Bus contract for Leyen: shared `zvariant` types + the `zbus` proxy
+//! The D-Bus contract for Leyen: shared D-Bus wire types + the `zbus` proxy
 //! trait. The daemon implements the matching `#[zbus::interface]`; the command
 //! line and the window use the generated `LeyenProxy`.
 //!
@@ -6,7 +6,7 @@
 //! interface `io.github.sachesi.leyen.Manager`, on the **session** bus.
 
 use serde::{Deserialize, Serialize};
-use zvariant::Type;
+use zbus::Type;
 
 /// Errors the daemon returns from method calls, carried as D-Bus errors
 /// (`io.github.sachesi.leyen.Error.*`) so every client sees the reason instead

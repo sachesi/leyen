@@ -13,4 +13,3 @@ description = "The D-Bus interface between Leyen's daemon and its clients"
 leyen-model.workspace = true
 serde.workspace = true
 zbus.workspace = true
-zvariant.workspace = true
